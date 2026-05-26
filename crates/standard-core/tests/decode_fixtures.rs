@@ -30,10 +30,61 @@ fn decode_fixture(name: &str) -> RichDoc {
 #[test]
 fn pckt_real_record() {
     let doc = decode_fixture("pckt.json");
+
+    // Plain text, then a bold facet over the whole run (byte-range, not run marks).
     assert_eq!(
-        doc.blocks,
-        vec![Block::Paragraph(vec![Inline::Text("test".into())])]
+        doc.blocks[0],
+        Block::Paragraph(vec![Inline::Text("test".into())])
     );
+    assert_eq!(
+        doc.blocks[1],
+        Block::Paragraph(vec![Inline::Strong(vec![Inline::Text("bold".into())])])
+    );
+    // Stacked features nest, first feature outermost.
+    assert_eq!(
+        doc.blocks[2],
+        Block::Paragraph(vec![Inline::Strong(vec![Inline::Emphasis(vec![
+            Inline::Text("italic and bold".into())
+        ])])])
+    );
+
+    // Heading, nested list, blob image, rule, and an underline all decode.
+    assert!(doc.blocks.iter().any(|b| matches!(
+        b,
+        Block::Heading { level: 1, content } if content == &[Inline::Text("heading one".into())]
+    )));
+    assert!(
+        doc.blocks
+            .iter()
+            .any(|b| matches!(b, Block::List { ordered: false, .. }))
+    );
+    assert!(doc.blocks.iter().any(|b| matches!(
+        b,
+        Block::Image(img) if matches!(&img.source, ImageSource::Blob { .. })
+    )));
+    assert!(doc.blocks.iter().any(|b| matches!(b, Block::Rule)));
+    assert!(
+        has_underline(&doc.blocks),
+        "underline facet should decode to Inline::Underline"
+    );
+}
+
+/// Recursively search decoded blocks for an `Inline::Underline`.
+fn has_underline(blocks: &[Block]) -> bool {
+    fn in_inlines(inlines: &[Inline]) -> bool {
+        inlines.iter().any(|i| match i {
+            Inline::Underline(_) => true,
+            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strike(c) => in_inlines(c),
+            Inline::Link { content, .. } => in_inlines(content),
+            _ => false,
+        })
+    }
+    blocks.iter().any(|b| match b {
+        Block::Paragraph(c) | Block::Heading { content: c, .. } => in_inlines(c),
+        Block::Quote(b) => has_underline(b),
+        Block::List { items, .. } => items.iter().any(|it| has_underline(it)),
+        _ => false,
+    })
 }
 
 #[test]

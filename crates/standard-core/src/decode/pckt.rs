@@ -1,18 +1,17 @@
-//! Pckt — `blog.pckt.content`: a flat `items` list of `blog.pckt.block.*`.
+//! Pckt — `blog.pckt.content`: a (possibly nested) list of `blog.pckt.block.*`.
 //!
-//! The live record I validated against is trivial (a single unstyled text block), and
-//! the published survey disagrees with it on field names (`text` vs the real `plaintext`)
-//! and on the rich-text model (run-level `marks` vs byte-range `facets`). So the text
-//! path here accepts **either** mechanism: byte-range `facets` (shared shape) if present,
-//! else run-level `marks` applied across the whole run. Confirm against a richly
-//! formatted record when one turns up.
+//! Validated against a formatted live record: rich text uses the **shared byte-range
+//! facets** (`blog.pckt.richtext.facet#bold|italic|strikethrough|underline|link`), *not*
+//! the run-level `marks` the published survey described. Containers (lists, blockquote,
+//! table) nest child blocks under a `content` array, so decoding is recursive; images
+//! nest their blob under `attrs`.
 
 use serde_json::Value;
 
-use super::facets::{Facet, FacetKind, apply_facets, default_facet_kind, parse_facets};
+use super::facets::text_block_inlines;
 use super::image::blob_image;
 use super::{ContentDecoder, DecodeCtx};
-use crate::model::{Block, Inline, RichDoc};
+use crate::model::{Block, RichDoc};
 
 pub struct Pckt;
 
@@ -29,80 +28,87 @@ impl ContentDecoder for Pckt {
         if items.is_empty() {
             return None;
         }
-
-        let mut blocks = Vec::new();
-        for item in items {
-            let Some(ty) = item.get("$type").and_then(Value::as_str) else {
-                continue;
-            };
-            // Match on the suffix after `blog.pckt.block.` so minor naming drift is tolerated.
-            match ty.rsplit('.').next() {
-                Some("text") => blocks.push(Block::Paragraph(text_inlines(item))),
-                Some("heading") => {
-                    let level = item
-                        .get("level")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(1)
-                        .clamp(1, 6) as u8;
-                    blocks.push(Block::Heading {
-                        level,
-                        content: text_inlines(item),
-                    });
-                }
-                Some("blockquote") => {
-                    blocks.push(Block::Quote(vec![Block::Paragraph(text_inlines(item))]))
-                }
-                Some("codeBlock") | Some("code") => {
-                    let text = field_str(item, &["plaintext", "text", "code"]).to_string();
-                    let lang = item
-                        .get("language")
-                        .and_then(Value::as_str)
-                        .map(str::to_string);
-                    blocks.push(Block::Code { lang, text });
-                }
-                Some("image") => {
-                    let blob = item.get("image").or_else(|| item.get("blob"));
-                    if let Some(img) = blob.and_then(|b| blob_image(b, ctx.repo_did, "")) {
-                        blocks.push(Block::Image(img));
-                    }
-                }
-                Some("horizontalRule") | Some("hr") => blocks.push(Block::Rule),
-                // Galleries, tables, task lists, embeds: degrade to nothing for v1.
-                _ => {}
-            }
-        }
-        Some(RichDoc { blocks })
+        Some(RichDoc {
+            blocks: blocks(items, ctx),
+        })
     }
 }
 
-/// A Pckt text block — supports either byte-range `facets` or run-level `marks`.
-fn text_inlines(block: &Value) -> Vec<Inline> {
-    let text = field_str(block, &["plaintext", "text"]);
+fn blocks(items: &[Value], ctx: &DecodeCtx) -> Vec<Block> {
+    items.iter().flat_map(|item| block(item, ctx)).collect()
+}
 
-    if block.get("facets").is_some() {
-        return apply_facets(text, &parse_facets(block, default_facet_kind));
-    }
-    if let Some(marks) = block.get("marks").and_then(Value::as_array) {
-        let kinds: Vec<FacetKind> = marks.iter().filter_map(default_facet_kind).collect();
-        if !kinds.is_empty() {
-            let whole = Facet {
-                start: 0,
-                end: text.len(),
-                kinds,
-            };
-            return apply_facets(text, &[whole]);
+/// Decode one block. Returns 0+ blocks: leaves yield one, degraded containers
+/// (e.g. a table with no neutral equivalent) expand to their flattened text.
+fn block(item: &Value, ctx: &DecodeCtx) -> Vec<Block> {
+    let Some(ty) = item.get("$type").and_then(Value::as_str) else {
+        return Vec::new();
+    };
+    // Match the suffix after `blog.pckt.block.` so minor naming drift is tolerated.
+    match ty.rsplit('.').next().unwrap_or("") {
+        "text" => vec![Block::Paragraph(text_block_inlines(item))],
+        "heading" => {
+            let level = item
+                .get("level")
+                .and_then(Value::as_u64)
+                .unwrap_or(1)
+                .clamp(1, 6) as u8;
+            vec![Block::Heading {
+                level,
+                content: text_block_inlines(item),
+            }]
         }
-    }
-    if text.is_empty() {
-        Vec::new()
-    } else {
-        vec![Inline::Text(text.to_string())]
+        "blockquote" => vec![Block::Quote(child_blocks(item, ctx))],
+        "codeBlock" => {
+            let text = item
+                .get("plaintext")
+                .or_else(|| item.get("text"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let lang = item
+                .get("language")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            vec![Block::Code { lang, text }]
+        }
+        "bulletList" | "taskList" => vec![list(item, ctx, false)],
+        "orderedList" => vec![list(item, ctx, true)],
+        "image" => image(item, ctx).into_iter().collect(),
+        "horizontalRule" => vec![Block::Rule],
+        // `gallery` is a ref to a separate record (needs a fetch); `table` and other
+        // unmodeled containers degrade by flattening their nested `content`.
+        _ => child_blocks(item, ctx),
     }
 }
 
-/// First present, string-valued key among `keys` (tolerates field-name drift).
-fn field_str<'a>(value: &'a Value, keys: &[&str]) -> &'a str {
-    keys.iter()
-        .find_map(|k| value.get(*k).and_then(Value::as_str))
-        .unwrap_or("")
+/// Blocks under a container's `content` array.
+fn child_blocks(item: &Value, ctx: &DecodeCtx) -> Vec<Block> {
+    item.get("content")
+        .and_then(Value::as_array)
+        .map(|items| blocks(items, ctx))
+        .unwrap_or_default()
+}
+
+/// A `{bullet,ordered,task}List` whose `content` is a list of items, each itself a
+/// container of blocks. (Task-item checked state is dropped for v1.)
+fn list(item: &Value, ctx: &DecodeCtx, ordered: bool) -> Block {
+    let items = item
+        .get("content")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|entry| child_blocks(entry, ctx))
+                .collect()
+        })
+        .unwrap_or_default();
+    Block::List { ordered, items }
+}
+
+/// An image block — its blob and alt nest under `attrs`.
+fn image(item: &Value, ctx: &DecodeCtx) -> Option<Block> {
+    let attrs = item.get("attrs")?;
+    let alt = attrs.get("alt").and_then(Value::as_str).unwrap_or("");
+    blob_image(attrs.get("blob")?, ctx.repo_did, alt).map(Block::Image)
 }

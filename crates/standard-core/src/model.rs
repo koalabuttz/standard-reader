@@ -42,6 +42,7 @@ pub enum Inline {
     Strong(Vec<Inline>),
     Emphasis(Vec<Inline>),
     Strike(Vec<Inline>),
+    Underline(Vec<Inline>),
     Code(String),
     Link { href: String, content: Vec<Inline> },
     Image(Image),

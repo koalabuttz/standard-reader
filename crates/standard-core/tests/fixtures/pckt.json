@@ -1,24 +1,413 @@
 {
-    "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.document/3mmrd52hpdakk",
-    "cid": "bafyreihh2hy53mgxxher2rmlh45k2cxsppi5zostw6y2jtnvavstkh4l24",
-    "value": {
-        "path": "/untitled-pqkafky",
-        "site": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnuz5454lm7",
-        "tags": [],
-        "$type": "site.standard.document",
-        "title": "Untitled",
-        "content": {
-            "$type": "blog.pckt.content",
-            "items": [
-                {
-                    "$type": "blog.pckt.block.text",
-                    "plaintext": "test"
-                }
-            ]
+ "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.document/3mmrd52hpdakk",
+ "cid": "bafyreidsp2t7ilpjjwnk7s6bcgl2bgm42av27pkuoklegypz5ic32gxd3m",
+ "value": {
+  "path": "/untitled-pqkafky",
+  "site": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnuz5454lm7",
+  "tags": [],
+  "$type": "site.standard.document",
+  "title": "Untitled",
+  "content": {
+   "$type": "blog.pckt.content",
+   "items": [
+    {
+     "$type": "blog.pckt.block.text",
+     "plaintext": "test"
+    },
+    {
+     "$type": "blog.pckt.block.text",
+     "facets": [
+      {
+       "index": {
+        "byteEnd": 4,
+        "byteStart": 0
+       },
+       "features": [
+        {
+         "$type": "blog.pckt.richtext.facet#bold"
+        }
+       ]
+      }
+     ],
+     "plaintext": "bold"
+    },
+    {
+     "$type": "blog.pckt.block.text",
+     "facets": [
+      {
+       "index": {
+        "byteEnd": 15,
+        "byteStart": 0
+       },
+       "features": [
+        {
+         "$type": "blog.pckt.richtext.facet#bold"
         },
-        "updatedAt": "2026-05-26T15:37:39+00:00",
-        "description": "test",
-        "publishedAt": "2026-05-26T15:37:32+00:00",
-        "textContent": "test"
+        {
+         "$type": "blog.pckt.richtext.facet#italic"
+        }
+       ]
+      }
+     ],
+     "plaintext": "italic and bold"
+    },
+    {
+     "$type": "blog.pckt.block.text",
+     "facets": [
+      {
+       "index": {
+        "byteEnd": 26,
+        "byteStart": 0
+       },
+       "features": [
+        {
+         "$type": "blog.pckt.richtext.facet#bold"
+        },
+        {
+         "$type": "blog.pckt.richtext.facet#italic"
+        },
+        {
+         "$type": "blog.pckt.richtext.facet#underline"
+        }
+       ]
+      }
+     ],
+     "plaintext": "italic bold and underlined"
+    },
+    {
+     "$type": "blog.pckt.block.text",
+     "facets": [
+      {
+       "index": {
+        "byteEnd": 43,
+        "byteStart": 0
+       },
+       "features": [
+        {
+         "$type": "blog.pckt.richtext.facet#bold"
+        },
+        {
+         "$type": "blog.pckt.richtext.facet#italic"
+        },
+        {
+         "$type": "blog.pckt.richtext.facet#strikethrough"
+        },
+        {
+         "$type": "blog.pckt.richtext.facet#underline"
+        }
+       ]
+      }
+     ],
+     "plaintext": "italic, bold, underlined and struck through"
+    },
+    {
+     "$type": "blog.pckt.block.image",
+     "attrs": {
+      "alt": "",
+      "src": "blob:bafkreifwuxl2kzvxg7fjnzvvvo66btr7jpu4mrmnpbwy4mfl34kybbpxpe",
+      "blob": {
+       "ref": {
+        "$link": "bafkreifwuxl2kzvxg7fjnzvvvo66btr7jpu4mrmnpbwy4mfl34kybbpxpe"
+       },
+       "size": 106570,
+       "$type": "blob",
+       "mimeType": "image/png"
+      },
+      "align": "center",
+      "naturalWidth": 1200,
+      "naturalHeight": 630
+     }
+    },
+    {
+     "$type": "blog.pckt.block.heading",
+     "level": 1,
+     "plaintext": "heading one"
+    },
+    {
+     "$type": "blog.pckt.block.heading",
+     "level": 2,
+     "plaintext": "heading two"
+    },
+    {
+     "$type": "blog.pckt.block.heading",
+     "level": 3,
+     "plaintext": "heading three"
+    },
+    {
+     "$type": "blog.pckt.block.bulletList",
+     "content": [
+      {
+       "$type": "blog.pckt.block.listItem",
+       "content": [
+        {
+         "$type": "blog.pckt.block.text",
+         "plaintext": "bulleted list"
+        }
+       ]
+      },
+      {
+       "$type": "blog.pckt.block.listItem",
+       "content": [
+        {
+         "$type": "blog.pckt.block.text",
+         "plaintext": "two"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "$type": "blog.pckt.block.orderedList",
+     "attrs": {
+      "start": 1
+     },
+     "content": [
+      {
+       "$type": "blog.pckt.block.listItem",
+       "content": [
+        {
+         "$type": "blog.pckt.block.text",
+         "plaintext": "ordered"
+        }
+       ]
+      },
+      {
+       "$type": "blog.pckt.block.listItem",
+       "content": [
+        {
+         "$type": "blog.pckt.block.text",
+         "plaintext": "list"
+        },
+        {
+         "$type": "blog.pckt.block.blockquote",
+         "content": [
+          {
+           "$type": "blog.pckt.block.text",
+           "plaintext": "quote!"
+          }
+         ]
+        },
+        {
+         "$type": "blog.pckt.block.codeBlock",
+         "attrs": [],
+         "plaintext": "code block :o"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "$type": "blog.pckt.block.taskList",
+     "content": [
+      {
+       "$type": "blog.pckt.block.taskItem",
+       "checked": false,
+       "content": [
+        {
+         "$type": "blog.pckt.block.text",
+         "plaintext": "task list :)"
+        }
+       ]
+      },
+      {
+       "$type": "blog.pckt.block.taskItem",
+       "checked": false,
+       "content": [
+        {
+         "$type": "blog.pckt.block.text",
+         "plaintext": ":o"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "$type": "blog.pckt.block.text",
+     "plaintext": ""
+    },
+    {
+     "$type": "blog.pckt.block.table",
+     "content": [
+      {
+       "$type": "blog.pckt.block.tableRow",
+       "content": [
+        {
+         "$type": "blog.pckt.block.tableHeader",
+         "attrs": {
+          "colspan": 1,
+          "rowspan": 1
+         },
+         "content": [
+          {
+           "$type": "blog.pckt.block.text",
+           "plaintext": "table!~(row 0/column 0)"
+          }
+         ]
+        },
+        {
+         "$type": "blog.pckt.block.tableHeader",
+         "attrs": {
+          "colspan": 1,
+          "rowspan": 1
+         },
+         "content": [
+          {
+           "$type": "blog.pckt.block.text",
+           "plaintext": "column 1"
+          }
+         ]
+        },
+        {
+         "$type": "blog.pckt.block.tableHeader",
+         "attrs": {
+          "colspan": 1,
+          "rowspan": 1
+         },
+         "content": [
+          {
+           "$type": "blog.pckt.block.text",
+           "plaintext": "column 2"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "$type": "blog.pckt.block.tableRow",
+       "content": [
+        {
+         "$type": "blog.pckt.block.tableCell",
+         "attrs": {
+          "colspan": 1,
+          "rowspan": 1
+         },
+         "content": [
+          {
+           "$type": "blog.pckt.block.text",
+           "plaintext": "row 1"
+          }
+         ]
+        },
+        {
+         "$type": "blog.pckt.block.tableCell",
+         "attrs": {
+          "colspan": 1,
+          "rowspan": 1
+         },
+         "content": [
+          {
+           "$type": "blog.pckt.block.text",
+           "plaintext": "content :)"
+          }
+         ]
+        },
+        {
+         "$type": "blog.pckt.block.tableCell",
+         "attrs": {
+          "colspan": 1,
+          "rowspan": 1
+         },
+         "content": [
+          {
+           "$type": "blog.pckt.block.text",
+           "plaintext": "content :O"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "$type": "blog.pckt.block.tableRow",
+       "content": [
+        {
+         "$type": "blog.pckt.block.tableCell",
+         "attrs": {
+          "colspan": 1,
+          "rowspan": 1
+         },
+         "content": [
+          {
+           "$type": "blog.pckt.block.text",
+           "plaintext": "row 2"
+          }
+         ]
+        },
+        {
+         "$type": "blog.pckt.block.tableCell",
+         "attrs": {
+          "colspan": 1,
+          "rowspan": 1
+         },
+         "content": [
+          {
+           "$type": "blog.pckt.block.text",
+           "plaintext": "content :p"
+          }
+         ]
+        },
+        {
+         "$type": "blog.pckt.block.tableCell",
+         "attrs": {
+          "colspan": 1,
+          "rowspan": 1
+         },
+         "content": [
+          {
+           "$type": "blog.pckt.block.text",
+           "plaintext": "content >:)"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "$type": "blog.pckt.block.text",
+     "facets": [
+      {
+       "index": {
+        "byteEnd": 7,
+        "byteStart": 0
+       },
+       "features": [
+        {
+         "uri": "https://www.davidlewis.xyz/",
+         "$type": "blog.pckt.richtext.facet#link"
+        }
+       ]
+      }
+     ],
+     "plaintext": "website"
+    },
+    {
+     "$type": "blog.pckt.block.horizontalRule"
+    },
+    {
+     "$type": "blog.pckt.block.text",
+     "plaintext": "divided!"
+    },
+    {
+     "ref": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/blog.pckt.gallery/3mmrn4i26e5al",
+     "$type": "blog.pckt.block.gallery"
+    },
+    {
+     "$type": "blog.pckt.block.text",
+     "plaintext": ""
     }
+   ]
+  },
+  "updatedAt": "2026-05-26T18:36:20+00:00",
+  "coverImage": {
+   "ref": {
+    "$link": "bafkreidok34jjbu4dclahuin5jm5ggly664an4aum4edaalbif2qhh6gwe"
+   },
+   "size": 24134,
+   "$type": "blob",
+   "mimeType": "image/png"
+  },
+  "description": "test bold italic and bold",
+  "publishedAt": "2026-05-26T15:37:32+00:00",
+  "textContent": "test\nbold\nitalic and bold\nitalic bold and underlined\nitalic, bold, underlined and struck through\nheading one\nheading two\nheading three\nbulleted list\ntwo\nordered\nlistquote!code block :o\ntask list :)\n:o\ntable!~(row 0/column 0)column 1column 2row 1content :)content :Orow 2content :pcontent >:)\nwebsite\ndivided!"
+ }
 }

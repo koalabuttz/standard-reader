@@ -16,6 +16,7 @@ pub enum FacetKind {
     Strong,
     Emphasis,
     Strike,
+    Underline,
     Code,
     Link(String),
 }
@@ -38,6 +39,7 @@ pub fn default_facet_kind(feature: &Value) -> Option<FacetKind> {
         "bold" => FacetKind::Strong,
         "italic" => FacetKind::Emphasis,
         "strikethrough" | "strike" => FacetKind::Strike,
+        "underline" => FacetKind::Underline,
         "code" => FacetKind::Code,
         "link" => FacetKind::Link(feature.get("uri")?.as_str()?.to_string()),
         _ => return None,
@@ -134,6 +136,7 @@ fn apply_kind(kind: &FacetKind, content: Vec<Inline>) -> Inline {
         FacetKind::Strong => Inline::Strong(content),
         FacetKind::Emphasis => Inline::Emphasis(content),
         FacetKind::Strike => Inline::Strike(content),
+        FacetKind::Underline => Inline::Underline(content),
         FacetKind::Code => Inline::Code(flatten_text(&content)),
         FacetKind::Link(href) => Inline::Link {
             href: href.clone(),
@@ -153,7 +156,9 @@ fn collect_text(inlines: &[Inline], out: &mut String) {
     for i in inlines {
         match i {
             Inline::Text(t) | Inline::Code(t) => out.push_str(t),
-            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strike(c) => collect_text(c, out),
+            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strike(c) | Inline::Underline(c) => {
+                collect_text(c, out)
+            }
             Inline::Link { content, .. } => collect_text(content, out),
             Inline::LineBreak => out.push('\n'),
             Inline::Image(_) => {}

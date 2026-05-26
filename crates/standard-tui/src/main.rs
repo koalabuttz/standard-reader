@@ -86,22 +86,45 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
     let theme = Theme::modern_dark();
     let mut app = App::new(tx, picker);
 
+    // Render only when something changes. Terminal image protocols re-emit on every draw,
+    // so redrawing on a timer would make images flicker constantly; this draws once, then
+    // only after a real input or worker update — and coalesces a burst of (e.g. scroll)
+    // events into a single redraw, minimizing image re-emits while scrolling.
     let outcome = (|| -> Result<(), Box<dyn Error>> {
+        terminal.draw(|f| ui::draw(f, &mut app, &theme))?;
         loop {
-            terminal.draw(|f| ui::draw(f, &mut app, &theme))?;
+            let mut dirty = false;
 
             if event::poll(Duration::from_millis(100))? {
-                match event::read()? {
-                    Event::Key(key) if key.kind == KeyEventKind::Press => app.on_key(key),
-                    Event::Mouse(m) => app.on_mouse(m),
-                    _ => {}
+                loop {
+                    match event::read()? {
+                        Event::Key(key) if key.kind == KeyEventKind::Press => {
+                            app.on_key(key);
+                            dirty = true;
+                        }
+                        Event::Mouse(m) => {
+                            app.on_mouse(m);
+                            dirty = true;
+                        }
+                        Event::Resize(_, _) => dirty = true,
+                        _ => {}
+                    }
+                    if !event::poll(Duration::from_millis(0))? {
+                        break; // drained the burst
+                    }
                 }
             }
+
             while let Ok(evt) = rx.try_recv() {
                 app.apply(evt);
+                dirty = true;
             }
+
             if app.should_quit {
                 break;
+            }
+            if dirty {
+                terminal.draw(|f| ui::draw(f, &mut app, &theme))?;
             }
         }
         Ok(())

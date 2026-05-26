@@ -8,17 +8,18 @@
 //! Each image is sized to fit the available width (capped in height, using the terminal's
 //! real font-cell metrics) and rendered centered, as soon as its top scrolls into view.
 
-use ratatui::layout::{Alignment, Rect};
+use image::DynamicImage;
+use ratatui::layout::{Alignment, Rect, Size};
 use ratatui::style::Style;
 use ratatui::text::{Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
 use ratatui::Frame;
-use ratatui_image::StatefulImage;
+use ratatui_image::sliced::{SignedPosition, SlicedImage, SlicedProtocol};
+
+use standard_core::model::Block as DocBlock;
 
 /// Hard ceiling on image height (rows), so a tall/portrait image never dominates the pane.
 const MAX_IMAGE_ROWS: u16 = 20;
-
-use standard_core::model::Block as DocBlock;
 
 use super::doc;
 use super::theme::Theme;
@@ -76,7 +77,32 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
     let (segments, total) = build(app, theme, inner.width, inner.height);
     app.scroll = app.scroll.min(total.saturating_sub(inner.height));
     let scroll = app.scroll;
+    ensure_slices(app, &segments);
     render(f, app, theme, inner, &segments, scroll);
+}
+
+/// Build (encode) the row-sliced protocol for each image at its current display size, once
+/// per size. Two passes so `&app.picker` and `&mut app.images` never overlap.
+fn ensure_slices(app: &mut App, segments: &[Segment]) {
+    let pending: Vec<(String, DynamicImage, Size)> = segments
+        .iter()
+        .filter_map(|seg| {
+            let Segment::Image { key, width, height, .. } = seg else { return None };
+            let li = app.images.get(key)?;
+            (li.sliced.is_none() || li.sliced_size != (*width, *height))
+                .then(|| (key.clone(), li.image.clone(), Size::new(*width, *height)))
+        })
+        .collect();
+
+    for (key, image, size) in pending {
+        // Encodes once per size; `new` returns owned, releasing the picker borrow before
+        // we take `&mut app.images`.
+        if let Ok(sliced) = SlicedProtocol::new(&app.picker, image, Some(size))
+            && let Some(li) = app.images.get_mut(&key) {
+                li.sliced = Some(sliced);
+                li.sliced_size = (size.width, size.height);
+            }
+    }
 }
 
 /// Build measured, positioned segments for the current document (+ its cover). Borrows
@@ -157,7 +183,7 @@ fn image_display_size(app: &App, key: &str, avail_w: u16, vh: u16) -> (u16, u16)
     (w.round().clamp(1.0, avail_w) as u16, h.round().clamp(1.0, cap_h) as u16)
 }
 
-fn render(f: &mut Frame, app: &mut App, theme: &Theme, inner: Rect, segments: &[Segment], scroll: u16) {
+fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segment], scroll: u16) {
     for seg in segments {
         let (top, height) = (seg.top(), seg.height());
         let vis_top = top.max(scroll);
@@ -180,17 +206,16 @@ fn render(f: &mut Frame, app: &mut App, theme: &Theme, inner: Rect, segments: &[
                     .style(theme.body());
                 f.render_widget(para, rect);
             }
-            Segment::Image { key, alt, width: seg_w, .. } => {
-                // Render once the image's top is on screen, centered to its display width;
-                // the bottom clips to the viewport (the protocol re-fits only while clipped).
-                if top >= scroll
-                    && let Some(loaded) = app.images.get_mut(key) {
-                        let w = (*seg_w).min(inner.width);
-                        let x = inner.x + (inner.width - w) / 2;
-                        let img_rect = Rect { x, y: rect.y, width: w, height: rect.height };
-                        f.render_stateful_widget(StatefulImage::default(), img_rect, &mut loaded.protocol);
-                        continue;
-                    }
+            Segment::Image { key, alt, width: cols, .. } => {
+                // Pre-encoded slices: render the rows that fall within the reader, at a
+                // signed vertical offset, so scrolling never re-encodes (no lag, no resize)
+                // and a partly-visible image shows correctly whether its top or bottom is cut.
+                if let Some(sliced) = app.images.get(key).and_then(|li| li.sliced.as_ref()) {
+                    let x = (inner.width.saturating_sub(*cols) / 2) as i16;
+                    let y = (top as i32 - scroll as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                    f.render_widget(SlicedImage::new(sliced, SignedPosition::from((x, y))), inner);
+                    continue;
+                }
                 let label = if app.images.contains_key(key) {
                     format!("🖼 {alt}")
                 } else {
@@ -254,10 +279,11 @@ mod tests {
         let mut app = App::new(tx, Picker::halfblocks());
         let source = ImageSource::Url("https://i.test/a.png".into());
         let key = image_key(&source);
-        let protocol = app.picker.new_resize_protocol(image::DynamicImage::ImageRgba8(
-            image::RgbaImage::new(4, 4),
-        ));
-        app.images.insert(key, LoadedImage { protocol, width: 4, height: 4 });
+        let image = image::DynamicImage::ImageRgba8(image::RgbaImage::new(4, 4));
+        app.images.insert(
+            key,
+            LoadedImage { image, width: 4, height: 4, sliced: None, sliced_size: (0, 0) },
+        );
         app.reading = Some(RichDoc {
             blocks: vec![
                 DocBlock::Paragraph(vec![Inline::Text("before".into())]),

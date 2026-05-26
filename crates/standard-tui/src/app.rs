@@ -7,9 +7,9 @@ use std::sync::mpsc::Sender;
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
-use image::GenericImageView;
+use image::{DynamicImage, GenericImageView};
 use ratatui_image::picker::Picker;
-use ratatui_image::protocol::StatefulProtocol;
+use ratatui_image::sliced::SlicedProtocol;
 
 use standard_core::model::{Block, Document, ImageSource, Publication, RichDoc};
 
@@ -23,12 +23,15 @@ pub fn image_key(source: &ImageSource) -> String {
     }
 }
 
-/// A decoded, terminal-encodable image plus its source pixel dimensions (for sizing the
-/// reader slot).
+/// A decoded image plus its pixel dimensions and a lazily-built, row-sliced protocol
+/// (encoded once per display size; the reader scrolls it without re-encoding).
 pub struct LoadedImage {
-    pub protocol: StatefulProtocol,
+    pub image: DynamicImage,
     pub width: u32,
     pub height: u32,
+    pub sliced: Option<SlicedProtocol>,
+    /// The (cols, rows) the slices were built for; rebuilt only when this changes.
+    pub sliced_size: (u16, u16),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -178,8 +181,11 @@ impl App {
             }
             FromWorker::Image { key, image } => {
                 let (width, height) = image.dimensions();
-                let protocol = self.picker.new_resize_protocol(image);
-                self.images.insert(key, LoadedImage { protocol, width, height });
+                // Slicing is built lazily in the reader, once the display size is known.
+                self.images.insert(
+                    key,
+                    LoadedImage { image, width, height, sliced: None, sliced_size: (0, 0) },
+                );
             }
             FromWorker::Results(results) => {
                 self.docs = results;

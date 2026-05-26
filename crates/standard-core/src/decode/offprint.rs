@@ -21,11 +21,25 @@ impl ContentDecoder for Offprint {
         let items = content.get("items")?.as_array()?;
         let mut blocks = Vec::new();
         for item in items {
-            match item.get("$type").and_then(Value::as_str) {
-                Some("app.offprint.block.text") => {
-                    blocks.push(Block::Paragraph(text_block_inlines(item)));
+            // Match on the suffix after `app.offprint.block.`.
+            match item
+                .get("$type")
+                .and_then(Value::as_str)
+                .and_then(|t| t.rsplit('.').next())
+            {
+                Some("text") => blocks.push(Block::Paragraph(text_block_inlines(item))),
+                Some("heading") => {
+                    let level = item
+                        .get("level")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(2)
+                        .clamp(1, 6) as u8;
+                    blocks.push(Block::Heading {
+                        level,
+                        content: text_block_inlines(item),
+                    });
                 }
-                Some("app.offprint.block.image") => {
+                Some("image") => {
                     if let Some(img) = item
                         .get("image")
                         .and_then(|b| blob_image(b, ctx.repo_did, ""))
@@ -33,10 +47,20 @@ impl ContentDecoder for Offprint {
                         blocks.push(Block::Image(img));
                     }
                 }
-                Some("app.offprint.block.bulletList") => blocks.push(bullet_list(item)),
-                Some("app.offprint.block.callout") => blocks.push(callout(item)),
-                // Unknown block: skip it; the rest of the document still renders.
-                _ => {}
+                Some("imageGrid") => blocks.extend(image_grid(item, ctx)),
+                Some("bulletList") => blocks.push(bullet_list(item)),
+                Some("callout") => blocks.push(callout(item)),
+                Some("horizontalRule") => blocks.push(Block::Rule),
+                // Unknown block: degrade to its text if it has any, rather than dropping it.
+                _ => {
+                    if item
+                        .get("plaintext")
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| !s.is_empty())
+                    {
+                        blocks.push(Block::Paragraph(text_block_inlines(item)));
+                    }
+                }
             }
         }
         Some(RichDoc { blocks })
@@ -60,6 +84,26 @@ fn bullet_list(block: &Value) -> Block {
         ordered: false,
         items,
     }
+}
+
+/// `{ images: [{ image: <blob>, aspectRatio }] }` → one [`Block::Image`] per grid image
+/// (the reader stacks them vertically).
+fn image_grid(block: &Value, ctx: &DecodeCtx) -> Vec<Block> {
+    block
+        .get("images")
+        .and_then(Value::as_array)
+        .map(|images| {
+            images
+                .iter()
+                .filter_map(|entry| {
+                    entry
+                        .get("image")
+                        .and_then(|b| blob_image(b, ctx.repo_did, ""))
+                        .map(Block::Image)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// `{ color, emoji, plaintext(+facets) }` → a [`Block::Callout`], preserving the emoji

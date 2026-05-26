@@ -150,6 +150,33 @@ fn offprint_real_record() {
 }
 
 #[test]
+fn offprint_heading_imagegrid_and_rule_are_not_dropped() {
+    // The "Galaxy Buds" review uses heading / imageGrid / horizontalRule blocks that the
+    // decoder previously dropped (the "I absolutely love the new design." line vanished).
+    let doc = decode_fixture("offprint_galaxybuds.json");
+
+    assert!(
+        doc.blocks.iter().any(|b| matches!(
+            b,
+            Block::Heading { level: 3, content }
+                if content.iter().any(|i| matches!(i, Inline::Text(t) if t.contains("absolutely love the new design")))
+        )),
+        "offprint heading should render (not be dropped)"
+    );
+    // imageGrid expands to multiple blob images; horizontalRule → a Rule.
+    let images = doc
+        .blocks
+        .iter()
+        .filter(|b| matches!(b, Block::Image(_)))
+        .count();
+    assert!(
+        images >= 2,
+        "imageGrid should yield several images, got {images}"
+    );
+    assert!(doc.blocks.iter().any(|b| matches!(b, Block::Rule)));
+}
+
+#[test]
 fn greengale_two_phase_contentref_then_markdown() {
     // Phase 1: site.standard.document.content is a reference, not inline content.
     let raw = std::fs::read_to_string(format!(

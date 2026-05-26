@@ -1,0 +1,215 @@
+{
+    "uri": "at://did:plc:gj55urnejshc53jzje5afyk2/site.standard.document/3mi5ylebku523",
+    "cid": "bafyreigs2bchnbxj4ay4fpy3h6zxkl7q3ljdsas7wzxug64y3lbmz4jd3a",
+    "value": {
+        "path": "/a/3mi5ylebku523-galaxy-buds4-pro-a-very-quick-review",
+        "site": "at://did:plc:gj55urnejshc53jzje5afyk2/site.standard.publication/3mi34yhhqra2n",
+        "$type": "site.standard.document",
+        "title": "Galaxy Buds4 Pro: A very quick review!",
+        "content": {
+            "$type": "app.offprint.content",
+            "items": [
+                {
+                    "$type": "app.offprint.block.text",
+                    "facets": [
+                        {
+                            "index": {
+                                "byteEnd": 58,
+                                "byteStart": 0
+                            },
+                            "features": [
+                                {
+                                    "$type": "app.offprint.richtext.facet#bold"
+                                }
+                            ]
+                        },
+                        {
+                            "index": {
+                                "byteEnd": 63,
+                                "byteStart": 58
+                            },
+                            "features": [
+                                {
+                                    "$type": "app.offprint.richtext.facet#bold"
+                                },
+                                {
+                                    "$type": "app.offprint.richtext.facet#italic"
+                                }
+                            ]
+                        }
+                    ],
+                    "plaintext": "I try not to upgrade gadgets annually, but man, these are good!"
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "I was perfectly happy with my Buds3 Pro, as they're already some of the best buds around, but these are unreal. Great sound, really good ANC, a really nice fit, and the new look is \ud83d\udc4c"
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "So far I'd say the only 'downside' is that it seems a little trickier to get my fingers in the right position for the 'squeeze' click, but I'm already starting to get used to that and I hardly ever get it wrong now. "
+                },
+                {
+                    "$type": "app.offprint.block.heading",
+                    "level": 3,
+                    "plaintext": "I absolutely love the new design. "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "As much as I was happy with the look of the Buds3 Pro (even the glowing 'blade' light), these have a much more mature and classy style. "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "As for the case, I think I prefer the vertical orientation of the Buds3 Pro, but I had a hard time keeping the charging pins clean \u2013\u00a0and an even harder time cleaning them, down deep in their silos \u2013\u00a0so at least I know the pins will be much easier to access on the lay-flat design of the Buds4 Pro case."
+                },
+                {
+                    "$type": "app.offprint.block.imageGrid",
+                    "images": [
+                        {
+                            "image": {
+                                "ref": {
+                                    "$link": "bafkreib2zxresnhzwfen2r5dzzfwshrd3cxdba4bowjsfciraastruprry"
+                                },
+                                "size": 1861705,
+                                "$type": "blob",
+                                "mimeType": "image/jpeg"
+                            },
+                            "aspectRatio": {
+                                "width": 3000,
+                                "height": 3750
+                            }
+                        },
+                        {
+                            "image": {
+                                "ref": {
+                                    "$link": "bafkreicwy4kts5zhgipflyjvyz32xs4gtqvdn2xboyqz3yw6g2fdl4tiqi"
+                                },
+                                "size": 2077080,
+                                "$type": "blob",
+                                "mimeType": "image/jpeg"
+                            },
+                            "aspectRatio": {
+                                "width": 3000,
+                                "height": 3750
+                            }
+                        },
+                        {
+                            "image": {
+                                "ref": {
+                                    "$link": "bafkreicuh7hpecpbzmt2r32ecmj6mqw2k425b5drpaqosyobahexsqvmky"
+                                },
+                                "size": 1515008,
+                                "$type": "blob",
+                                "mimeType": "image/jpeg"
+                            },
+                            "aspectRatio": {
+                                "width": 3000,
+                                "height": 3750
+                            }
+                        },
+                        {
+                            "image": {
+                                "ref": {
+                                    "$link": "bafkreicb2ew7bdqvnin5nitqu2xpugqbocicd5wil4cqjigma4ibxtteje"
+                                },
+                                "size": 1417038,
+                                "$type": "blob",
+                                "mimeType": "image/jpeg"
+                            },
+                            "aspectRatio": {
+                                "width": 3000,
+                                "height": 3750
+                            }
+                        }
+                    ],
+                    "gridRows": 2,
+                    "aspectRatio": "landscape"
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "If I were choosing on looks alone, I'd take these over the AirPods Pro every day of the week. (I have some AirPods Pro 2 from my iPhone days, but now I only use them with my MacBook.)"
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "In fact, if I were choosing on sound alone, that would still apply. The sound quality and range on these is very satisfying. "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "I can't speak for the quality of the mics yet, but reviews elsewhere suggest they're fine if not excellent."
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "I still wish Samsung would give us a version with winglets, for a more secure fit, but eh \u2013\u00a0I've got my Buds Fit Pro for the occasions when I need to be sure my buds won't be falling out. "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "So, it's a big thumbs-up from me. Definitely worth picking up! "
+                },
+                {
+                    "$type": "app.offprint.block.horizontalRule"
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "Photos: Ricoh GRIIIx + Lightroom. "
+                },
+                {
+                    "$type": "app.offprint.block.callout",
+                    "color": "rgb(168 85 247 / 0.2)",
+                    "emoji": "\ud83d\udc4b",
+                    "facets": [
+                        {
+                            "index": {
+                                "byteEnd": 11,
+                                "byteStart": 0
+                            },
+                            "features": [
+                                {
+                                    "$type": "app.offprint.richtext.facet#bold"
+                                }
+                            ]
+                        },
+                        {
+                            "index": {
+                                "byteEnd": 53,
+                                "byteStart": 38
+                            },
+                            "features": [
+                                {
+                                    "uri": "https://bsky.app/profile/mikestevens.link/post/3mi622a7jgs2d",
+                                    "$type": "app.offprint.richtext.facet#link"
+                                }
+                            ]
+                        },
+                        {
+                            "index": {
+                                "byteEnd": 73,
+                                "byteStart": 58
+                            },
+                            "features": [
+                                {
+                                    "uri": "https://www.threads.com/@gomikestevens/post/DWc1yxTmgaR",
+                                    "$type": "app.offprint.richtext.facet#link"
+                                }
+                            ]
+                        }
+                    ],
+                    "plaintext": "Wanna chat? I posted about these buds on Bluesky here and on Threads here."
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": ""
+                }
+            ]
+        },
+        "coverImage": {
+            "ref": {
+                "$link": "bafkreia3gnjwypxmdayvp6hjwbqaei4j47qkhok6hisw3xnm774r6pdoea"
+            },
+            "size": 677483,
+            "$type": "blob",
+            "mimeType": "image/jpeg"
+        },
+        "description": "So, in a moment of zero restraint, I picked up a pair of new Galaxy Buds4 Pro, revealed back in February 2026.",
+        "publishedAt": "2026-03-29T01:51:33+00:00",
+        "textContent": "I try not to upgrade gadgets annually, but man, these are good!\nI was perfectly happy with my Buds3 Pro, as they're already some of the best buds around, but these are unreal. Great sound, really good ANC, a really nice fit, and the new look is \ud83d\udc4c\nSo far I'd say the only 'downside' is that it seems a little trickier to get my fingers in the right position for the 'squeeze' click, but I'm already starting to get used to that and I hardly ever get it wrong now. \nI absolutely love the new design. \nAs much as I was happy with the look of the Buds3 Pro (even the glowing 'blade' light), these have a much more mature and classy style. \nAs for the case, I think I prefer the vertical orientation of the Buds3 Pro, but I had a hard time keeping the charging pins clean \u2013\u00a0and an even harder time cleaning them, down deep in their silos \u2013\u00a0so at least I know the pins will be much easier to access on the lay-flat design of the Buds4 Pro case.\nIf I were choosing on looks alone, I'd take these over the AirPods Pro every day of the week. (I have some AirPods Pro 2 from my iPhone days, but now I only use them with my MacBook.)\nIn fact, if I were choosing on sound alone, that would still apply. The sound quality and range on these is very satisfying. \nI can't speak for the quality of the mics yet, but reviews elsewhere suggest they're fine if not excellent.\nI still wish Samsung would give us a version with winglets, for a more secure fit, but eh \u2013\u00a0I've got my Buds Fit Pro for the occasions when I need to be sure my buds won't be falling out. \nSo, it's a big thumbs-up from me. Definitely worth picking up! \n\n---\nPhotos: Ricoh GRIIIx + Lightroom. \n\ud83d\udc4b Wanna chat? I posted about these buds on Bluesky here and on Threads here."
+    }
+}

@@ -19,5 +19,6 @@ redb = "4"
 # (De)serialize the model types (which derive serde) into cache values.
 serde = "1"
 serde_json = "1"
-# Remaining frontend deps (ratatui, crossterm, ratatui-image, atrium-oauth)
-# land as the TUI is built up.
+# The terminal UI (re-exports crossterm for events/backend).
+ratatui = "0.30"
+# Remaining frontend deps (ratatui-image, atrium-oauth) land as the TUI grows.

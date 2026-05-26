@@ -28,6 +28,8 @@ const DOCS_BY_PUB: MultimapTableDefinition<&str, &str> =
     MultimapTableDefinition::new("docs_by_pub");
 // search term → doc uri  (persisted inverted index over textContent)
 const INDEX: MultimapTableDefinition<&str, &str> = MultimapTableDefinition::new("index");
+// publication uri → ()  (the local follow-list; the app's own subscriptions, no auth)
+const FOLLOWS: TableDefinition<&str, ()> = TableDefinition::new("follows");
 
 /// Errors from the cache: a redb failure or a (de)serialization failure.
 #[derive(Debug)]
@@ -117,9 +119,50 @@ impl RedbStore {
             w.open_table(CURSORS)?;
             w.open_multimap_table(DOCS_BY_PUB)?;
             w.open_multimap_table(INDEX)?;
+            w.open_table(FOLLOWS)?;
         }
         w.commit()?;
         Ok(())
+    }
+
+    /// The local follow-list — publication URIs the user follows (the app's own
+    /// subscriptions, persisted without atproto auth). OAuth later mirrors this to
+    /// `site.standard.graph.subscription`.
+    pub fn follow(&mut self, publication_uri: &str) -> Result<()> {
+        let w = self.db.begin_write()?;
+        {
+            let mut table = w.open_table(FOLLOWS)?;
+            table.insert(publication_uri, ())?;
+        }
+        w.commit()?;
+        Ok(())
+    }
+
+    pub fn unfollow(&mut self, publication_uri: &str) -> Result<()> {
+        let w = self.db.begin_write()?;
+        {
+            let mut table = w.open_table(FOLLOWS)?;
+            table.remove(publication_uri)?;
+        }
+        w.commit()?;
+        Ok(())
+    }
+
+    pub fn is_followed(&self, publication_uri: &str) -> Result<bool> {
+        let r = self.db.begin_read()?;
+        let table = r.open_table(FOLLOWS)?;
+        Ok(table.get(publication_uri)?.is_some())
+    }
+
+    /// Followed publication URIs.
+    pub fn follows(&self) -> Result<Vec<String>> {
+        let r = self.db.begin_read()?;
+        let table = r.open_table(FOLLOWS)?;
+        let mut out = Vec::new();
+        for entry in table.iter()? {
+            out.push(entry?.0.value().to_string());
+        }
+        Ok(out)
     }
 
     /// Every cached publication. Not part of the `Store` trait (which is keyed lookup);
@@ -392,6 +435,22 @@ mod tests {
             s.sync_cursor("at://d/p/1").unwrap().as_deref(),
             Some("cursor123")
         );
+    }
+
+    #[test]
+    fn follow_list_round_trips() {
+        let mut s = RedbStore::in_memory().unwrap();
+        assert!(s.follows().unwrap().is_empty());
+        assert!(!s.is_followed("at://d/p/1").unwrap());
+
+        s.follow("at://d/p/1").unwrap();
+        s.follow("at://d/p/2").unwrap();
+        assert!(s.is_followed("at://d/p/1").unwrap());
+        assert_eq!(s.follows().unwrap().len(), 2);
+
+        s.unfollow("at://d/p/1").unwrap();
+        assert!(!s.is_followed("at://d/p/1").unwrap());
+        assert_eq!(s.follows().unwrap(), ["at://d/p/2"]);
     }
 
     #[test]

@@ -1,0 +1,28 @@
+{
+    "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/app.greengale.document/3mmozgypkle2s",
+    "cid": "bafyreiduw4bxo2qvyac2k3lpng6oeqgurubgsapplcf2pfoyh4ietg6wiy",
+    "value": {
+        "url": "https://greengale.app/david.yapfest.club",
+        "path": "/3mmozgypkle2s",
+        "$type": "app.greengale.document",
+        "blobs": [
+            {
+                "alt": "screenshot of my website",
+                "name": "og.png",
+                "blobref": {
+                    "ref": {
+                        "$link": "bafkreiauqoon5n75q3bjpyhe6blq2swet4zdek6ibpkyy4qc3no7slx5da"
+                    },
+                    "size": 34995,
+                    "$type": "blob",
+                    "mimeType": "image/avif"
+                }
+            }
+        ],
+        "title": "Test",
+        "content": "Blah blah blah\n# BLAH BLAH\n## Heading 2\n### Heading 3\n\n**Bold**\n\n~~strikethrough~~\n\n_italic_\n\n\n- list\n1. List item\n> Quote\n![screenshot of my website](https://yapfest.club/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Axn3l7ogsxym5ixxugidum5dw&cid=bafkreiauqoon5n75q3bjpyhe6blq2swet4zdek6ibpkyy4qc3no7slx5da)\n---\ntest\n\n`inline code`\n\n```\ncode block\n```\n\n\n\n[link text](http://davidlewis.xyz)",
+        "subtitle": "Test subtitle",
+        "visibility": "public",
+        "publishedAt": "2026-05-25T17:38:48.123Z"
+    }
+}

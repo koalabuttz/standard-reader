@@ -1,0 +1,18 @@
+{
+    "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.document/3mmozgypkle2s",
+    "cid": "bafyreihb6irlmiqyvbekoapyogkl33o6lx4eyebuwj45c7xoob4jnmjjdm",
+    "value": {
+        "path": "/3mmozgypkle2s",
+        "site": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnxeau5qspt",
+        "$type": "site.standard.document",
+        "title": "Test",
+        "content": {
+            "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/app.greengale.document/3mmozgypkle2s",
+            "$type": "app.greengale.document#contentRef"
+        },
+        "updatedAt": "2026-05-25T23:49:55.329Z",
+        "description": "Test subtitle",
+        "publishedAt": "2026-05-25T17:38:48.123Z",
+        "textContent": "Blah blah blah BLAH BLAH Heading 2 Heading 3 Bold strikethrough italic - list 1. List item > Quote --- test link text"
+    }
+}

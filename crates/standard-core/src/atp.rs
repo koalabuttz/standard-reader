@@ -65,7 +65,13 @@ pub mod xrpc {
     }
 
     /// `com.atproto.repo.listRecords`.
-    pub fn list_records(pds: &str, repo: &str, collection: &str, limit: u32, cursor: Option<&str>) -> String {
+    pub fn list_records(
+        pds: &str,
+        repo: &str,
+        collection: &str,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> String {
         let mut url = format!(
             "{pds}/xrpc/com.atproto.repo.listRecords?repo={repo}&collection={collection}&limit={limit}"
         );
@@ -78,7 +84,9 @@ pub mod xrpc {
 
     /// `com.atproto.repo.getRecord`.
     pub fn get_record(pds: &str, repo: &str, collection: &str, rkey: &str) -> String {
-        format!("{pds}/xrpc/com.atproto.repo.getRecord?repo={repo}&collection={collection}&rkey={rkey}")
+        format!(
+            "{pds}/xrpc/com.atproto.repo.getRecord?repo={repo}&collection={collection}&rkey={rkey}"
+        )
     }
 
     /// `com.atproto.sync.getBlob` — fetch an image/asset blob by CID.
@@ -93,10 +101,16 @@ mod tests {
 
     #[test]
     fn parses_record_uri() {
-        let u = AtUri::parse("at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnuz5454lm7").unwrap();
+        let u = AtUri::parse(
+            "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnuz5454lm7",
+        )
+        .unwrap();
         assert_eq!(u.collection, "site.standard.publication");
         assert_eq!(u.rkey, "3mmnuz5454lm7");
-        assert_eq!(u.to_string(), "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnuz5454lm7");
+        assert_eq!(
+            u.to_string(),
+            "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnuz5454lm7"
+        );
     }
 
     #[test]
@@ -108,6 +122,9 @@ mod tests {
     #[test]
     fn builds_blob_url() {
         let url = xrpc::get_blob("https://yapfest.club", "did:plc:abc", "bafkreixyz");
-        assert_eq!(url, "https://yapfest.club/xrpc/com.atproto.sync.getBlob?did=did:plc:abc&cid=bafkreixyz");
+        assert_eq!(
+            url,
+            "https://yapfest.club/xrpc/com.atproto.sync.getBlob?did=did:plc:abc&cid=bafkreixyz"
+        );
     }
 }

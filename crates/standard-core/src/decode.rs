@@ -1,31 +1,62 @@
 //! Content decoding: every publisher's `content` representation → one [`RichDoc`].
 //!
-//! `site.standard.document.content` is an **open union** — each platform embeds its
-//! own lexicon (confirmed from real records):
+//! `site.standard.document.content` is an **open union** — each platform embeds its own
+//! lexicon. Shapes below were validated against live records (the published survey had
+//! several wrong field names):
 //!
-//! | `content.$type`        | shape                                  | decoder      |
-//! |------------------------|----------------------------------------|--------------|
-//! | *(bare string)*        | Markdown (GreenGale, Sequoia, markpub) | [`Markdown`] |
-//! | `pub.leaflet.*`        | blocks + facets                        | [`Leaflet`]  |
-//! | `blog.pckt.content`    | `items: [blog.pckt.block.*]`           | [`Pckt`]     |
-//! | *(unknown / absent)*   | fall back to `textContent`             | [`Plaintext`]|
+//! | `content.$type`                    | shape                                   | decoder       |
+//! |------------------------------------|-----------------------------------------|---------------|
+//! | *(bare string)* / `at.markpub.markdown` | Markdown (GreenGale body, Sequoia, markpub) | [`Markdown`]  |
+//! | `pub.leaflet.content`              | `pages[].blocks[].block` + facets       | [`Leaflet`]   |
+//! | `blog.pckt.content`                | `items: [blog.pckt.block.*]`            | [`Pckt`]      |
+//! | `app.offprint.content`             | `items: [app.offprint.block.*]` + facets | [`Offprint`] |
+//! | `org.wordpress.html`               | `{ html }` (rendered HTML)              | [`Wordpress`] |
+//! | `*#contentRef`                     | reference to another record (GreenGale) | [`content_ref`] (two-phase) |
+//! | *(unknown / absent)*               | fall back to `textContent`              | [`Plaintext`] |
 //!
-//! Adding a platform = one new [`ContentDecoder`]; nothing else changes.
+//! Adding a platform = one new [`ContentDecoder`] in its own `decode/<name>.rs` plus one
+//! line in [`Registry::with_defaults`]; the three block formats share [`facets`].
 
 use serde_json::Value;
 
+use crate::atp::AtUri;
 use crate::model::{Block, Inline, RichDoc};
+
+pub mod facets;
+pub mod image;
+
+mod html;
+mod leaflet;
+mod markdown;
+mod offprint;
+mod pckt;
+
+pub use html::Wordpress;
+pub use leaflet::Leaflet;
+pub use markdown::Markdown;
+pub use offprint::Offprint;
+pub use pckt::Pckt;
+
+/// Context a decoder needs beyond the `content` value itself.
+pub struct DecodeCtx<'a> {
+    /// DID of the repo that owns the record. Needed to build [`ImageSource::Blob`] refs,
+    /// since block lexicons embed only the blob CID, not the owning DID.
+    ///
+    /// [`ImageSource::Blob`]: crate::model::ImageSource::Blob
+    pub repo_did: &'a str,
+}
 
 /// Decodes one publisher's `content` value into the neutral [`RichDoc`].
 ///
-/// Implementations are **pure**: no I/O, no platform assumptions.
+/// Implementations are **pure**: no I/O, no platform assumptions. Decode returns `None`
+/// to defer (to the next decoder, then the `textContent` fallback) and must never panic
+/// on partial or unexpected input.
 pub trait ContentDecoder {
-    /// The `content.$type` NSID this decoder claims (e.g. `"blog.pckt.content"`),
-    /// or `None` if it handles bare-string (Markdown) content.
-    fn handles(&self) -> Option<&'static str>;
+    /// Whether this decoder claims `content` (typically a `$type` check).
+    fn handles(&self, content: &Value) -> bool;
 
-    /// Decode, or return `None` to defer to the next decoder / the fallback.
-    fn decode(&self, content: &Value) -> Option<RichDoc>;
+    /// Decode, or return `None` to defer.
+    fn decode(&self, content: &Value, ctx: &DecodeCtx) -> Option<RichDoc>;
 }
 
 /// Ordered set of decoders plus the always-on `textContent` fallback.
@@ -34,34 +65,51 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// The default decoder set. (Markdown/Leaflet/Pckt are stubs for now and fall
-    /// through to the plaintext fallback until implemented.)
+    /// The default decoder set, in dispatch order.
     pub fn with_defaults() -> Self {
         Self {
-            decoders: vec![Box::new(Markdown), Box::new(Leaflet), Box::new(Pckt)],
+            decoders: vec![
+                Box::new(Markdown),
+                Box::new(Leaflet),
+                Box::new(Pckt),
+                Box::new(Offprint),
+                Box::new(Wordpress),
+            ],
         }
     }
 
-    /// Decode `content` (the union value, if present) into a [`RichDoc`], falling
-    /// back to a typeset rendering of `text_content` when no decoder applies.
-    pub fn decode(&self, content: Option<&Value>, text_content: Option<&str>) -> RichDoc {
+    /// Decode `content` into a [`RichDoc`], falling back to a typeset rendering of
+    /// `text_content` when no decoder applies.
+    pub fn decode(
+        &self,
+        content: Option<&Value>,
+        text_content: Option<&str>,
+        ctx: &DecodeCtx,
+    ) -> RichDoc {
         if let Some(value) = content {
-            let ty = value.get("$type").and_then(Value::as_str);
-            for d in &self.decoders {
-                let matches = match (d.handles(), ty) {
-                    (Some(h), Some(t)) => h == t,
-                    (None, None) => value.is_string(), // bare-string Markdown
-                    _ => false,
-                };
-                if matches {
-                    if let Some(doc) = d.decode(value) {
-                        return doc;
-                    }
+            for decoder in &self.decoders {
+                if decoder.handles(value)
+                    && let Some(doc) = decoder.decode(value, ctx)
+                {
+                    return doc;
                 }
             }
         }
         Plaintext.from_text(text_content.unwrap_or_default())
     }
+}
+
+/// If `content` is a *reference* to another record rather than inline content (e.g.
+/// GreenGale's `app.greengale.document#contentRef`), return the AT-URI to fetch. The
+/// frontend resolves it via its `Transport`, then calls [`Registry::decode`] on the
+/// fetched record's own `content`. The core decides *what* to fetch; the frontend does
+/// the I/O — the same split as the rest of the engine.
+pub fn content_ref(content: &Value) -> Option<AtUri> {
+    let ty = content.get("$type")?.as_str()?;
+    if !ty.ends_with("#contentRef") {
+        return None;
+    }
+    AtUri::parse(content.get("uri")?.as_str()?)
 }
 
 /// Fallback: split flat `textContent` into paragraphs on blank lines. Always works.
@@ -79,58 +127,58 @@ impl Plaintext {
     }
 }
 
-// --- Stubs: implemented next, fall through to the fallback until then. ---
-
-/// Markdown string content (GreenGale, Sequoia static blogs, markpub.at).
-pub struct Markdown;
-impl ContentDecoder for Markdown {
-    fn handles(&self) -> Option<&'static str> {
-        None
-    }
-    fn decode(&self, _content: &Value) -> Option<RichDoc> {
-        None // TODO: pulldown-cmark → RichDoc
-    }
-}
-
-/// Leaflet's `pub.leaflet.*` blocks + facets.
-pub struct Leaflet;
-impl ContentDecoder for Leaflet {
-    fn handles(&self) -> Option<&'static str> {
-        Some("pub.leaflet.pages.linearDocument")
-    }
-    fn decode(&self, _content: &Value) -> Option<RichDoc> {
-        None // TODO: blocks + byte-range facets → RichDoc
-    }
-}
-
-/// Pckt's `blog.pckt.content` → `items: [blog.pckt.block.*]`.
-pub struct Pckt;
-impl ContentDecoder for Pckt {
-    fn handles(&self) -> Option<&'static str> {
-        Some("blog.pckt.content")
-    }
-    fn decode(&self, _content: &Value) -> Option<RichDoc> {
-        None // TODO: block items → RichDoc
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const CTX: DecodeCtx = DecodeCtx {
+        repo_did: "did:plc:test",
+    };
+
     #[test]
     fn plaintext_fallback_splits_paragraphs() {
-        let doc = Registry::with_defaults().decode(None, Some("hello world\n\nsecond para"));
+        let doc = Registry::with_defaults().decode(None, Some("hello world\n\nsecond para"), &CTX);
         assert_eq!(doc.blocks.len(), 2);
     }
 
     #[test]
-    fn pckt_content_falls_back_to_text_until_decoder_lands() {
+    fn pckt_content_decodes_to_paragraphs() {
         let content = serde_json::json!({
             "$type": "blog.pckt.content",
             "items": [{ "$type": "blog.pckt.block.text", "plaintext": "test" }]
         });
-        let doc = Registry::with_defaults().decode(Some(&content), Some("test"));
-        assert_eq!(doc.blocks, vec![Block::Paragraph(vec![Inline::Text("test".into())])]);
+        let doc = Registry::with_defaults().decode(Some(&content), Some("test"), &CTX);
+        assert_eq!(
+            doc.blocks,
+            vec![Block::Paragraph(vec![Inline::Text("test".into())])]
+        );
+    }
+
+    #[test]
+    fn greengale_contentref_is_recognized_then_body_decodes() {
+        // Phase 1: site.standard.document.content is a reference.
+        let content = serde_json::json!({
+            "$type": "app.greengale.document#contentRef",
+            "uri": "at://did:plc:abc/app.greengale.document/3xyz"
+        });
+        let uri = content_ref(&content).expect("should detect contentRef");
+        assert_eq!(uri.collection, "app.greengale.document");
+
+        // Phase 2: the frontend fetched that record; its `content` is bare markdown.
+        let body = Value::String("# Heading\n\nbody".into());
+        let doc = Registry::with_defaults().decode(Some(&body), None, &CTX);
+        assert_eq!(
+            doc.blocks[0],
+            Block::Heading {
+                level: 1,
+                content: vec![Inline::Text("Heading".into())]
+            }
+        );
+    }
+
+    #[test]
+    fn non_ref_content_has_no_content_ref() {
+        let content = serde_json::json!({ "$type": "app.offprint.content", "items": [] });
+        assert!(content_ref(&content).is_none());
     }
 }

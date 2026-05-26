@@ -23,7 +23,11 @@ pub trait Store {
     fn upsert_publication(&mut self, publication: &Publication) -> Result<(), Self::Error>;
     fn publication(&self, uri: &str) -> Result<Option<Publication>, Self::Error>;
 
-    fn upsert_document(&mut self, meta: &Document, body: Option<&RichDoc>) -> Result<(), Self::Error>;
+    fn upsert_document(
+        &mut self,
+        meta: &Document,
+        body: Option<&RichDoc>,
+    ) -> Result<(), Self::Error>;
     fn document(&self, uri: &str) -> Result<Option<StoredDoc>, Self::Error>;
     /// Documents for a publication, newest first.
     fn documents_for(&self, publication_uri: &str) -> Result<Vec<Document>, Self::Error>;

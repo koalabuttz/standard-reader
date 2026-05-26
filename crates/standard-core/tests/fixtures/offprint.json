@@ -1,0 +1,375 @@
+{
+    "uri": "at://did:plc:gj55urnejshc53jzje5afyk2/site.standard.document/3mi34zu4buc23",
+    "cid": "bafyreiclywqzig5ax4rqsqqv2nfcpo6iuxrffpggzhc37ywxtdjdatfmuy",
+    "value": {
+        "path": "/a/3mi34zu4buc23-oh-hey-welcome-to-chaos-pocket",
+        "site": "at://did:plc:gj55urnejshc53jzje5afyk2/site.standard.publication/3mi34yhhqra2n",
+        "$type": "site.standard.document",
+        "title": "Oh, hey, welcome to Chaos Pocket",
+        "content": {
+            "$type": "app.offprint.content",
+            "items": [
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "This'll be probably the 30th blog I've ever started, so we'll see how it goes, but the goal is to be a part of the broader blogging revival. You remember those days, right? "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "facets": [
+                        {
+                            "index": {
+                                "byteEnd": 35,
+                                "byteStart": 27
+                            },
+                            "features": [
+                                {
+                                    "uri": "https://offprint.app/",
+                                    "$type": "app.offprint.richtext.facet#link"
+                                },
+                                {
+                                    "$type": "app.offprint.richtext.facet#italic"
+                                }
+                            ]
+                        }
+                    ],
+                    "plaintext": "I'm pretty damn pumped for Offprint. There have always been more than a few blogging platforms out there, some of them free and most of them somewhere between freemium and premium, but Offprint really feels like a product I can happily support. "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "It does have a premium 'Pro' option, but the free tier feels pretty feature-loaded. "
+                },
+                {
+                    "$type": "app.offprint.block.image",
+                    "image": {
+                        "ref": {
+                            "$link": "bafkreiaxcqe6ohemf2rnuk6fgzod5fpxtp3yovuuyet6akviosuuzd4yju"
+                        },
+                        "size": 84600,
+                        "$type": "blob",
+                        "mimeType": "image/png"
+                    },
+                    "alignment": "center",
+                    "aspectRatio": {
+                        "width": 659,
+                        "height": 558
+                    }
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "For now, it feels a lot like the Ghost platform, and to that end it even has a newsletter engine built-in! "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "facets": [
+                        {
+                            "index": {
+                                "byteEnd": 125,
+                                "byteStart": 105
+                            },
+                            "features": [
+                                {
+                                    "uri": "https://atproto.com/guides/overview",
+                                    "$type": "app.offprint.richtext.facet#link"
+                                }
+                            ]
+                        },
+                        {
+                            "index": {
+                                "byteEnd": 163,
+                                "byteStart": 150
+                            },
+                            "features": [
+                                {
+                                    "uri": "https://standard.site/",
+                                    "$type": "app.offprint.richtext.facet#link"
+                                }
+                            ]
+                        }
+                    ],
+                    "plaintext": "Even in its beta form, it's overflowing with features and capabilities, and the fact that it's tied into the ATProto platform \u2013\u00a0and the associated standard.site architecture \u2013 feels like a big plus to me. "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "So, yeah. Keen to see how this evolves! "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "facets": [
+                        {
+                            "index": {
+                                "byteEnd": 33,
+                                "byteStart": 0
+                            },
+                            "features": [
+                                {
+                                    "$type": "app.offprint.richtext.facet#bold"
+                                }
+                            ]
+                        }
+                    ],
+                    "plaintext": "My wishlist for now is mainly... "
+                },
+                {
+                    "$type": "app.offprint.block.bulletList",
+                    "children": [
+                        {
+                            "content": {
+                                "$type": "app.offprint.block.text",
+                                "facets": [
+                                    {
+                                        "index": {
+                                            "byteEnd": 20,
+                                            "byteStart": 0
+                                        },
+                                        "features": [
+                                            {
+                                                "$type": "app.offprint.richtext.facet#bold"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "plaintext": "Categories and tags. Long-term usability will be hampered without these."
+                            }
+                        },
+                        {
+                            "content": {
+                                "$type": "app.offprint.block.text",
+                                "facets": [
+                                    {
+                                        "index": {
+                                            "byteEnd": 11,
+                                            "byteStart": 2
+                                        },
+                                        "features": [
+                                            {
+                                                "$type": "app.offprint.richtext.facet#bold"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "plaintext": "A Heading 4 style (right now it only goes down to Heading 3) "
+                            }
+                        },
+                        {
+                            "content": {
+                                "$type": "app.offprint.block.text",
+                                "facets": [
+                                    {
+                                        "index": {
+                                            "byteEnd": 25,
+                                            "byteStart": 2
+                                        },
+                                        "features": [
+                                            {
+                                                "$type": "app.offprint.richtext.facet#bold"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "plaintext": "A cmd+k keyboard shortcut for inserting links (or selecting text and hitting cmd+v) "
+                            }
+                        },
+                        {
+                            "content": {
+                                "$type": "app.offprint.block.text",
+                                "facets": [
+                                    {
+                                        "index": {
+                                            "byteEnd": 42,
+                                            "byteStart": 19
+                                        },
+                                        "features": [
+                                            {
+                                                "$type": "app.offprint.richtext.facet#bold"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "plaintext": "The option to have links open in a new tab"
+                            }
+                        },
+                        {
+                            "content": {
+                                "$type": "app.offprint.block.text",
+                                "facets": [
+                                    {
+                                        "index": {
+                                            "byteEnd": 34,
+                                            "byteStart": 0
+                                        },
+                                        "features": [
+                                            {
+                                                "$type": "app.offprint.richtext.facet#bold"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "plaintext": "Multiple lines for the callout box (I know I can just do some shift+enter line breaks, but still.)"
+                            }
+                        },
+                        {
+                            "content": {
+                                "$type": "app.offprint.block.text",
+                                "facets": [
+                                    {
+                                        "index": {
+                                            "byteEnd": 25,
+                                            "byteStart": 0
+                                        },
+                                        "features": [
+                                            {
+                                                "$type": "app.offprint.richtext.facet#bold"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "plaintext": "Automatic upload resizing for large images (so that I don't have to reduce the filesize first)"
+                            }
+                        },
+                        {
+                            "content": {
+                                "$type": "app.offprint.block.text",
+                                "facets": [
+                                    {
+                                        "index": {
+                                            "byteEnd": 18,
+                                            "byteStart": 0
+                                        },
+                                        "features": [
+                                            {
+                                                "$type": "app.offprint.richtext.facet#bold"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "plaintext": "Larger file sizes. 2mb is rough if I want to use this as a photography blog! Maybe this should just be part of the Pro tier, I dunno. "
+                            }
+                        },
+                        {
+                            "content": {
+                                "$type": "app.offprint.block.text",
+                                "facets": [
+                                    {
+                                        "index": {
+                                            "byteEnd": 13,
+                                            "byteStart": 0
+                                        },
+                                        "features": [
+                                            {
+                                                "$type": "app.offprint.richtext.facet#bold"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "plaintext": "More storage on the Pro tier. I feel like I'd burn through 25gb... "
+                            }
+                        }
+                    ]
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "On Chaos Pocket, I'll be posting about all the things I enjoy: photography, cameras and related accessories, along with all the pocketable gadgets and trinkets and tools that I can't ever seem to resist. "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "I'll also post about things I find online, such as new fave artists, movie and TV trailers, music, clothes, toys and models... all of those \"surely there are smarter ways to use your money\" things. "
+                },
+                {
+                    "$type": "app.offprint.block.callout",
+                    "color": "rgb(168 85 247 / 0.2)",
+                    "emoji": "\u270c\ud83c\udffd",
+                    "plaintext": "Right, well, that'll do for now!"
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": "Find me online: "
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "facets": [
+                        {
+                            "index": {
+                                "byteEnd": 16,
+                                "byteStart": 0
+                            },
+                            "features": [
+                                {
+                                    "uri": "https://mikestevens.link",
+                                    "$type": "app.offprint.richtext.facet#link"
+                                }
+                            ]
+                        },
+                        {
+                            "index": {
+                                "byteEnd": 27,
+                                "byteStart": 18
+                            },
+                            "features": [
+                                {
+                                    "uri": "https://www.instagram.com/yomikestevens/",
+                                    "$type": "app.offprint.richtext.facet#link"
+                                }
+                            ]
+                        },
+                        {
+                            "index": {
+                                "byteEnd": 35,
+                                "byteStart": 28
+                            },
+                            "features": [
+                                {
+                                    "uri": "https://bsky.app/profile/mikestevens.link",
+                                    "$type": "app.offprint.richtext.facet#link"
+                                }
+                            ]
+                        },
+                        {
+                            "index": {
+                                "byteEnd": 43,
+                                "byteStart": 36
+                            },
+                            "features": [
+                                {
+                                    "uri": "https://www.threads.com/@gomikestevens",
+                                    "$type": "app.offprint.richtext.facet#link"
+                                }
+                            ]
+                        }
+                    ],
+                    "plaintext": "mikestevens.link \nInstagram\nBluesky\nThreads"
+                },
+                {
+                    "$type": "app.offprint.block.image",
+                    "image": {
+                        "ref": {
+                            "$link": "bafkreiblipe3p35g5jp7xlglitnavwrf5bgumrxt5bhltunmqc64rpfadq"
+                        },
+                        "size": 1677021,
+                        "$type": "blob",
+                        "mimeType": "image/png"
+                    },
+                    "alignment": "center",
+                    "aspectRatio": {
+                        "width": 938,
+                        "height": 938
+                    }
+                },
+                {
+                    "$type": "app.offprint.block.text",
+                    "plaintext": ""
+                }
+            ]
+        },
+        "coverImage": {
+            "ref": {
+                "$link": "bafkreih6qslhdgrn34g3x7s2vbaixj2k4h6fj5az3epcufmev4s66iad4a"
+            },
+            "size": 389721,
+            "$type": "blob",
+            "mimeType": "image/jpeg"
+        },
+        "description": "Well, I just got my \"your invite has been approved\" email for Offprint, so here I am!",
+        "publishedAt": "2026-03-27T22:40:17+00:00",
+        "textContent": "This'll be probably the 30th blog I've ever started, so we'll see how it goes, but the goal is to be a part of the broader blogging revival. You remember those days, right? \nI'm pretty damn pumped for Offprint. There have always been more than a few blogging platforms out there, some of them free and most of them somewhere between freemium and premium, but Offprint really feels like a product I can happily support. \nIt does have a premium 'Pro' option, but the free tier feels pretty feature-loaded. \nFor now, it feels a lot like the Ghost platform, and to that end it even has a newsletter engine built-in! \nEven in its beta form, it's overflowing with features and capabilities, and the fact that it's tied into the ATProto platform \u2013\u00a0and the associated standard.site architecture \u2013 feels like a big plus to me. \nSo, yeah. Keen to see how this evolves! \nMy wishlist for now is mainly... \n- Categories and tags. Long-term usability will be hampered without these.\n- A Heading 4 style (right now it only goes down to Heading 3) \n- A cmd+k keyboard shortcut for inserting links (or selecting text and hitting cmd+v) \n- The option to have links open in a new tab\n- Multiple lines for the callout box (I know I can just do some shift+enter line breaks, but still.)\n- Automatic upload resizing for large images (so that I don't have to reduce the filesize first)\n- Larger file sizes. 2mb is rough if I want to use this as a photography blog! Maybe this should just be part of the Pro tier, I dunno. \n- More storage on the Pro tier. I feel like I'd burn through 25gb... \n\nOn Chaos Pocket, I'll be posting about all the things I enjoy: photography, cameras and related accessories, along with all the pocketable gadgets and trinkets and tools that I can't ever seem to resist. \nI'll also post about things I find online, such as new fave artists, movie and TV trailers, music, clothes, toys and models... all of those \"surely there are smarter ways to use your money\" things. \n\u270c\ud83c\udffd Right, well, that'll do for now!\nFind me online: \nmikestevens.link \nInstagram\nBluesky\nThreads"
+    }
+}

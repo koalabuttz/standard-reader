@@ -1,0 +1,67 @@
+{
+    "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.document/3mmnv5c4u622i",
+    "cid": "bafyreietkz5ehfpbyo2dplhxyj35bymuepiu7nbvvrkzby3gaxsi6l6sb4",
+    "value": {
+        "path": "/3mmnv5c4u622i",
+        "site": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnv3vbapk2p",
+        "tags": [],
+        "$type": "site.standard.document",
+        "title": "Test",
+        "content": {
+            "$type": "pub.leaflet.content",
+            "pages": [
+                {
+                    "id": "019e5dde-f6e5-7444-b65c-2850ea54c178",
+                    "$type": "pub.leaflet.pages.linearDocument",
+                    "blocks": [
+                        {
+                            "$type": "pub.leaflet.pages.linearDocument#block",
+                            "block": {
+                                "$type": "pub.leaflet.blocks.text",
+                                "plaintext": "Test"
+                            }
+                        },
+                        {
+                            "$type": "pub.leaflet.pages.linearDocument#block",
+                            "block": {
+                                "$type": "pub.leaflet.blocks.text",
+                                "facets": [
+                                    {
+                                        "index": {
+                                            "byteEnd": 4,
+                                            "byteStart": 0
+                                        },
+                                        "features": [
+                                            {
+                                                "$type": "pub.leaflet.richtext.facet#strikethrough"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "plaintext": "test"
+                            }
+                        },
+                        {
+                            "$type": "pub.leaflet.pages.linearDocument#block",
+                            "block": {
+                                "$type": "pub.leaflet.blocks.text",
+                                "plaintext": ""
+                            }
+                        },
+                        {
+                            "$type": "pub.leaflet.pages.linearDocument#block",
+                            "block": {
+                                "$type": "pub.leaflet.blocks.header",
+                                "level": 3,
+                                "plaintext": "testtest"
+                            },
+                            "alignment": "lex:pub.leaflet.pages.linearDocument#textAlignCenter"
+                        }
+                    ]
+                }
+            ]
+        },
+        "description": "",
+        "publishedAt": "2026-05-25T06:49:08.589Z"
+    }
+}

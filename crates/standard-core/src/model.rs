@@ -16,11 +16,20 @@ pub struct RichDoc {
 /// lexicon we decode; anything richer degrades into the nearest of these.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Block {
-    Heading { level: u8, content: Vec<Inline> },
+    Heading {
+        level: u8,
+        content: Vec<Inline>,
+    },
     Paragraph(Vec<Inline>),
     Quote(Vec<Block>),
-    List { ordered: bool, items: Vec<Vec<Block>> },
-    Code { lang: Option<String>, text: String },
+    List {
+        ordered: bool,
+        items: Vec<Vec<Block>>,
+    },
+    Code {
+        lang: Option<String>,
+        text: String,
+    },
     Image(Image),
     Rule,
 }

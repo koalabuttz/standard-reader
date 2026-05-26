@@ -1,0 +1,24 @@
+{
+    "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.document/3mmrd52hpdakk",
+    "cid": "bafyreihh2hy53mgxxher2rmlh45k2cxsppi5zostw6y2jtnvavstkh4l24",
+    "value": {
+        "path": "/untitled-pqkafky",
+        "site": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnuz5454lm7",
+        "tags": [],
+        "$type": "site.standard.document",
+        "title": "Untitled",
+        "content": {
+            "$type": "blog.pckt.content",
+            "items": [
+                {
+                    "$type": "blog.pckt.block.text",
+                    "plaintext": "test"
+                }
+            ]
+        },
+        "updatedAt": "2026-05-26T15:37:39+00:00",
+        "description": "test",
+        "publishedAt": "2026-05-26T15:37:32+00:00",
+        "textContent": "test"
+    }
+}

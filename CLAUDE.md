@@ -36,14 +36,21 @@ Pipeline: **`atp`** builds/parses XRPC → **`decode`** maps each publisher's `c
 
 `site.standard.document.content` is an **open union** — each publisher embeds its own lexicon. `textContent` is flat plaintext (the spec says it carries *no* formatting), so it is a **fallback only**. Decoders dispatch on `content.$type` and all target the one neutral `RichDoc` AST:
 
-| `content.$type`     | shape                                   | decoder                  |
-| ------------------- | --------------------------------------- | ------------------------ |
-| *(bare string)*     | Markdown (GreenGale, Sequoia, markpub)  | `Markdown` (pulldown-cmark) |
-| `pub.leaflet.*`     | blocks + facets (byte-range richtext)   | `Leaflet`                |
-| `blog.pckt.content` | `items: [blog.pckt.block.*]`            | `Pckt`                   |
-| *(unknown / absent)*| typeset `textContent`                   | `Plaintext` ✅ done       |
+Shapes below were validated against **live records** (the published survey had several wrong field names). All decoders are ✅ implemented and tested against fixtures in `crates/standard-core/tests/fixtures/`:
 
-Adding a platform = **one new `ContentDecoder`**; nothing else changes. Decoders are **pure** (no I/O). Two render modes (a frontend concern): **uniform** (the reader's own consistent theme) and **author's** (honor each publication's `basicTheme`) — both decode the same structure; the mode only changes theming.
+| `content.$type`                          | shape                                            | decoder      |
+| ---------------------------------------- | ------------------------------------------------ | ------------ |
+| *(bare string)* / `at.markpub.markdown`  | Markdown (GreenGale body, Sequoia, markpub)      | `Markdown` (pulldown-cmark) |
+| `pub.leaflet.content`                    | `pages[].blocks[].block` + byte-range facets     | `Leaflet`    |
+| `blog.pckt.content`                      | `items: [blog.pckt.block.*]`                     | `Pckt`       |
+| `app.offprint.content`                   | `items: [app.offprint.block.*]` + byte-range facets | `Offprint` |
+| `org.wordpress.html`                     | `{ html }` — rendered HTML (`tl` walker)         | `Wordpress`  |
+| `*#contentRef`                           | **reference** to another record (GreenGale)      | `content_ref` → two-phase |
+| *(unknown / absent)*                     | typeset `textContent`                            | `Plaintext`  |
+
+Leaflet/Pckt/Offprint share one **byte-range facet engine** (`decode/facets.rs`): each carries `{ index:{byteStart,byteEnd}, features:[{$type}] }` over a `plaintext` string, differing only by namespace + `#suffix`. **GreenGale is two-phase**: `site.standard.document.content` is a `#contentRef` pointing at an `app.greengale.document` whose own `content` is the bare Markdown string — the core's `content_ref()` returns the AT-URI; the frontend fetches it and re-runs `decode`. Block decoders need the owning repo DID (passed via `DecodeCtx`) to build blob image refs.
+
+Adding a platform = **one new `ContentDecoder`** in `decode/<name>.rs` + one line in `Registry::with_defaults`; nothing else changes. Decoders are **pure** (no I/O) and never panic on partial input (return `None` → next decoder → `textContent`). Two render modes (a frontend concern): **uniform** (the reader's own consistent theme) and **author's** (honor each publication's `basicTheme`) — both decode the same structure; the mode only changes theming.
 
 ## atproto read model
 
@@ -80,4 +87,4 @@ cargo run -p standard-reader   # runs the `sr` binary
 
 ## Status & roadmap
 
-See **ROADMAP.md**. Currently **scaffolded**: the core engine is real and tested (RichDoc model, decoder `Registry` + `Plaintext` fallback, `AtUri` + `Transport` trait + XRPC builders, `Store` trait, inverted-index search); the Markdown / Leaflet / Pckt decoders and the entire `standard-tui` frontend are stubs.
+See **ROADMAP.md**. The core engine is real and tested (RichDoc model, decoder `Registry` + `Plaintext` fallback, `AtUri` + `Transport` trait + XRPC builders, `Store` trait, inverted-index search). **All five content decoders are implemented** — Markdown/markpub, Leaflet, Pckt, Offprint, WordPress HTML — plus the shared byte-range facet engine and the GreenGale `content_ref` two-phase seam, all validated against live-record fixtures (`cargo test -p standard-core`). The entire `standard-tui` frontend (including the `content_ref` fetch-then-decode wiring and blob-image fetching) is still a stub.

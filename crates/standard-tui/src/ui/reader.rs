@@ -5,16 +5,18 @@
 //! segment is measured (text via `Paragraph::line_count`, images from their pixel size),
 //! placed at an absolute row, and the visible window is drawn at `top - scroll`.
 //!
-//! Images render only when *fully* in view, at a fixed (capped) size — so the protocol
-//! encodes once and never re-encodes on scroll. Partially-scrolled images show a
-//! placeholder bar until fully visible (smooth clipping is a later refinement).
+//! Each image is sized to fit the available width (capped in height, using the terminal's
+//! real font-cell metrics) and rendered centered, as soon as its top scrolls into view.
 
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
 use ratatui::Frame;
-use ratatui_image::{Resize, StatefulImage};
+use ratatui_image::StatefulImage;
+
+/// Hard ceiling on image height (rows), so a tall/portrait image never dominates the pane.
+const MAX_IMAGE_ROWS: u16 = 20;
 
 use standard_core::model::Block as DocBlock;
 
@@ -26,7 +28,7 @@ const GAP: u16 = 1; // blank row between segments
 
 enum Segment {
     Text { text: Text<'static>, top: u16, height: u16 },
-    Image { key: String, alt: String, top: u16, height: u16 },
+    Image { key: String, alt: String, top: u16, height: u16, width: u16 },
 }
 
 impl Segment {
@@ -84,12 +86,12 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
     let mut y: u16 = 0;
 
     let push_image = |segs: &mut Vec<Segment>, y: &mut u16, key: String, alt: String| {
-        let height = image_rows(app, &key, width, vh);
+        let (cols, rows) = image_display_size(app, &key, width, vh);
         if !segs.is_empty() {
             *y += GAP;
         }
-        segs.push(Segment::Image { key, alt, top: *y, height });
-        *y += height;
+        segs.push(Segment::Image { key, alt, top: *y, height: rows, width: cols });
+        *y += rows;
     };
 
     if let Some(src) = &app.reading_cover {
@@ -126,12 +128,33 @@ fn flush_text(run: &mut Vec<&DocBlock>, theme: &Theme, width: u16, segs: &mut Ve
     run.clear();
 }
 
-/// Rows to reserve for an image: its pixel aspect mapped to cells (a cell is ~2× taller
-/// than wide, hence ×0.5), clamped so it always fits the viewport.
-fn image_rows(app: &App, key: &str, width: u16, vh: u16) -> u16 {
-    let (iw, ih) = app.images.get(key).map(|li| (li.width, li.height)).unwrap_or((4, 3));
-    let rows = (width as f32 * (ih as f32 / iw.max(1) as f32) * 0.5).round() as u16;
-    rows.clamp(3, vh.saturating_sub(4).max(3))
+/// Display size (cols, rows) for an image: scaled to fit the available width using the
+/// terminal's real font-cell aspect, never upscaled past its natural size, and capped in
+/// height so a tall image stays reasonable. Cell metrics come from the `Picker`.
+fn image_display_size(app: &App, key: &str, avail_w: u16, vh: u16) -> (u16, u16) {
+    let cap_h = vh.saturating_sub(2).clamp(1, MAX_IMAGE_ROWS) as f32;
+    let avail_w = avail_w.max(1) as f32;
+
+    let Some(loaded) = app.images.get(key) else {
+        // Not decoded yet — reserve a modest placeholder slot.
+        let w = avail_w.min(40.0);
+        let h = (w * 0.5).min(cap_h);
+        return (w as u16, h.max(1.0) as u16);
+    };
+
+    let fs = app.picker.font_size();
+    let (cw, ch) = (fs.width.max(1) as f32, fs.height.max(1) as f32);
+    let natural_w = (loaded.width as f32 / cw).max(1.0); // image size in cells
+    let natural_h = (loaded.height as f32 / ch).max(1.0);
+
+    // Fit within (avail_w × cap_h), preserving aspect, without upscaling beyond natural.
+    let mut w = natural_w.min(avail_w);
+    let mut h = w * natural_h / natural_w;
+    if h > cap_h {
+        h = cap_h;
+        w = h * natural_w / natural_h;
+    }
+    (w.round().clamp(1.0, avail_w) as u16, h.round().clamp(1.0, cap_h) as u16)
 }
 
 fn render(f: &mut Frame, app: &mut App, theme: &Theme, inner: Rect, segments: &[Segment], scroll: u16) {
@@ -157,15 +180,15 @@ fn render(f: &mut Frame, app: &mut App, theme: &Theme, inner: Rect, segments: &[
                     .style(theme.body());
                 f.render_widget(para, rect);
             }
-            Segment::Image { key, alt, .. } => {
-                let fully_visible = vis_top == top && rect.height == height;
-                if fully_visible
+            Segment::Image { key, alt, width: seg_w, .. } => {
+                // Render once the image's top is on screen, centered to its display width;
+                // the bottom clips to the viewport (the protocol re-fits only while clipped).
+                if top >= scroll
                     && let Some(loaded) = app.images.get_mut(key) {
-                        f.render_stateful_widget(
-                            StatefulImage::default().resize(Resize::Fit(None)),
-                            rect,
-                            &mut loaded.protocol,
-                        );
+                        let w = (*seg_w).min(inner.width);
+                        let x = inner.x + (inner.width - w) / 2;
+                        let img_rect = Rect { x, y: rect.y, width: w, height: rect.height };
+                        f.render_stateful_widget(StatefulImage::default(), img_rect, &mut loaded.protocol);
                         continue;
                     }
                 let label = if app.images.contains_key(key) {

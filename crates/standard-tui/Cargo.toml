@@ -19,6 +19,13 @@ redb = "4"
 # (De)serialize the model types (which derive serde) into cache values.
 serde = "1"
 serde_json = "1"
-# The terminal UI (re-exports crossterm for events/backend).
-ratatui = "0.30"
-# Remaining frontend deps (ratatui-image, atrium-oauth) land as the TUI grows.
+# The terminal UI (re-exports crossterm for events/backend). The unstable feature
+# gives Paragraph::line_count, used to measure wrapped text height for the block-flow
+# reader (so layout matches ratatui's own wrapping exactly).
+ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
+# Terminal images (iTerm2 protocol on this hterm box; halfblocks fallback) + decoding.
+# default-features off drops the `chafa` C-lib protocol and image's all-formats default;
+# iTerm2/kitty/halfblocks are always available. `crossterm` matches ratatui's backend.
+ratatui-image = { version = "11", default-features = false, features = ["crossterm"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+# Remaining frontend deps (atrium-oauth) land as the TUI grows.

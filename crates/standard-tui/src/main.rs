@@ -23,6 +23,7 @@ use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind,
 };
 use ratatui::crossterm::execute;
+use ratatui_image::picker::Picker;
 
 use standard_core::atp::AtUri;
 use standard_core::decode::Registry;
@@ -77,10 +78,13 @@ fn print_usage() {
 fn run_tui() -> Result<(), Box<dyn Error>> {
     let (tx, rx) = worker::spawn(cache_path()?);
     let mut terminal = ratatui::init();
+    // Detect the terminal graphics protocol + font size (before mouse capture, so the
+    // query's stdin replies aren't interleaved with mouse reports). Fall back to halfblocks.
+    let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
     execute!(stdout(), EnableMouseCapture)?;
 
     let theme = Theme::modern_dark();
-    let mut app = App::new(tx);
+    let mut app = App::new(tx, picker);
 
     let outcome = (|| -> Result<(), Box<dyn Error>> {
         loop {

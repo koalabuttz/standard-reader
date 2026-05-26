@@ -2,14 +2,34 @@
 //! events into state transitions plus [`ToWorker`] commands, and folds [`FromWorker`]
 //! results back in. It owns no I/O (the worker does) and renders from this snapshot.
 
+use std::collections::HashMap;
 use std::sync::mpsc::Sender;
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
+use image::GenericImageView;
+use ratatui_image::picker::Picker;
+use ratatui_image::protocol::StatefulProtocol;
 
-use standard_core::model::{Document, Publication, RichDoc};
+use standard_core::model::{Block, Document, ImageSource, Publication, RichDoc};
 
 use crate::worker::{FromWorker, ToWorker};
+
+/// Stable cache key for an image source (the blob CID, or the URL).
+pub fn image_key(source: &ImageSource) -> String {
+    match source {
+        ImageSource::Blob { cid, .. } => cid.clone(),
+        ImageSource::Url(url) => url.clone(),
+    }
+}
+
+/// A decoded, terminal-encodable image plus its source pixel dimensions (for sizing the
+/// reader slot).
+pub struct LoadedImage {
+    pub protocol: StatefulProtocol,
+    pub width: u32,
+    pub height: u32,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -76,6 +96,8 @@ pub struct App {
     pub reading: Option<RichDoc>,
     pub reading_title: String,
     pub reading_uri: Option<String>,
+    /// The open document's cover image source, rendered atop the reader.
+    pub reading_cover: Option<ImageSource>,
     pub scroll: u16,
     pub input: String,
     pub palette_sel: usize,
@@ -83,11 +105,15 @@ pub struct App {
     pub loading: bool,
     pub should_quit: bool,
     pub rects: Rects,
+    /// Terminal graphics protocol picker (font size + protocol detection).
+    pub picker: Picker,
+    /// Decoded + encoded images, keyed by [`image_key`].
+    pub images: HashMap<String, LoadedImage>,
     tx: Sender<ToWorker>,
 }
 
 impl App {
-    pub fn new(tx: Sender<ToWorker>) -> Self {
+    pub fn new(tx: Sender<ToWorker>, picker: Picker) -> Self {
         let app = Self {
             mode: Mode::Browse,
             focus: Focus::Sidebar,
@@ -100,6 +126,7 @@ impl App {
             reading: None,
             reading_title: String::new(),
             reading_uri: None,
+            reading_cover: None,
             scroll: 0,
             input: String::new(),
             palette_sel: 0,
@@ -107,6 +134,8 @@ impl App {
             loading: true,
             should_quit: false,
             rects: Rects::default(),
+            picker,
+            images: HashMap::new(),
             tx,
         };
         app.send(ToWorker::LoadHome);
@@ -141,10 +170,16 @@ impl App {
             }
             FromWorker::Doc { uri, body } => {
                 if self.reading_uri.as_deref() == Some(uri.as_str()) || self.reading_uri.is_none() {
+                    self.request_body_images(&body);
                     self.reading = Some(body);
                     self.scroll = 0;
                 }
                 self.loading = false;
+            }
+            FromWorker::Image { key, image } => {
+                let (width, height) = image.dimensions();
+                let protocol = self.picker.new_resize_protocol(image);
+                self.images.insert(key, LoadedImage { protocol, width, height });
             }
             FromWorker::Results(results) => {
                 self.docs = results;
@@ -356,15 +391,39 @@ impl App {
     }
 
     fn open_doc(&mut self) {
-        if let Some(d) = self.docs.get(self.doc_sel) {
-            self.reading_title = if d.title.is_empty() { "(untitled)".into() } else { d.title.clone() };
-            self.reading_uri = Some(d.uri.clone());
-            self.reading = None;
-            self.scroll = 0;
-            self.loading = true;
-            self.mode = Mode::Browse;
-            self.focus = Focus::Reader;
-            self.send(ToWorker::OpenDoc(d.uri.clone()));
+        let Some(d) = self.docs.get(self.doc_sel) else {
+            return;
+        };
+        self.reading_title = if d.title.is_empty() { "(untitled)".into() } else { d.title.clone() };
+        self.reading_uri = Some(d.uri.clone());
+        self.reading_cover = d.cover_image.as_ref().map(|i| i.source.clone());
+        let doc_uri = d.uri.clone();
+        let cover = self.reading_cover.clone(); // ends the borrow of self.docs (`d`)
+
+        self.reading = None;
+        self.scroll = 0;
+        self.loading = true;
+        self.mode = Mode::Browse;
+        self.focus = Focus::Reader;
+        if let Some(src) = cover {
+            self.request_image(src);
+        }
+        self.send(ToWorker::OpenDoc(doc_uri));
+    }
+
+    /// Request any not-yet-loaded block images in `body` from the worker.
+    fn request_body_images(&self, body: &RichDoc) {
+        for block in &body.blocks {
+            if let Block::Image(img) = block {
+                self.request_image(img.source.clone());
+            }
+        }
+    }
+
+    fn request_image(&self, source: ImageSource) {
+        let key = image_key(&source);
+        if !self.images.contains_key(&key) {
+            self.send(ToWorker::LoadImage { key, source });
         }
     }
 

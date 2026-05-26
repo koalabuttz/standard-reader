@@ -1,12 +1,13 @@
 //! The terminal UI: theme, the `RichDoc` renderer, and the screen drawing.
 
 pub mod doc;
+pub mod reader;
 pub mod theme;
 
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{Action, App, Focus, Mode};
@@ -29,7 +30,7 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
         draw_sidebar(f, app, theme, left);
     }
     app.rects.reader = right;
-    draw_reader(f, app, theme, right);
+    reader::draw(f, app, theme, right);
     draw_footer(f, app, theme, footer);
 
     match app.mode {
@@ -95,30 +96,6 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(app.doc_sel));
     f.render_stateful_widget(list, area, &mut state);
-}
-
-fn draw_reader(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
-    let focused = app.focus == Focus::Reader && app.mode == Mode::Browse;
-    let title = if app.reading_title.is_empty() { "Reader".to_string() } else { app.reading_title.clone() };
-    let block = panel(theme, &title, focused);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    if let Some(doc) = &app.reading {
-        let text = doc::to_text(doc, theme);
-        let para = Paragraph::new(text).wrap(Wrap { trim: false }).scroll((app.scroll, 0)).style(theme.body());
-        f.render_widget(para, inner);
-    } else {
-        let msg = if app.loading {
-            "loading…"
-        } else {
-            "Select a feed (Enter), pick a post, and it appears here."
-        };
-        f.render_widget(
-            Paragraph::new(msg).style(theme.dim_style()).alignment(Alignment::Center),
-            inner,
-        );
-    }
 }
 
 fn draw_footer(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
@@ -236,6 +213,7 @@ mod tests {
     use ratatui::buffer::Buffer;
     use ratatui::layout::Position;
     use ratatui::Terminal;
+    use ratatui_image::picker::Picker;
     use standard_core::model::{Block, Inline, Publication, RichDoc};
     use std::sync::mpsc::channel;
 
@@ -256,7 +234,7 @@ mod tests {
     #[test]
     fn renders_feed_reader_and_footer() {
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx);
+        let mut app = App::new(tx, Picker::halfblocks());
         app.loading = false;
         app.feeds = vec![Publication {
             uri: "at://d/site.standard.publication/1".into(),

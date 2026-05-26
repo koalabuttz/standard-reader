@@ -4,14 +4,15 @@
 //! synchronous; this is how the desktop frontend gets async behavior). Cache-first: it
 //! answers from `redb` instantly, then refreshes from the network and sends an update.
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 
-use standard_core::atp::AtUri;
+use standard_core::atp::{AtUri, Transport};
 use standard_core::decode::Registry;
-use standard_core::model::{Document, Publication, RichDoc};
+use standard_core::model::{Document, ImageSource, Publication, RichDoc};
 use standard_core::read;
 use standard_core::store::Store;
 
@@ -28,6 +29,7 @@ pub enum ToWorker {
     Refresh(String),
     SetRead(String, bool),
     Unfollow(String),
+    LoadImage { key: String, source: ImageSource },
     Quit,
 }
 
@@ -37,6 +39,7 @@ pub enum FromWorker {
     Docs { publication: String, docs: Vec<Document> },
     Doc { uri: String, body: RichDoc },
     Results(Vec<Document>),
+    Image { key: String, image: image::DynamicImage },
     Status(String),
     Error(String),
 }
@@ -61,6 +64,7 @@ fn run(cache_path: PathBuf, cmd_rx: Receiver<ToWorker>, evt_tx: Sender<FromWorke
         transport: ReqwestTransport::new(),
         store,
         registry: Registry::with_defaults(),
+        pds_cache: HashMap::new(),
         tx: evt_tx,
     };
     while let Ok(msg) = cmd_rx.recv() {
@@ -77,6 +81,8 @@ struct Ctx {
     transport: ReqwestTransport,
     store: RedbStore,
     registry: Registry,
+    /// did → PDS endpoint, so image-blob fetches don't re-resolve per image.
+    pds_cache: HashMap<String, String>,
     tx: Sender<FromWorker>,
 }
 
@@ -100,6 +106,7 @@ impl Ctx {
                 self.store.unfollow(&uri)?;
                 self.load_home()
             }
+            ToWorker::LoadImage { key, source } => self.load_image(key, source),
             ToWorker::Quit => Ok(()),
         }
     }
@@ -196,6 +203,45 @@ impl Ctx {
         }
         self.send(FromWorker::Results(results));
         Ok(())
+    }
+
+    /// Fetch an image's bytes (cache-first), decode, and hand the `DynamicImage` to the UI
+    /// thread to encode for the terminal. A decode failure leaves the placeholder in place.
+    fn load_image(&mut self, key: String, source: ImageSource) -> Done {
+        let bytes = match &source {
+            ImageSource::Blob { did, cid } => match self.store.blob(cid)? {
+                Some(b) => b,
+                None => {
+                    let pds = self.pds_for(did)?;
+                    let b = read::get_blob(&self.transport, &pds, did, cid)?;
+                    self.store.put_blob(cid, &b)?;
+                    b
+                }
+            },
+            ImageSource::Url(url) => match self.store.blob(url)? {
+                Some(b) => b,
+                None => {
+                    let b = self.transport.get(url)?;
+                    self.store.put_blob(url, &b)?;
+                    b
+                }
+            },
+        };
+        match image::load_from_memory(&bytes) {
+            Ok(image) => self.send(FromWorker::Image { key, image }),
+            Err(e) => self.send(FromWorker::Status(format!("image decode failed: {e}"))),
+        }
+        Ok(())
+    }
+
+    /// PDS endpoint for a DID, resolving (and caching) on first use.
+    fn pds_for(&mut self, did: &str) -> Result<String, Box<dyn Error>> {
+        if let Some(pds) = self.pds_cache.get(did) {
+            return Ok(pds.clone());
+        }
+        let pds = read::resolve_pds(&self.transport, did)?;
+        self.pds_cache.insert(did.to_string(), pds.clone());
+        Ok(pds)
     }
 }
 

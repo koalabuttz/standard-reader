@@ -5,14 +5,15 @@
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 
-use standard_core::model::{Block, Inline, RichDoc};
+use standard_core::model::{Block, Inline};
 
 use super::theme::Theme;
 
-/// Convert a decoded document body into styled, wrappable text.
-pub fn to_text(doc: &RichDoc, theme: &Theme) -> Text<'static> {
+/// Render a sequence of blocks to text (used by the block-flow reader for the text runs
+/// between images; takes references so a run can be built without cloning blocks).
+pub fn blocks_to_text<'a>(blocks: impl IntoIterator<Item = &'a Block>, theme: &Theme) -> Text<'static> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    for (i, block) in doc.blocks.iter().enumerate() {
+    for (i, block) in blocks.into_iter().enumerate() {
         if i > 0 {
             lines.push(Line::raw("")); // blank line between blocks
         }
@@ -116,6 +117,7 @@ fn run(inlines: &[Inline], base: Style, theme: &Theme, out: &mut Vec<Span<'stati
 mod tests {
     use super::*;
     use ratatui::style::Modifier;
+    use standard_core::model::RichDoc;
 
     fn flat(text: &Text) -> String {
         text.lines
@@ -138,7 +140,7 @@ mod tests {
                 ]),
             ],
         };
-        let text = to_text(&doc, &theme);
+        let text = blocks_to_text(&doc.blocks, &theme);
         assert_eq!(flat(&text), "## Title\n\na bold word");
 
         // The "bold" span carries the BOLD modifier.
@@ -153,7 +155,7 @@ mod tests {
         let doc = RichDoc {
             blocks: vec![Block::Quote(vec![Block::Paragraph(vec![Inline::Text("q".into())])])],
         };
-        let text = to_text(&doc, &theme);
+        let text = blocks_to_text(&doc.blocks, &theme);
         assert!(text.lines[0].spans[0].content.starts_with('▍'));
     }
 
@@ -167,6 +169,6 @@ mod tests {
                 Inline::Text("two".into()),
             ])],
         };
-        assert_eq!(flat(&to_text(&doc, &theme)), "one\ntwo");
+        assert_eq!(flat(&blocks_to_text(&doc.blocks, &theme)), "one\ntwo");
     }
 }

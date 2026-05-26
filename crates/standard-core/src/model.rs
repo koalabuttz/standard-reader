@@ -92,6 +92,10 @@ pub struct Document {
     /// Flat plaintext fallback / search source (spec: contains no formatting).
     pub text_content: Option<String>,
     pub tags: Vec<String>,
+    /// Web path under the publication's `url` (the record's `path`); the post's browser
+    /// URL is `publication.url` + this. `#[serde(default)]` keeps older cache entries readable.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 /// A `site.standard.publication` record.

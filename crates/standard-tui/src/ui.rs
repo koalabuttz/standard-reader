@@ -128,8 +128,10 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 
 fn draw_footer(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let hints = match app.mode {
-        Mode::Browse => "a add · ⇥ focus · enter open · / search · : palette · ? help · q quit",
-        Mode::DocList => "↑↓ select · enter read · esc back · / search",
+        Mode::Browse => {
+            "a add · ⇥ focus · enter open · o browser · / search · : palette · ? help · q quit"
+        }
+        Mode::DocList => "↑↓ select · enter read · o browser · esc back · / search",
         Mode::Search | Mode::AddFeed => "type · enter submit · esc cancel",
         Mode::Palette => "↑↓ choose · enter run · esc cancel",
         Mode::Help => "any key to close",
@@ -207,6 +209,7 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
         (": / Ctrl-P", "command palette"),
         ("r", "refresh the selected feed"),
         ("d", "unfollow the selected feed"),
+        ("o", "open this post in your browser"),
         ("m", "mark the open post read"),
         ("? ", "this help"),
         ("q", "quit"),

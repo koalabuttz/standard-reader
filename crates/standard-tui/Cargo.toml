@@ -28,4 +28,6 @@ ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
 # iTerm2/kitty/halfblocks are always available. `crossterm` matches ratatui's backend.
 ratatui-image = { version = "11", default-features = false, features = ["crossterm"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+# Open a post's web URL in the user's browser (xdg-open / open / start).
+open = "5"
 # Remaining frontend deps (atrium-oauth) land as the TUI grows.

@@ -353,6 +353,7 @@ mod tests {
             cover_image: None,
             text_content: Some(text.into()),
             tags: vec![],
+            path: None,
         }
     }
 

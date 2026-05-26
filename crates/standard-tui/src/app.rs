@@ -239,6 +239,7 @@ impl App {
             KeyCode::Char('r') => self.refresh_current_feed(),
             KeyCode::Char('d') => self.unfollow_current_feed(),
             KeyCode::Char('m') => self.mark_read(),
+            KeyCode::Char('o') => self.open_in_browser(),
             KeyCode::Tab => self.toggle_focus(),
             KeyCode::Enter if self.focus == Focus::Sidebar => self.open_feed(),
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
@@ -266,6 +267,7 @@ impl App {
             KeyCode::Char('g') => self.doc_sel = 0,
             KeyCode::Char('G') => self.doc_sel = self.docs.len().saturating_sub(1),
             KeyCode::Char('/') => self.enter_input(Mode::Search),
+            KeyCode::Char('o') => self.open_in_browser(),
             KeyCode::Char('?') => self.mode = Mode::Help,
             _ => {}
         }
@@ -480,6 +482,34 @@ impl App {
         }
     }
 
+    /// Open the focused/open document's post in the browser (`o`).
+    fn open_in_browser(&mut self) {
+        let url = match self.docs.get(self.doc_sel).and_then(|d| self.doc_url(d)) {
+            Some(url) => url,
+            None => {
+                self.status = "no web URL for this post".into();
+                return;
+            }
+        };
+        self.status = format!("opening {url}");
+        let _ = open::that_detached(&url);
+    }
+
+    /// The post's browser URL: the publication's `url` (looked up among the feeds) joined
+    /// with the document's `path`.
+    fn doc_url(&self, doc: &Document) -> Option<String> {
+        let pub_url = self
+            .feeds
+            .iter()
+            .find(|p| p.uri == doc.publication)?
+            .url
+            .clone();
+        Some(match doc.path.as_deref() {
+            Some(path) if !path.is_empty() => web_url(&pub_url, path),
+            _ => pub_url,
+        })
+    }
+
     fn toggle_focus(&mut self) {
         self.focus = match self.focus {
             Focus::Sidebar => Focus::Reader,
@@ -550,9 +580,19 @@ pub fn fuzzy(query: &str, candidate: &str) -> bool {
     true
 }
 
+/// Join a publication base URL with a document path → the post's browser URL.
+pub fn web_url(base: &str, path: &str) -> String {
+    let base = base.trim_end_matches('/');
+    if path.starts_with('/') {
+        format!("{base}{path}")
+    } else {
+        format!("{base}/{path}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::fuzzy;
+    use super::{fuzzy, web_url};
 
     #[test]
     fn fuzzy_subsequence() {
@@ -562,5 +602,24 @@ mod tests {
         assert!(fuzzy("quit", "Quit"));
         assert!(!fuzzy("xyz", "Add feed"));
         assert!(!fuzzy("feedx", "Add feed"));
+    }
+
+    #[test]
+    fn builds_post_urls() {
+        // path with leading slash (the common case across platforms)
+        assert_eq!(
+            web_url("https://greengale.app/david.yapfest.club", "/3mmozgypkle2s"),
+            "https://greengale.app/david.yapfest.club/3mmozgypkle2s"
+        );
+        // offprint keeps its /a/ prefix in the path
+        assert_eq!(
+            web_url(
+                "https://chaospocket.offprint.app",
+                "/a/3mi34zu4buc23-oh-hey"
+            ),
+            "https://chaospocket.offprint.app/a/3mi34zu4buc23-oh-hey"
+        );
+        // trailing slash on base + no leading slash on path both handled
+        assert_eq!(web_url("https://x.test/", "post"), "https://x.test/post");
     }
 }

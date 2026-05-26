@@ -157,6 +157,10 @@ fn parse_document(value: &Value, uri: &str) -> Option<Document> {
                     .collect()
             })
             .unwrap_or_default(),
+        path: value
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 

@@ -1,0 +1,121 @@
+{
+    "records": [
+        {
+            "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnxeau5qspt",
+            "cid": "bafyreibctyiubjt3qeks74xv4ybkiteebuudvtffjcvjs2le3fnzgo5dwy",
+            "value": {
+                "url": "https://greengale.app/david.yapfest.club",
+                "name": "david.yapfest.club",
+                "$type": "site.standard.publication",
+                "preferences": {
+                    "greengale": {}
+                }
+            }
+        },
+        {
+            "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnv3vbapk2p",
+            "cid": "bafyreihfddz25zc5qz4jmgddyufvqp4vgremntsrlivyi6udshkmukxunu",
+            "value": {
+                "url": "https://test123.leaflet.pub",
+                "name": "Test",
+                "$type": "site.standard.publication",
+                "basicTheme": {
+                    "$type": "site.standard.theme.basic",
+                    "accent": {
+                        "b": 43,
+                        "g": 130,
+                        "r": 87,
+                        "$type": "site.standard.theme.color#rgb"
+                    },
+                    "background": {
+                        "b": 250,
+                        "g": 252,
+                        "r": 253,
+                        "$type": "site.standard.theme.color#rgb"
+                    },
+                    "foreground": {
+                        "b": 39,
+                        "g": 39,
+                        "r": 39,
+                        "$type": "site.standard.theme.color#rgb"
+                    },
+                    "accentForeground": {
+                        "b": 255,
+                        "g": 255,
+                        "r": 255,
+                        "$type": "site.standard.theme.color#rgb"
+                    }
+                },
+                "preferences": {
+                    "showComments": true,
+                    "showMentions": true,
+                    "showPrevNext": true,
+                    "showInDiscover": true,
+                    "showRecommends": true
+                }
+            }
+        },
+        {
+            "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.publication/3mmnuz5454lm7",
+            "cid": "bafyreiacydz6knpzusszykkdjnpgrsbwwlpyc6vi7ffoap565yll5uvaea",
+            "value": {
+                "url": "https://davi.pckt.blog",
+                "name": "David's test blog",
+                "$type": "site.standard.publication",
+                "theme": {
+                    "dark": {
+                        "link": "#f9a8d4",
+                        "text": "#fce7f3",
+                        "accent": "#d4a574",
+                        "background": "#500724",
+                        "surfaceHover": "#6b0a25"
+                    },
+                    "font": "legible",
+                    "$type": "blog.pckt.theme",
+                    "light": {
+                        "link": "#be185d",
+                        "text": "#881337",
+                        "accent": "#a16207",
+                        "background": "#fdf2f8",
+                        "surfaceHover": "#fbcfe8"
+                    },
+                    "transparency": 100,
+                    "tileBackground": false,
+                    "backgroundTileSize": 30
+                },
+                "basicTheme": {
+                    "$type": "site.standard.theme.basic",
+                    "accent": {
+                        "b": 7,
+                        "g": 98,
+                        "r": 161,
+                        "$type": "site.standard.theme.color#rgb"
+                    },
+                    "background": {
+                        "b": 248,
+                        "g": 242,
+                        "r": 253,
+                        "$type": "site.standard.theme.color#rgb"
+                    },
+                    "foreground": {
+                        "b": 55,
+                        "g": 19,
+                        "r": 136,
+                        "$type": "site.standard.theme.color#rgb"
+                    },
+                    "accentForeground": {
+                        "b": 232,
+                        "g": 207,
+                        "r": 251,
+                        "$type": "site.standard.theme.color#rgb"
+                    }
+                },
+                "description": "",
+                "preferences": {
+                    "showInDiscover": true
+                }
+            }
+        }
+    ],
+    "cursor": "3mmnuz5454lm7"
+}

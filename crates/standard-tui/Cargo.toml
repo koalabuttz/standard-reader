@@ -11,5 +11,8 @@ path = "src/main.rs"
 
 [dependencies]
 standard-core = { path = "../standard-core" }
-# Frontend deps (ratatui, crossterm, ratatui-image, reqwest, tokio, redb,
-# atrium-oauth, pulldown-cmark) land as the TUI is built up.
+# Synchronous HTTP for the `Transport` impl. rustls (pure-Rust TLS); `blocking`
+# matches the core's sync Transport. One HTTP stack, later shared with async OAuth.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+# Remaining frontend deps (ratatui, crossterm, ratatui-image, redb, atrium-oauth)
+# land as the TUI is built up.

@@ -1,0 +1,69 @@
+{
+    "uri": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.publication/3mbmm4qeiy2to",
+    "cid": "bafyreigmohsgwqc5rfhmms3zstlnng6o5pys4sl2zoirffopzuzbybf6be",
+    "value": {
+        "url": "https://half-baked.pckt.blog",
+        "icon": {
+            "ref": {
+                "$link": "bafkreicmg2gu3nyiahmrenvuagiqzx2scybm2cu4rrztkzgzga5b3ffjqm"
+            },
+            "size": 44149,
+            "$type": "blob",
+            "mimeType": "image/jpeg"
+        },
+        "name": "half baked",
+        "$type": "site.standard.publication",
+        "theme": {
+            "dark": {
+                "link": "#d4915e",
+                "text": "#e8d5c4",
+                "accent": "#8b5a3a",
+                "background": "#1a110b",
+                "surfaceHover": "#2d1e12"
+            },
+            "font": "legible",
+            "$type": "blog.pckt.theme",
+            "light": {
+                "link": "#a0522d",
+                "text": "#3b2718",
+                "accent": "#8b4513",
+                "background": "#faf4ec",
+                "surfaceHover": "#e5d7c4"
+            },
+            "transparency": 100,
+            "tileBackground": false,
+            "backgroundTileSize": 30
+        },
+        "basicTheme": {
+            "$type": "site.standard.theme.basic",
+            "accent": {
+                "b": 19,
+                "g": 69,
+                "r": 139,
+                "$type": "site.standard.theme.color#rgb"
+            },
+            "background": {
+                "b": 236,
+                "g": 244,
+                "r": 250,
+                "$type": "site.standard.theme.color#rgb"
+            },
+            "foreground": {
+                "b": 24,
+                "g": 39,
+                "r": 59,
+                "$type": "site.standard.theme.color#rgb"
+            },
+            "accentForeground": {
+                "b": 196,
+                "g": 215,
+                "r": 229,
+                "$type": "site.standard.theme.color#rgb"
+            }
+        },
+        "description": "",
+        "preferences": {
+            "showInDiscover": true
+        }
+    }
+}

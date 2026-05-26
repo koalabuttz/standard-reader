@@ -1,0 +1,2139 @@
+{
+ "records": [
+  {
+   "uri": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.document/3mlp5rfph25tb",
+   "cid": "bafyreigf6c4c6gggknfbw2seh3w7rdpn454lbnkko3eyqpmkriy4yjmcgq",
+   "value": {
+    "path": "/open-source-your-shit-hsndt4e",
+    "site": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.publication/3mbmm4qeiy2to",
+    "tags": [],
+    "$type": "site.standard.document",
+    "title": "open source your shit!",
+    "content": {
+     "$type": "blog.pckt.content",
+     "items": [
+      {
+       "$type": "blog.pckt.block.text",
+       "plaintext": "stop being precious with your code!"
+      },
+      {
+       "$type": "blog.pckt.block.blockquote",
+       "content": [
+        {
+         "$type": "blog.pckt.block.text",
+         "facets": [
+          {
+           "index": {
+            "byteEnd": 59,
+            "byteStart": 0
+           },
+           "features": [
+            {
+             "$type": "blog.pckt.richtext.facet#italic"
+            }
+           ]
+          }
+         ],
+         "plaintext": "someone is just going to copy and steal credit for my work!"
+        }
+       ]
+      },
+      {
+       "$type": "blog.pckt.block.text",
+       "facets": [
+        {
+         "index": {
+          "byteEnd": 5,
+          "byteStart": 0
+         },
+         "features": [
+          {
+           "$type": "blog.pckt.richtext.facet#bold"
+          },
+          {
+           "$type": "blog.pckt.richtext.facet#italic"
+          }
+         ]
+        },
+        {
+         "index": {
+          "byteEnd": 92,
+          "byteStart": 89
+         },
+         "features": [
+          {
+           "$type": "blog.pckt.richtext.facet#italic"
+          }
+         ]
+        },
+        {
+         "index": {
+          "byteEnd": 134,
+          "byteStart": 127
+         },
+         "features": [
+          {
+           "$type": "blog.pckt.richtext.facet#italic"
+          }
+         ]
+        },
+        {
+         "index": {
+          "byteEnd": 181,
+          "byteStart": 178
+         },
+         "features": [
+          {
+           "$type": "blog.pckt.richtext.facet#italic"
+          }
+         ]
+        },
+        {
+         "index": {
+          "byteEnd": 268,
+          "byteStart": 265
+         },
+         "features": [
+          {
+           "$type": "blog.pckt.richtext.facet#italic"
+          }
+         ]
+        }
+       ],
+       "plaintext": "good! you have just defined the worldview, and you understand it better than they did bc you ideated it.... right? not claude, right? the process by which your code was created (you) is more valuable than any artifact of yours or your claudeminions. if people copy you, you are probably doing something better than someone is able to invent themselves."
+      },
+      {
+       "$type": "blog.pckt.block.text",
+       "facets": [
+        {
+         "index": {
+          "byteEnd": 155,
+          "byteStart": 152
+         },
+         "features": [
+          {
+           "$type": "blog.pckt.richtext.facet#bold"
+          },
+          {
+           "$type": "blog.pckt.richtext.facet#italic"
+          }
+         ]
+        }
+       ],
+       "plaintext": "besides, the atproto hounds are never going to let that copycat rest, and if they succeed anyways, making your marketplace (the ecosystem of atprotated Foo) itself larger is a net positive, if not the fundamental bottleneck for all atproto apps"
+      },
+      {
+       "$type": "blog.pckt.block.blockquote",
+       "content": [
+        {
+         "$type": "blog.pckt.block.text",
+         "facets": [
+          {
+           "index": {
+            "byteEnd": 104,
+            "byteStart": 0
+           },
+           "features": [
+            {
+             "$type": "blog.pckt.richtext.facet#italic"
+            }
+           ]
+          }
+         ],
+         "plaintext": "i am scared for people to read my code and then flame me for not knowing things that they are experts in"
+        }
+       ]
+      },
+      {
+       "$type": "blog.pckt.block.text",
+       "plaintext": "stop caring what fragile people think! people who lurk around waiting to whip out their pet idiosyncratic factoids aren't worthwhile arbiters of your efforts, will soon lose their sense of purpose when those factoids get sucked into the weights, and should not discourage you from allowing the future to stand on your shoulders. communicate good intentions and you'll mostly attract curious, collaborative people \u2014 selection bias does the work for you. the only people digging through your repo are the same flavor of sicko you \ud83e\udef5 are. and by the way, good-faith social pressure inside that cluster is a feature, not a bug."
+      },
+      {
+       "$type": "blog.pckt.block.blockquote",
+       "content": [
+        {
+         "$type": "blog.pckt.block.text",
+         "plaintext": "i don't want my work to be in the weights! capitalist hellpigs should not be able to exploit the fruits of my attention! no free clean room re-implementations of my shit"
+        }
+       ]
+      },
+      {
+       "$type": "blog.pckt.block.text",
+       "plaintext": "i hear you! but i'd counter that the sensemaking potential of open sourcing the basis of your virtual experiences \u2014 yours, or the ones you build for others \u2014 is massive! open sourcing makes your goals legible to the people most willing to help, pulls collaborators in faster and from further out, and load-balances both the challenges and the joys of building."
+      },
+      {
+       "$type": "blog.pckt.block.text",
+       "plaintext": "call me naively optimistic! but i think that the potential of the many small fish meme is great"
+      },
+      {
+       "$type": "blog.pckt.block.image",
+       "attrs": {
+        "alt": "",
+        "src": "blob:bafkreidc7paworl46a7pwokrp3hzsensz2qgewnrupjr2gvgm5ddr5qoyi",
+        "blob": {
+         "ref": {
+          "$link": "bafkreidc7paworl46a7pwokrp3hzsensz2qgewnrupjr2gvgm5ddr5qoyi"
+         },
+         "size": 259766,
+         "$type": "blob",
+         "mimeType": "image/png"
+        },
+        "align": "center"
+       }
+      },
+      {
+       "$type": "blog.pckt.block.text",
+       "facets": [
+        {
+         "index": {
+          "byteEnd": 597,
+          "byteStart": 594
+         },
+         "features": [
+          {
+           "$type": "blog.pckt.richtext.facet#bold"
+          }
+         ]
+        }
+       ],
+       "plaintext": "much like the 9/11 -> Patriot Act -> Palantir horse is already out the stable, the big labs have already scraped the internet. this will surely be hugely problematic in many unforeseen ways, and there are certainly cases where keeping code private is important, but when you're building social experiences on atproto.... on net i think the social coherence benefit far outweighs the downside of potentially real exploitative actors knowing what your code is. realistically, the next claude or even deepseek will be able to reverse engineer your app from your API or (worse) just hack you. i am not saying that \"security isn't important bc we're doomed!\". i'm saying that for most of the distribution of atproto devs, being precious with your code is not the pragmatic choice. i'm just trying to make you stop and think about the compounding, sensemaking effect you're snuffing out."
+      },
+      {
+       "$type": "blog.pckt.block.text",
+       "plaintext": "there may come a time where there's so many competitive businesses on atproto that people need to be closed source to maintain their edge. this is not that time."
+      },
+      {
+       "$type": "blog.pckt.block.text",
+       "facets": [
+        {
+         "index": {
+          "byteEnd": 56,
+          "byteStart": 0
+         },
+         "features": [
+          {
+           "$type": "blog.pckt.richtext.facet#italic"
+          }
+         ]
+        },
+        {
+         "index": {
+          "byteEnd": 61,
+          "byteStart": 56
+         },
+         "features": [
+          {
+           "uri": "https://bsky.app/profile/zzstoatzz.io",
+           "$type": "blog.pckt.richtext.facet#link"
+          },
+          {
+           "$type": "blog.pckt.richtext.facet#italic"
+          }
+         ]
+        },
+        {
+         "index": {
+          "byteEnd": 90,
+          "byteStart": 61
+         },
+         "features": [
+          {
+           "$type": "blog.pckt.richtext.facet#italic"
+          }
+         ]
+        }
+       ],
+       "plaintext": "what other reasons do you have for being closed source? dm me and i'll talk you out of it!"
+      }
+     ]
+    },
+    "updatedAt": "2026-05-13T02:27:29+00:00",
+    "coverImage": {
+     "ref": {
+      "$link": "bafkreiaulpuz7lbkzgycfnsdashv5d6tsoxpepf2qr6tii3uos3evhmntu"
+     },
+     "size": 246084,
+     "$type": "blob",
+     "mimeType": "image/png"
+    },
+    "description": "stop being precious with your code! good! you have just defined the worldview, and you understand it better than they did bc you ideated it.... right? not claude, right? the process by which your code was created (you) is more valuable than any artifact of yours or your claudeminions. if people copy you, you are probably doing something better than someone is able to invent themselves. besides, the atproto hounds are never going to let that copycat rest, and if they succeed anyways, making your ...",
+    "publishedAt": "2026-05-13T01:31:01+00:00",
+    "textContent": "stop being precious with your code!\nsomeone is just going to copy and steal credit for my work!\ngood! you have just defined the worldview, and you understand it better than they did bc you ideated it.... right? not claude, right? the process by which your code was created (you) is more valuable than any artifact of yours or your claudeminions. if people copy you, you are probably doing something better than someone is able to invent themselves.\nbesides, the atproto hounds are never going to let that copycat rest, and if they succeed anyways, making your marketplace (the ecosystem of atprotated Foo) itself larger is a net positive, if not the fundamental bottleneck for all atproto apps\ni am scared for people to read my code and then flame me for not knowing things that they are experts in\nstop caring what fragile people think! people who lurk around waiting to whip out their pet idiosyncratic factoids aren't worthwhile arbiters of your efforts, will soon lose their sense of purpose when those factoids get sucked into the weights, and should not discourage you from allowing the future to stand on your shoulders. communicate good intentions and you'll mostly attract curious, collaborative people \u2014 selection bias does the work for you. the only people digging through your repo are the same flavor of sicko you \ud83e\udef5 are. and by the way, good-faith social pressure inside that cluster is a feature, not a bug.\ni don't want my work to be in the weights! capitalist hellpigs should not be able to exploit the fruits of my attention! no free clean room re-implementations of my shit\ni hear you! but i'd counter that the sensemaking potential of open sourcing the basis of your virtual experiences \u2014 yours, or the ones you build for others \u2014 is massive! open sourcing makes your goals legible to the people most willing to help, pulls collaborators in faster and from further out, and load-balances both the challenges and the joys of building.\ncall me naively optimistic! but i think that the potential of the many small fish meme is great\nmuch like the 9/11 -> Patriot Act -> Palantir horse is already out the stable, the big labs have already scraped the internet. this will surely be hugely problematic in many unforeseen ways, and there are certainly cases where keeping code private is important, but when you're building social experiences on atproto.... on net i think the social coherence benefit far outweighs the downside of potentially real exploitative actors knowing what your code is. realistically, the next claude or even deepseek will be able to reverse engineer your app from your API or (worse) just hack you. i am not saying that \"security isn't important bc we're doomed!\". i'm saying that for most of the distribution of atproto devs, being precious with your code is not the pragmatic choice. i'm just trying to make you stop and think about the compounding, sensemaking effect you're snuffing out.\nthere may come a time where there's so many competitive businesses on atproto that people need to be closed source to maintain their edge. this is not that time.\nwhat other reasons do you have for being closed source? dm me and i'll talk you out of it!"
+   }
+  },
+  {
+   "uri": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.document/3mk4xkaxobc2p",
+   "cid": "bafyreievgnktg3umgcmw7p4ktcb2ugfokwbg2ngje7ey7i53ggj6b6wvdm",
+   "value": {
+    "path": "/3mk4xkaxobc2p",
+    "site": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.publication/3lxksvuhk3s2j",
+    "tags": [],
+    "$type": "site.standard.document",
+    "title": "how to be anti-social",
+    "content": {
+     "$type": "pub.leaflet.content",
+     "pages": [
+      {
+       "id": "019db7fe-0c10-733d-89ed-1ff6c0e7ca3a",
+       "$type": "pub.leaflet.pages.linearDocument",
+       "blocks": [
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "if someone is confusing or upsetting you, assume they have no sane reason for doing or saying what they are doing or saying"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "when ambiguous, assume intent is malicious, ignorant, or amoral. interpret others' actions in the context of your fears "
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "do not challenge or acknowledge the existence or influence of your assumptions, wholly trust your intuition and feelings"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "pivot conversations when someone challenges your assumptions or cites reasoning outside your wheelhouse. avoid displaying a lack of knowledge in any domain \u2013 this is seen as weakness"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "if you must ask questions, imply the correctness of your originally held position by wording your question suggestively"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "dig in your heels when confronted with overwhelming dissent"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "exploit your immediate network; when the obvious merits of your narrative are exhausted, present like-minded people with tastefully curated details of your interactions with detractors, to provide a more appropriate account that your supporters can rally around to crush any lingering threats to your narrative"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "do not research or consider the record, acumen or credentials of those with whom you speak, unless you agree with them"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "facets": [
+              {
+               "index": {
+                "byteEnd": 46,
+                "byteStart": 45
+               },
+               "features": [
+                {
+                 "$type": "pub.leaflet.richtext.facet#footnote",
+                 "footnoteId": "019db81d-f149-7992-8e30-9003ce60dccd",
+                 "contentPlaintext": "see bullet 2"
+                }
+               ]
+              }
+             ],
+             "plaintext": "do not grant grace to those who make mistakes*, especially those that you have never met or otherwise spoken to"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "when all hope is lost in conversation, retreat into your self"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "do not seek to understand those you do not already understand"
+            }
+           }
+          ]
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "description": "a guide to incoherent and isolating social experiences",
+    "publishedAt": "2026-04-23T02:26:31.112Z"
+   }
+  },
+  {
+   "uri": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.document/3mj5rpb2gnc23",
+   "cid": "bafyreify4lxwsqmk4xsysy25hww7rykjsjff2wnuyjncvtc6uxdbd3mo7q",
+   "value": {
+    "path": "/@zzstoatzz.io/3mj5rpb2gnc23",
+    "site": "https://unthread.at",
+    "$type": "site.standard.document",
+    "title": "Continue reading on Unthread",
+    "content": {
+     "$type": "at.unthread.content",
+     "content": "*argues if mutex or lock is more accessible to my grandma*\n\n\n\n\n(nerd phrases used by nerds to convey a complex, abstract nerd thing. nerds remain bad at accurately predicting everyone else's intuitions, and reductively assume they know how \"normal\" people think. your sensibilities are fallible, being dogmatic without data is maybe unproductive)"
+    },
+    "createdAt": "2026-04-10T16:49:56.784Z",
+    "publishedAt": "2026-04-10T16:49:56.784Z",
+    "textContent": "argues if mutex or lock is more accessible to my grandma\n\n(nerd phrases used by nerds to convey a complex, abstract nerd thing. nerds remain bad at accurately predicting everyone else's intuitions, and reductively assume they know how \"normal\" people think. your sensibilities are fallible, being dogmatic without data is maybe unproductive)"
+   }
+  },
+  {
+   "uri": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.document/3mj5mknhufc23",
+   "cid": "bafyreidez5skzm4b2kul2krs6frruzadh736mkfiqaoyqhay6dulkgguay",
+   "value": {
+    "path": "/3mj5mknhufc23",
+    "site": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.publication/3lxksvuhk3s2j",
+    "tags": [
+     "atproto",
+     "embeddings",
+     "llama",
+     "PDS"
+    ],
+    "$type": "site.standard.document",
+    "title": "within my ken",
+    "content": {
+     "$type": "pub.leaflet.content",
+     "pages": [
+      {
+       "id": "019d77a5-2361-7ff9-b32f-139f07365960",
+       "$type": "pub.leaflet.pages.linearDocument",
+       "blocks": [
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 37,
+             "byteStart": 28
+            },
+            "features": [
+             {
+              "uri": "https://waow.tech",
+              "$type": "pub.leaflet.richtext.facet#link"
+             }
+            ]
+           }
+          ],
+          "plaintext": "there's a new member of the waow.tech family!"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "src": "https://ken.waow.tech",
+          "$type": "pub.leaflet.blocks.website",
+          "title": "ken",
+          "description": "fuzzy find any record in your atproto repo.",
+          "previewImage": {
+           "ref": {
+            "$link": "bafkreico5drect5gaeudgluyw3fgwbpyfl4q43as3bo27hbmo4erevrbwu"
+           },
+           "size": 2210,
+           "$type": "blob",
+           "mimeType": "image/png"
+          }
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 4,
+             "byteStart": 1
+            },
+            "features": [
+             {
+              "$type": "pub.leaflet.richtext.facet#italic"
+             }
+            ]
+           }
+          ],
+          "plaintext": "\"ken\" isn't only Barbie's man, its Scots for \"know\""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "id": "019d77d0-8d28-722b-9f8d-bbf0c5f874e5",
+          "$type": "pub.leaflet.blocks.page"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 3,
+          "plaintext": "ok but what does this do"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "type in a query, get your \"related\" atproto records back!"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.bskyPost",
+          "postRef": {
+           "cid": "bafyreihrjthpg33hyffe4iexx7bpdvwk7txczsrq2lbislmc6ghmd64jrm",
+           "uri": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/app.bsky.feed.post/3mj4exmj2fk2n"
+          },
+          "clientHost": "bsky.app"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 30,
+             "byteStart": 16
+            },
+            "features": [
+             {
+              "uri": "https://ken.waow.tech/?handle=zzstoatzz.io&q=halloween",
+              "$type": "pub.leaflet.richtext.facet#link"
+             }
+            ]
+           },
+           {
+            "index": {
+             "byteEnd": 61,
+             "byteStart": 60
+            },
+            "features": [
+             {
+              "$type": "pub.leaflet.richtext.facet#footnote",
+              "footnoteId": "019d77e8-fe2a-722b-9fa7-0d4631954986",
+              "contentPlaintext": "though of course, if you save the pack to your PDS, anyone can go grab it... but you don't have to save it to your PDS"
+             }
+            ]
+           }
+          ],
+          "plaintext": "you can share a read-only view of results for a given query!*"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 4,
+          "plaintext": "methodology"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 34,
+             "byteStart": 28
+            },
+            "features": [
+             {
+              "uri": "https://fly.io",
+              "$type": "pub.leaflet.richtext.facet#link"
+             }
+            ]
+           }
+          ],
+          "plaintext": "there's only 1 vendor here, fly.io for compute. how does it work?"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "facets": [
+              {
+               "index": {
+                "byteEnd": 34,
+                "byteStart": 31
+               },
+               "features": [
+                {
+                 "uri": "https://atproto.com/specs/repository#car-file-serialization",
+                 "$type": "pub.leaflet.richtext.facet#link"
+                }
+               ]
+              },
+              {
+               "index": {
+                "byteEnd": 43,
+                "byteStart": 40
+               },
+               "features": [
+                {
+                 "uri": "https://zat.dev/#index.md",
+                 "$type": "pub.leaflet.richtext.facet#link"
+                }
+               ]
+              }
+             ],
+             "plaintext": "enter handle, ken streams your CAR with zat (zig atproto SDK)"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "facets": [
+              {
+               "index": {
+                "byteEnd": 29,
+                "byteStart": 12
+               },
+               "features": [
+                {
+                 "uri": "https://huggingface.co/BAAI/bge-small-en-v1.5",
+                 "$type": "pub.leaflet.richtext.facet#link"
+                }
+               ]
+              }
+             ],
+             "plaintext": "walks repo, bge-small-en-v1.5 to embed \"text-based\" records"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "facets": [
+              {
+               "index": {
+                "byteEnd": 9,
+                "byteStart": 0
+               },
+               "features": [
+                {
+                 "uri": "https://github.com/ggml-org/llama.cpp",
+                 "$type": "pub.leaflet.richtext.facet#link"
+                }
+               ]
+              },
+              {
+               "index": {
+                "byteEnd": 41,
+                "byteStart": 25
+               },
+               "features": [
+                {
+                 "uri": "https://mtlynch.io/notes/zig-call-c-simple/",
+                 "$type": "pub.leaflet.richtext.facet#link"
+                }
+               ]
+              }
+             ],
+             "plaintext": "llama.cpp for inference (zig can build C!)"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "facets": [
+              {
+               "index": {
+                "byteEnd": 34,
+                "byteStart": 17
+               },
+               "features": [
+                {
+                 "uri": "https://pds.ls/at://did:plc:xbtmt2zjwlrfegqvch7fboei/tech.waow.ken.pack/3mj33va5fwz2n",
+                 "$type": "pub.leaflet.richtext.facet#link"
+                }
+               ]
+              }
+             ],
+             "plaintext": "store vectors as blobs on your PDS to \"save an index\""
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "you don't have to save the index if you don't want to. i just do because if i show up again, having creating new records, i don't want to wait for it to stream my CAR and re-embed everything. ken will incrementally index what is new if you save the index!"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 4,
+          "plaintext": "limitations and expansions"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "facets": [
+              {
+               "index": {
+                "byteEnd": 53,
+                "byteStart": 31
+               },
+               "features": [
+                {
+                 "uri": "https://find-bufo.com/",
+                 "$type": "pub.leaflet.richtext.facet#link"
+                }
+               ]
+              },
+              {
+               "index": {
+                "byteEnd": 55,
+                "byteStart": 54
+               },
+               "features": [
+                {
+                 "$type": "pub.leaflet.richtext.facet#footnote",
+                 "footnoteId": "019d77db-638d-722b-9fa1-a7a7839dffc2",
+                 "contentFacets": [
+                  {
+                   "index": {
+                    "byteEnd": 137,
+                    "byteStart": 103
+                   },
+                   "features": [
+                    {
+                     "uri": "https://docs.plyr.fm/developers/api-reference/search/#semantic_search-source",
+                     "$type": "pub.leaflet.richtext.facet#link"
+                    }
+                   ]
+                  }
+                 ],
+                 "contentPlaintext": "you can imagine all sorts of cool stuff here. embedding/search over images is very well-precedented, i embed/search over audio in plyr.fm, i know people can do the same for video"
+                }
+               ]
+              }
+             ],
+             "plaintext": "only text embeddings (for now! https://find-bufo.com/)*"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "i limit how many records i index from realllly big repos"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "i should probably turn the current walk-then-materialize-then-embed pipeline into a streaming walk-to-embed\u00a0pipeline to minimize peak resource utilization"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "i am not yet sure on the best architecture for this app in general, i just thought storing the pack on my PDS so i didn't have to re-embed was kinda fun"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 58,
+             "byteStart": 41
+            },
+            "features": [
+             {
+              "did": "did:plc:65sucjiel52gefhcdcypynsr",
+              "$type": "pub.leaflet.richtext.facet#didMention"
+             }
+            ]
+           }
+          ],
+          "plaintext": "i will likely find a way to give this to @phi.zzstoatzz.io so it can find its own records on demand (it uses records on its PDS often for \"global state things\") but beyond that i have no immediate plans."
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "here's the code:"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "src": "https://tangled.org/zzstoatzz.io/ken",
+          "$type": "pub.leaflet.blocks.website",
+          "title": "zzstoatzz.io/ken",
+          "description": "fuzzy find my records",
+          "previewImage": {
+           "ref": {
+            "$link": "bafkreibm5yjbrpgmgpbsctdpeai7kxnyhmkhggzzcrd7ozc3lqc7pnw4j4"
+           },
+           "size": 18615,
+           "$type": "blob",
+           "mimeType": "image/png"
+          }
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "have a great weekend :)"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 4,
+          "plaintext": "P.S."
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 65,
+             "byteStart": 41
+            },
+            "features": [
+             {
+              "did": "did:plc:5czheuspjl4bm56cwash6s7c",
+              "$type": "pub.leaflet.richtext.facet#didMention"
+             }
+            ]
+           },
+           {
+            "index": {
+             "byteEnd": 81,
+             "byteStart": 70
+            },
+            "features": [
+             {
+              "did": "did:plc:rtzf5y356funa3tgp6fzmkjn",
+              "$type": "pub.leaflet.richtext.facet#didMention"
+             }
+            ]
+           },
+           {
+            "index": {
+             "byteEnd": 104,
+             "byteStart": 88
+            },
+            "features": [
+             {
+              "did": "did:plc:ss2uhsajrstfhkq73fteu4zz",
+              "$type": "pub.leaflet.richtext.facet#didMention"
+             }
+            ]
+           }
+          ],
+          "plaintext": "this is partially inspired by talking to @offline.arushibandi.com and @eagraf.dev about @habitat.network"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        }
+       ]
+      },
+      {
+       "id": "019d77d0-8d28-722b-9f8d-bbf0c5f874e5",
+       "$type": "pub.leaflet.pages.linearDocument",
+       "blocks": [
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 1,
+          "plaintext": "ken \u00b7 /k\u025bn/"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "Scots / Northern English dialect"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 6,
+             "byteStart": 0
+            },
+            "features": [
+             {
+              "$type": "pub.leaflet.richtext.facet#bold"
+             }
+            ]
+           }
+          ],
+          "plaintext": "Origin: From Middle English kennen (\u201cto make known, see, know\u201d), from Old English cennan (\u201cto make known, declare\u201d), originally a causative of cunnan (\u201cto become acquainted with, to know\u201d). Also reinforced by Old Norse kenna (\u201cto know, perceive\u201d). Cognate with German kennen, Dutch kennen, Swedish k\u00e4nna, Danish kende. Ultimately from Proto-Germanic *kannijan\u0105, the causative of *kunnan\u0105 (\u201cbe able\u201d) \u2014 the same root that gives us the English verb \u201ccan.\u201d The word appeared in its noun sense on the English horizon in the 16th century, originally referring to the distance bounding the range of ordinary vision at sea (about 20 miles)."
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 11,
+             "byteStart": 0
+            },
+            "features": [
+             {
+              "$type": "pub.leaflet.richtext.facet#bold"
+             }
+            ]
+           }
+          ],
+          "plaintext": "Definitions:"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.code",
+          "language": "plaintext",
+          "plaintext": "1.\t(verb) To know, perceive, or understand. \ufffc\n"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "\u2014 \u201cD\u2019ye ken what I mean?\u201d (Do you know what I mean?)"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "\u2014 \u201cI dinnae ken.\u201d (I don\u2019t know.)"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.code",
+          "language": "plaintext",
+          "plaintext": "2.\t(noun) The range of perception, understanding, or knowledge; the range of vision. \ufffc\n"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "\u2014 \u201cIt\u2019s beyond my ken.\u201d"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 11,
+             "byteStart": 0
+            },
+            "features": [
+             {
+              "$type": "pub.leaflet.richtext.facet#bold"
+             }
+            ]
+           }
+          ],
+          "plaintext": "Conjugation: Third-person singular kens, present participle kenning, past tense and past participle kenned or kent."
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 14,
+             "byteStart": 0
+            },
+            "features": [
+             {
+              "$type": "pub.leaflet.richtext.facet#bold"
+             }
+            ]
+           }
+          ],
+          "plaintext": "Notable phrase: The Dictionary of the Scots Language records the expression \u201ckent his faither\u201d \u2014 a disparaging, dismissive term for a successful person whose background is known. (Essentially: \u201cDon\u2019t be impressed, I knew his dad.\u201d)"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 11,
+             "byteStart": 0
+            },
+            "features": [
+             {
+              "$type": "pub.leaflet.richtext.facet#bold"
+             }
+            ]
+           }
+          ],
+          "plaintext": "Usage notes: In everyday spoken Scots, ken functions much like \u201cknow\u201d or \u201cy\u2019know\u201d as a conversational filler \u2014 \u201cIt was just, ken, one of those days.\u201d Today the noun form rarely suggests literal sight, but rather the extent of what one can metaphorically \u201csee.\u201d\u200b\u200b\u200b\u200b\u200b"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "description": "fuzzy find my breadcrumbs",
+    "publishedAt": "2026-04-10T15:17:13.393Z"
+   }
+  },
+  {
+   "uri": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.document/3mj35qbougk2i",
+   "cid": "bafyreifzwwtg6azoxwn5fiyljhe2faom3aq2upumhttuzkkpb66icp3tly",
+   "value": {
+    "path": "/3mj35qbougk2i",
+    "site": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.publication/3lxksvuhk3s2j",
+    "tags": [
+     "atproto",
+     "standards",
+     "lexicon"
+    ],
+    "$type": "site.standard.document",
+    "title": "notes",
+    "content": {
+     "$type": "pub.leaflet.content",
+     "pages": [
+      {
+       "id": "019d6f5d-66ef-7aa7-b8df-81e27e52d102",
+       "$type": "pub.leaflet.pages.linearDocument",
+       "blocks": [
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 2,
+          "plaintext": "common lexicon"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "what should we get from a common lexicon"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "reuse metadata"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "distributor messes up something \u2192 one place to fix"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 2,
+          "plaintext": "metadata shape"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "western pop music, not classical metadata"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "classical music has more metadata"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "ID3 tags \u2192 extra fields"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 2,
+          "plaintext": "scope"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "indexing all audio is very different from enforcing royalties downstream"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 2,
+          "plaintext": "catalogue server / infrastructure"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "tom: centralized (stripe) for simplicity"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "catalogue server hosts keys, publishes public keys"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "facets": [
+              {
+               "index": {
+                "byteEnd": 24,
+                "byteStart": 18
+               },
+               "features": [
+                {
+                 "$type": "pub.leaflet.richtext.facet#italic"
+                }
+               ]
+              }
+             ],
+             "plaintext": "permissioned data should solve this ^"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "bandcamp royalties \u2192 self-report to PRO?"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 2,
+          "plaintext": "expressiveness vs portability"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "expressiveness vs portability"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "what is the minimal set of common fields??"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "facets": [
+              {
+               "index": {
+                "byteEnd": 72,
+                "byteStart": 26
+               },
+               "features": [
+                {
+                 "$type": "pub.leaflet.richtext.facet#italic"
+                }
+               ]
+              }
+             ],
+             "plaintext": "alex: perf is important!! (streaming latency, not performance royalties)"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "\"catalogue.xyz\" could be the owner of a permissioned space that is a purpose-built PDS to stream audio at high perf"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "catalogue \u2192 where you upload, licensing, encrypt etc"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 2,
+          "plaintext": "DRM analogue"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "apple fairplay \u2192 content decryption module"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "API \u2192 decrypted data"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 2,
+          "plaintext": "interlude"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "all trying to do the same thing \u2192 our lifetime"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 2,
+          "plaintext": "listener / spotify"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "facets": [
+              {
+               "index": {
+                "byteEnd": 114,
+                "byteStart": 33
+               },
+               "features": [
+                {
+                 "$type": "pub.leaflet.richtext.facet#italic"
+                }
+               ]
+              }
+             ],
+             "plaintext": "alex: listener is the artist too (curation angle \u2014 playlist curators as artists; unclear if extends to remixing)"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "spotify \u2192 licensing \u2192 legal"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 2,
+          "plaintext": "moderation"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "moderation \u2192 hosting vs indexing \u2192 takedowns etc"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "ToS: use in models, generative use, royalties"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "fingerprinting \u2192 content ID"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 2,
+          "plaintext": "royalties / publishing"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "performing royalty collection \u2192 complicates things"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "ASCAP?"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "ISRC codes \u2192 ??"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "3rd party publisher, BMI? as independent artist, writing and recording"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "publishing might be separate in some cases"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 3,
+          "plaintext": "alex: 2 modes"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "songwriter \u2192 managed by agency who manages relations"
+            }
+           },
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "band \u2192 defer to platforms distributions (symphonic \u2192 labelworks)"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 3,
+          "facets": [
+           {
+            "index": {
+             "byteEnd": 18,
+             "byteStart": 0
+            },
+            "features": [
+             {
+              "did": "did:plc:acl7fufukmxvthntnary7s2h",
+              "$type": "pub.leaflet.richtext.facet#didMention"
+             }
+            ]
+           }
+          ],
+          "plaintext": "@emotionengine.rip "
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.unorderedList",
+          "children": [
+           {
+            "$type": "pub.leaflet.blocks.unorderedList#listItem",
+            "content": {
+             "$type": "pub.leaflet.blocks.text",
+             "plaintext": "manage legal stuff in the same place, independent of platform"
+            }
+           }
+          ]
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "id": "019d72ea-60a5-7117-885f-de4e4b0743ab",
+          "$type": "pub.leaflet.blocks.page"
+         }
+        }
+       ]
+      },
+      {
+       "id": "019d72ea-60a5-7117-885f-de4e4b0743ab",
+       "$type": "pub.leaflet.pages.linearDocument",
+       "blocks": [
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.header",
+          "level": 1,
+          "plaintext": "raw notes"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "what should we get from a common lexicon"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "\n"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "reuse metadata"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "distributor messes up something -> one place to fix"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "western pop music not classical metadata"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "classical music has more metadata"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "ID3 tags -> extra fields"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "indexing all audio is very different from enforcing royalties downstream"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "tom: centralized (stripe) for simplicity"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "catalogue server hosts keys, publishes public keys"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "permissioned data should solve this ^"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "bandcamp royalties -> self report to PRO ?"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "expressiveness vs portability"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "what is the minimal set of common fields??"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "alex: perf is important!!"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "catalogue.xyz could be the owner of a permissioned space that is a purpose built PDS to stream audio at high perf\n\n"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "catalogue -> where you upload, licensing, encrypt etc"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "apple fairplay -> content decryption module"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "API -> decrypted data"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "all trying to do the same thing -> our lifetime"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "alex: listener is the artist too"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "spotify -> licensing -> legal"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "moderation -> hosting vs indexing -> takedowns etc"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "ToS: use in models, generative use, royalties"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "fingerprinting -> content ID"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "performing royalty collection -> complicates things"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "ascap?"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "ISRC codes -> ??"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "3rd party publisher, BMI? as independent artist, writing and recording"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "publishing might be separate in some cases"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "alex: 2 modes"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "songwriter -> managed by agency who manages relations"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "band -> defer to platforms distributions (symphonic -> labelworks)"
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": ""
+         }
+        },
+        {
+         "$type": "pub.leaflet.pages.linearDocument#block",
+         "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": "soundsgoodman: manage legal stuff in the same place, independent of platform"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "description": "rough notes from standard music lexicon meeting",
+    "publishedAt": "2026-04-09T15:46:44.110Z"
+   }
+  }
+ ],
+ "cursor": "3mj35qbougk2i"
+}

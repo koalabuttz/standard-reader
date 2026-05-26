@@ -1,0 +1,13 @@
+{
+    "records": [
+        {
+            "uri": "at://did:plc:xn3l7ogsxym5ixxugidum5dw/site.standard.graph.subscription/3mmrobvbl62ac",
+            "cid": "bafyreibpkfjrqgfynx2mxnrf4zgnsyutjkv4giyudbtc46nbxbku7f6njy",
+            "value": {
+                "$type": "site.standard.graph.subscription",
+                "publication": "at://did:plc:xbtmt2zjwlrfegqvch7fboei/site.standard.publication/3mbmm4qeiy2to"
+            }
+        }
+    ],
+    "cursor": "3mmrobvbl62ac"
+}

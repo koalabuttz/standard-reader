@@ -19,5 +19,6 @@
 pub mod atp;
 pub mod decode;
 pub mod model;
+pub mod read;
 pub mod search;
 pub mod store;

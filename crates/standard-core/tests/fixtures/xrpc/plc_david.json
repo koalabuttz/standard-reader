@@ -1,0 +1,26 @@
+{
+    "@context": [
+        "https://www.w3.org/ns/did/v1",
+        "https://w3id.org/security/multikey/v1",
+        "https://w3id.org/security/suites/secp256k1-2019/v1"
+    ],
+    "id": "did:plc:xn3l7ogsxym5ixxugidum5dw",
+    "alsoKnownAs": [
+        "at://david.yapfest.club"
+    ],
+    "verificationMethod": [
+        {
+            "id": "did:plc:xn3l7ogsxym5ixxugidum5dw#atproto",
+            "type": "Multikey",
+            "controller": "did:plc:xn3l7ogsxym5ixxugidum5dw",
+            "publicKeyMultibase": "zQ3shWt4RHqZAGnQWtZ46ByYBvipzJuRXXYS6tT7qAjFzo3CS"
+        }
+    ],
+    "service": [
+        {
+            "id": "#atproto_pds",
+            "type": "AtprotoPersonalDataServer",
+            "serviceEndpoint": "https://yapfest.club"
+        }
+    ]
+}

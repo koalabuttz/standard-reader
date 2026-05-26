@@ -5,10 +5,12 @@
 //! it with `redb`; because it's a *cache*, swapping backends (rusqlite, a Vita SD
 //! store, …) is a new impl, and "migration" is just a re-fetch.
 
+use serde::{Deserialize, Serialize};
+
 use crate::model::{Document, Publication, RichDoc};
 
 /// A cached document: its metadata, optionally its decoded body, and read-state.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StoredDoc {
     pub meta: Document,
     pub body: Option<RichDoc>,

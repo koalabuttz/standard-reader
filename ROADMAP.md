@@ -2,9 +2,9 @@
 
 A lean TUI reader for [standard.site](https://standard.site) (long-form on the AT Protocol). The engine (`standard-core`) is portable by design so it can grow new frontends — a desktop `ratatui` TUI now, a **PS Vita** frontend later — without a rewrite. See `CLAUDE.md` for architecture.
 
-## Status — 2026-05-26: live read path works (CLI)
+## Status — 2026-05-26: reads + offline cache work (CLI)
 
-Workspace builds; `cargo test -p standard-core` is green (33 tests: 24 unit + 9 integration over real-record fixtures, incl. an offline mock of the whole read pipeline). The engine now reaches live data: `sr fetch <handle|did>` resolves a repo, walks subscriptions → publications → documents, and decodes them off real PDSes. No UI yet — that's next.
+Workspace builds; the suite is green (39 tests across both crates: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, plus the redb cache round-trip). The engine reaches live data and persists it: `sr fetch <handle|did>` resolves a repo, walks subscriptions → publications → documents, decodes them off real PDSes, and writes them into a `redb` cache; `sr cached` re-renders that cache with no network. No UI yet — that's next.
 
 **Done (real & tested):**
 - [x] Cargo workspace + the portable core/frontend split
@@ -31,7 +31,7 @@ Sequenced so each step is runnable on top of the last:
 
 - [x] **Read pipeline.** XRPC response parsers + orchestration in `core/read.rs` (`resolve_identity` → `list_subscriptions` → `get_publication` → `list_documents` → `get_document` → `decode`), generic over `Transport`, synchronous, mock-tested. Plus the `reqwest::blocking` `Transport` impl and the `sr fetch <handle|did>` binary — proven end-to-end on live data (public records, no auth).
 - [x] GreenGale `#contentRef` two-phase fetch + `get_blob` for image blobs are wired into the pipeline. *Still deferred:* Pckt `gallery` ref (a record fetch like contentRef), and a decoder for **`at.unthread.content`** (a 6th content type seen live; currently degrades to the `Plaintext` fallback).
-- [ ] `redb` `Store` impl — offline cache (documents, read-state, blobs, sync cursors) → recommended next.
+- [x] `redb` `Store` impl — offline cache (publications, documents+body, read-state, blobs, sync cursors, a persisted inverted index for `search`). `sr fetch` caches as it reads; `sr cached` renders offline. *Surfaced:* `listRecords` lists a whole **repo**; a doc belongs to the publication its `site` field names, so per-publication listing filters by `site` (the cache keys on it; the frontend filters for display).
 - [ ] OAuth loopback login (`atrium-oauth`) + `0600` token file (no keyring on Crostini) — unlocks the reader's *own* subscriptions.
 - [ ] `ratatui` shell: subscription / document / reader panes, vim-style nav, async loading states.
 - [ ] Cover + inline images (`ratatui-image`, iTerm2 protocol on hterm) from the `redb` cache.
@@ -54,4 +54,4 @@ Sequenced so each step is runnable on top of the last:
 
 ## Immediate next step
 
-The **`redb` `Store` impl** — turn the live reads into an offline cache (documents, read-state, blobs, sync cursors) behind the existing `Store` trait. Then OAuth (for the reader's own subscriptions), then the `ratatui` shell that renders the `RichDoc`s the pipeline already produces.
+The **`ratatui` shell** — an interactive reader over the pieces that already work: subscription / document / reader panes, vim-style nav, fetch on a worker thread into the `redb` cache, cover/inline images. Reading public subscriptions needs no auth, so OAuth (writing subs, private repos) can come after the UI is usable.

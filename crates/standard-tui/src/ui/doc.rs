@@ -1,8 +1,9 @@
 //! `RichDoc` → ratatui `Text`. Pure styling of the neutral AST; the reader pane wraps and
-//! scrolls the result. (Real inline images are a later milestone — they render as a dim
-//! placeholder here.)
+//! scrolls the result. Block-level images and callouts are split into their own segments by
+//! the reader (for real image rendering / tinted boxes); the arms here are the text-flow
+//! fallback (e.g. when nested inside a quote or list).
 
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 
 use standard_core::model::{Block, Inline};
@@ -91,11 +92,42 @@ fn block_lines(block: &Block, theme: &Theme, out: &mut Vec<Line<'static>>) {
             out.push(Line::styled(format!("🖼  {label}"), theme.dim_style()));
         }
         Block::Table { head, rows } => table_lines(head, rows, theme, out),
+        Block::Callout {
+            emoji,
+            tint,
+            content,
+        } => {
+            // Fallback (e.g. a callout nested in a quote/list); the reader draws top-level
+            // callouts as a filled box instead. Here: a tinted left bar + emoji + text.
+            let bar_color = tint
+                .map(|(r, g, b)| Color::Rgb(r, g, b))
+                .unwrap_or(theme.accent2);
+            let bar = Span::styled("▌ ", Style::default().fg(bar_color));
+            let mut lines = inline_lines(content, theme.body(), theme);
+            if lines.is_empty() {
+                lines.push(Line::default());
+            }
+            for (i, mut line) in lines.into_iter().enumerate() {
+                if i == 0
+                    && let Some(e) = emoji
+                {
+                    line.spans
+                        .insert(0, Span::styled(format!("{e} "), theme.body()));
+                }
+                line.spans.insert(0, bar.clone());
+                out.push(line);
+            }
+        }
         Block::Rule => out.push(Line::styled(
             "─".repeat(48),
             Style::default().fg(theme.border),
         )),
     }
+}
+
+/// A run of inline content as one wrappable `Text` (used by the reader's callout box).
+pub fn inline_paragraph(content: &[Inline], theme: &Theme) -> Text<'static> {
+    Text::from(inline_lines(content, theme.body(), theme))
 }
 
 /// Render a table with box-drawing borders. Cells are flattened to plain text, each column

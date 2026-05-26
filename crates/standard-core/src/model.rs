@@ -37,6 +37,13 @@ pub enum Block {
         head: Vec<Vec<Inline>>,
         rows: Vec<Vec<Vec<Inline>>>,
     },
+    /// A highlighted aside (Offprint callout): emphasis, not a quotation. Carries an
+    /// optional emoji badge and an author-chosen tint colour `(r, g, b)` for its box.
+    Callout {
+        emoji: Option<String>,
+        tint: Option<(u8, u8, u8)>,
+        content: Vec<Inline>,
+    },
     Rule,
 }
 

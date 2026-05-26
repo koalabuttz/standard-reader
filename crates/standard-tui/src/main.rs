@@ -319,6 +319,13 @@ fn print_block(block: &Block, indent: usize) {
                 println!("{pad}{}", row_text(row));
             }
         }
+        Block::Callout { emoji, content, .. } => {
+            println!(
+                "{pad}{} {}",
+                emoji.as_deref().unwrap_or("›"),
+                inlines(content)
+            );
+        }
         Block::Rule => println!("{pad}───"),
     }
 }
@@ -345,6 +352,9 @@ fn block_text(block: &Block) -> String {
             })
             .collect::<Vec<_>>()
             .join(" / "),
+        Block::Callout { emoji, content, .. } => {
+            format!("{} {}", emoji.as_deref().unwrap_or("›"), inlines(content))
+        }
         Block::Rule => "───".to_string(),
     }
 }

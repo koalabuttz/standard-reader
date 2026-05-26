@@ -138,8 +138,15 @@ fn offprint_real_record() {
             if did == "did:plc:gj55urnejshc53jzje5afyk2")
     ));
     assert!(matches!(&doc.blocks[8], Block::List { ordered: false, .. }));
-    // Callout degraded to a quote.
-    assert!(matches!(&doc.blocks[11], Block::Quote(_)));
+    // Callout decodes to a real Block::Callout, keeping its emoji + tint colour.
+    assert!(matches!(
+        &doc.blocks[11],
+        Block::Callout {
+            emoji: Some(_),
+            tint: Some(_),
+            ..
+        }
+    ));
 }
 
 #[test]

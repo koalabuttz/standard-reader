@@ -43,7 +43,7 @@ Sequenced so each step is runnable on top of the last:
 - [ ] Author `basicTheme` toggle (uniform vs. author's styling) — both render the same `RichDoc`, the mode only changes theming.
 - [x] Search UI over the `textContent` index (in the shell; `/` searches the redb inverted index).
 - [ ] Background sync (incremental via `listRecords` cursors). Mark-read exists (on open + `m`); unread badges in the list are still TODO.
-- [x] `Block::Table` — Pckt tables decode to a real table (header + rows) and render with box-drawing borders in the reader. *Still degrading:* Offprint `callout` → quote (a `Block::Callout` could come later).
+- [x] `Block::Table` (Pckt tables → box-drawing grid) and `Block::Callout` (Offprint callouts → a tinted box with the author's colour + emoji badge), both first-class in the model and reader.
 
 ## Later
 

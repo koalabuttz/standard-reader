@@ -11,12 +11,12 @@
 use image::DynamicImage;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect, Size};
-use ratatui::style::Style;
-use ratatui::text::{Span, Text};
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
 use ratatui_image::sliced::{SignedPosition, SlicedImage, SlicedProtocol};
 
-use standard_core::model::Block as DocBlock;
+use standard_core::model::{Block as DocBlock, Inline};
 
 /// Hard ceiling on image height (rows), so a tall/portrait image never dominates the pane.
 const MAX_IMAGE_ROWS: u16 = 20;
@@ -40,17 +40,28 @@ enum Segment {
         height: u16,
         width: u16,
     },
+    /// A callout box: pre-built text (emoji already prefixed) drawn over a tinted fill.
+    Callout {
+        text: Text<'static>,
+        tint: Option<(u8, u8, u8)>,
+        top: u16,
+        height: u16,
+    },
 }
 
 impl Segment {
     fn top(&self) -> u16 {
         match self {
-            Segment::Text { top, .. } | Segment::Image { top, .. } => *top,
+            Segment::Text { top, .. }
+            | Segment::Image { top, .. }
+            | Segment::Callout { top, .. } => *top,
         }
     }
     fn height(&self) -> u16 {
         match self {
-            Segment::Text { height, .. } | Segment::Image { height, .. } => *height,
+            Segment::Text { height, .. }
+            | Segment::Image { height, .. }
+            | Segment::Callout { height, .. } => *height,
         }
     }
 }
@@ -155,17 +166,59 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
     if let Some(body) = &app.reading {
         let mut run: Vec<&DocBlock> = Vec::new();
         for block in &body.blocks {
-            if let DocBlock::Image(img) = block {
-                flush_text(&mut run, theme, width, &mut segs, &mut y);
-                push_image(&mut segs, &mut y, image_key(&img.source), img.alt.clone());
-            } else {
-                run.push(block);
+            match block {
+                DocBlock::Image(img) => {
+                    flush_text(&mut run, theme, width, &mut segs, &mut y);
+                    push_image(&mut segs, &mut y, image_key(&img.source), img.alt.clone());
+                }
+                DocBlock::Callout {
+                    emoji,
+                    tint,
+                    content,
+                } => {
+                    flush_text(&mut run, theme, width, &mut segs, &mut y);
+                    let (text, height) = callout_segment(content, emoji.as_deref(), theme, width);
+                    if !segs.is_empty() {
+                        y += GAP;
+                    }
+                    segs.push(Segment::Callout {
+                        text,
+                        tint: *tint,
+                        top: y,
+                        height,
+                    });
+                    y += height;
+                }
+                _ => run.push(block),
             }
         }
         flush_text(&mut run, theme, width, &mut segs, &mut y);
     }
 
     (segs, y)
+}
+
+/// Build a callout's body text (emoji prefixed) and its height for the available width.
+/// Leaves 1 col for the accent bar + 1 of padding each side.
+fn callout_segment(
+    content: &[Inline],
+    emoji: Option<&str>,
+    theme: &Theme,
+    width: u16,
+) -> (Text<'static>, u16) {
+    let inner_w = width.saturating_sub(4).max(1);
+    let mut text = doc::inline_paragraph(content, theme);
+    if let Some(e) = emoji {
+        let badge = Span::styled(format!("{e} "), theme.body());
+        match text.lines.first_mut() {
+            Some(first) => first.spans.insert(0, badge),
+            None => text.lines.push(Line::from(badge)),
+        }
+    }
+    let height = Paragraph::new(text.clone())
+        .wrap(Wrap { trim: false })
+        .line_count(inner_w) as u16;
+    (text, height.max(1))
 }
 
 fn flush_text(
@@ -280,7 +333,48 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                     rect,
                 );
             }
+            Segment::Callout { text, tint, .. } => {
+                // A filled, subtly-tinted box with a full-saturation left bar — clips
+                // cleanly under scroll (no borders to misplace).
+                let fill = tint
+                    .map(|t| blend(theme.bg, t, 0.20))
+                    .unwrap_or(theme.panel);
+                let bar = tint
+                    .map(|(r, g, b)| Color::Rgb(r, g, b))
+                    .unwrap_or(theme.accent2);
+                f.render_widget(Block::new().style(Style::default().bg(fill)), rect);
+                f.render_widget(
+                    Block::new().style(Style::default().bg(bar)),
+                    Rect { width: 1, ..rect },
+                );
+                let text_rect = Rect {
+                    x: rect.x + 2,
+                    y: rect.y,
+                    width: rect.width.saturating_sub(3),
+                    height: rect.height,
+                };
+                let skip = vis_top - top;
+                let para = Paragraph::new(text.clone())
+                    .wrap(Wrap { trim: false })
+                    .scroll((skip, 0))
+                    .style(Style::default().fg(theme.fg).bg(fill));
+                f.render_widget(para, text_rect);
+            }
         }
+    }
+}
+
+/// Blend a `(r,g,b)` tint over a base colour at the given opacity.
+fn blend(base: Color, tint: (u8, u8, u8), alpha: f32) -> Color {
+    let (br, bg, bb) = rgb_of(base);
+    let mix = |b: u8, t: u8| (b as f32 * (1.0 - alpha) + t as f32 * alpha).round() as u8;
+    Color::Rgb(mix(br, tint.0), mix(bg, tint.1), mix(bb, tint.2))
+}
+
+fn rgb_of(c: Color) -> (u8, u8, u8) {
+    match c {
+        Color::Rgb(r, g, b) => (r, g, b),
+        _ => (0, 0, 0),
     }
 }
 

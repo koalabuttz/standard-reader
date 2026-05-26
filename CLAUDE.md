@@ -1,0 +1,83 @@
+# CLAUDE.md
+
+Guidance for Claude Code (claude.ai/code) working in this repository.
+
+## Project
+
+`standard-reader` (binary **`sr`**) is a lean, polished **TUI reader for [standard.site](https://standard.site)** — long-form writing published to the AT Protocol (Leaflet, Pckt, Offprint, GreenGale, and any blog emitting `site.standard.*` records). Sign in with an atproto account, pull your subscriptions, and read — with images and real formatting, online or **offline**. (RSS support is a later goal.)
+
+**Ethos (load-bearing, mirrors davidlewis.xyz): lean, not bloated.** No build step beyond `cargo`; no runtime services. Keep the dependency surface small and justified; prefer pure-Rust crates. Every dependency should earn its place.
+
+## Architecture — portable core, swappable frontend
+
+A Cargo workspace. The split exists for **portability**: a PS Vita frontend is a stated future goal, so the engine must not assume a desktop.
+
+```
+crates/
+  standard-core/   lib · ZERO platform deps · SYNCHRONOUS · the whole brain
+    model            · RichDoc AST + Document/Publication/Subscription
+    decode           · ContentDecoder trait + Registry + per-publisher decoders
+    atp              · AtUri parsing + XRPC request building (over a Transport)
+    store            · the Store cache trait
+    search           · inverted index over textContent
+  standard-tui/    bin `sr` · the desktop frontend (ratatui + reqwest + redb + OAuth)
+```
+
+**Two traits are the seam** — the only things a new platform implements:
+
+- **`atp::Transport`** — perform an XRPC GET/POST and attach auth. Desktop impl: `reqwest`. A Vita impl: the Vita's net stack. The core *builds* every request URL and *parses* every response; it never opens a socket.
+- **`store::Store`** — the offline cache (documents, read-state, blobs, sync cursors). Desktop impl: `redb`.
+
+**Hard rule: never let `tokio`, `reqwest`, `redb`, `ratatui`, or `async` into `standard-core`.** The core is synchronous. The desktop frontend gets non-blocking fetches by running core operations on a worker thread and channeling results into the `ratatui` render loop; a Vita frontend calls core inline. Auth is also a frontend concern (the Vita would likely use an app-password instead of the loopback flow).
+
+Pipeline: **`atp`** builds/parses XRPC → **`decode`** maps each publisher's `content` lexicon to one `RichDoc` → **`store`** caches it for offline → **`search`** indexes `textContent`.
+
+## Content decoding (validated against real records)
+
+`site.standard.document.content` is an **open union** — each publisher embeds its own lexicon. `textContent` is flat plaintext (the spec says it carries *no* formatting), so it is a **fallback only**. Decoders dispatch on `content.$type` and all target the one neutral `RichDoc` AST:
+
+| `content.$type`     | shape                                   | decoder                  |
+| ------------------- | --------------------------------------- | ------------------------ |
+| *(bare string)*     | Markdown (GreenGale, Sequoia, markpub)  | `Markdown` (pulldown-cmark) |
+| `pub.leaflet.*`     | blocks + facets (byte-range richtext)   | `Leaflet`                |
+| `blog.pckt.content` | `items: [blog.pckt.block.*]`            | `Pckt`                   |
+| *(unknown / absent)*| typeset `textContent`                   | `Plaintext` ✅ done       |
+
+Adding a platform = **one new `ContentDecoder`**; nothing else changes. Decoders are **pure** (no I/O). Two render modes (a frontend concern): **uniform** (the reader's own consistent theme) and **author's** (honor each publication's `basicTheme`) — both decode the same structure; the mode only changes theming.
+
+## atproto read model
+
+- A reader's **subscriptions live in its own repo**: `listRecords` for `site.standard.graph.subscription`; each record points to a publication AT-URI.
+- A document's `site` field is the AT-URI of its owning publication.
+- Resolve identity: handle → DID (`com.atproto.identity.resolveHandle`) → PDS (`plc.directory` `serviceEndpoint`) → `listRecords` / `getRecord`.
+- Images: blob CID via `com.atproto.sync.getBlob?did=<did>&cid=<cid>`. `coverImage` is a blob.
+- **Direct PDS reads, no aggregator.** A personal-subscriptions reader has a bounded set of publications; firehose indexing (à la docs.surf) is for *global discovery* and is unnecessary here.
+- **Known-good test record:** `did:plc:xn3l7ogsxym5ixxugidum5dw` (handle `david.yapfest.club`, PDS `https://yapfest.club`) has both a GreenGale (Markdown) and a Pckt (blocks) document — use it to test decoders/reads.
+
+## Auth
+
+OAuth via loopback redirect (`atrium-oauth`). `client_metadata.json` (the OAuth **`client_id`**) is hosted at `https://davidlewis.xyz/standard-reader/client_metadata.json`; the browser redirects to `http://127.0.0.1:4599/callback`. **The committed `client_metadata.json` is provisional** — validate `redirect_uris` / `scope` against `atrium-oauth` before going live. Store the session in a **`0600` file** under XDG config (the dev box's Crostini lacks a Secret Service daemon, so the `keyring` crate fails there; keep keyring opt-in).
+
+## Storage & search
+
+`redb` behind the `Store` trait. v1 search is the hand-rolled inverted index in `search.rs` over `textContent` (the spec's purpose-built plaintext field). `tantivy` (pure-Rust, ranked/fuzzy/phrase) is the later drop-in — it slots beside `redb` without touching the engine. Because it's a *cache*, switching backends means a re-fetch, not a migration.
+
+## Conventions
+
+- Rust **edition 2024**.
+- Keep `standard-core` **synchronous and dependency-light**; heavy/platform deps live only in frontends.
+- Decoders are pure functions of their input `Value` → `RichDoc`. Unknown/partial content degrades gracefully (return `None` → next decoder → plaintext fallback), never panics.
+- `ratatui-image` auto-detects the terminal graphics protocol (iTerm2 works on the maintainer's hterm box; halfblocks elsewhere).
+- This is a personal solo repo: commit directly to `main` when asked; don't push unless asked.
+
+## Build
+
+```
+cargo build
+cargo test -p standard-core
+cargo run -p standard-reader   # runs the `sr` binary
+```
+
+## Status & roadmap
+
+See **ROADMAP.md**. Currently **scaffolded**: the core engine is real and tested (RichDoc model, decoder `Registry` + `Plaintext` fallback, `AtUri` + `Transport` trait + XRPC builders, `Store` trait, inverted-index search); the Markdown / Leaflet / Pckt decoders and the entire `standard-tui` frontend are stubs.

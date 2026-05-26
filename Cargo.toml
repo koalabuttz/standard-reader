@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+members = ["crates/standard-core", "crates/standard-tui"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/koalabuttz/standard-reader"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

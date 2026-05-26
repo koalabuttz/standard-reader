@@ -1,0 +1,13 @@
+{
+  "client_id": "https://davidlewis.xyz/standard-reader/client_metadata.json",
+  "client_name": "standard-reader",
+  "client_uri": "https://davidlewis.xyz",
+  "logo_uri": "https://davidlewis.xyz/og.png",
+  "redirect_uris": ["http://127.0.0.1:4599/callback"],
+  "scope": "atproto transition:generic",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "application_type": "native",
+  "token_endpoint_auth_method": "none",
+  "dpop_bound_access_tokens": true
+}

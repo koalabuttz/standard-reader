@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+Cargo.lock.orig
+
+# Local runtime state (cache DB, cached blobs, OAuth session). Never commit.
+/data
+*.redb

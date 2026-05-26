@@ -8,7 +8,7 @@ use serde_json::Value;
 use super::facets::text_block_inlines;
 use super::image::blob_image;
 use super::{ContentDecoder, DecodeCtx};
-use crate::model::{Block, RichDoc};
+use crate::model::{Block, Image, RichDoc};
 
 pub struct Offprint;
 
@@ -47,7 +47,12 @@ impl ContentDecoder for Offprint {
                         blocks.push(Block::Image(img));
                     }
                 }
-                Some("imageGrid") => blocks.extend(image_grid(item, ctx)),
+                Some("imageGrid") => {
+                    let images = grid_images(item, ctx);
+                    if !images.is_empty() {
+                        blocks.push(Block::ImageGrid(images));
+                    }
+                }
                 Some("bulletList") => blocks.push(bullet_list(item)),
                 Some("callout") => blocks.push(callout(item)),
                 Some("horizontalRule") => blocks.push(Block::Rule),
@@ -86,9 +91,8 @@ fn bullet_list(block: &Value) -> Block {
     }
 }
 
-/// `{ images: [{ image: <blob>, aspectRatio }] }` → one [`Block::Image`] per grid image
-/// (the reader stacks them vertically).
-fn image_grid(block: &Value, ctx: &DecodeCtx) -> Vec<Block> {
+/// `{ images: [{ image: <blob>, aspectRatio }] }` → the grid's images.
+fn grid_images(block: &Value, ctx: &DecodeCtx) -> Vec<Image> {
     block
         .get("images")
         .and_then(Value::as_array)
@@ -99,7 +103,6 @@ fn image_grid(block: &Value, ctx: &DecodeCtx) -> Vec<Block> {
                     entry
                         .get("image")
                         .and_then(|b| blob_image(b, ctx.repo_did, ""))
-                        .map(Block::Image)
                 })
                 .collect()
         })

@@ -163,15 +163,12 @@ fn offprint_heading_imagegrid_and_rule_are_not_dropped() {
         )),
         "offprint heading should render (not be dropped)"
     );
-    // imageGrid expands to multiple blob images; horizontalRule → a Rule.
-    let images = doc
-        .blocks
-        .iter()
-        .filter(|b| matches!(b, Block::Image(_)))
-        .count();
+    // imageGrid groups several blob images; horizontalRule → a Rule.
     assert!(
-        images >= 2,
-        "imageGrid should yield several images, got {images}"
+        doc.blocks
+            .iter()
+            .any(|b| matches!(b, Block::ImageGrid(imgs) if imgs.len() >= 2)),
+        "imageGrid should decode to a Block::ImageGrid of several images"
     );
     assert!(doc.blocks.iter().any(|b| matches!(b, Block::Rule)));
 }

@@ -91,6 +91,17 @@ fn block_lines(block: &Block, theme: &Theme, out: &mut Vec<Line<'static>>) {
             };
             out.push(Line::styled(format!("🖼  {label}"), theme.dim_style()));
         }
+        Block::ImageGrid(images) => {
+            // Fallback (nested grid); the reader lays a top-level grid out in columns.
+            for img in images {
+                let label = if img.alt.is_empty() {
+                    "(image)"
+                } else {
+                    &img.alt
+                };
+                out.push(Line::styled(format!("🖼  {label}"), theme.dim_style()));
+            }
+        }
         Block::Table { head, rows } => table_lines(head, rows, theme, out),
         Block::Callout {
             emoji,

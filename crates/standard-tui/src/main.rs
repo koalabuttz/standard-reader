@@ -304,6 +304,11 @@ fn print_block(block: &Block, indent: usize) {
             println!("{pad}```");
         }
         Block::Image(img) => println!("{pad}🖼  {} ({:?})", img.alt, img.source),
+        Block::ImageGrid(images) => {
+            for img in images {
+                println!("{pad}🖼  {} ({:?})", img.alt, img.source);
+            }
+        }
         Block::Table { head, rows } => {
             let row_text = |cells: &[Vec<Inline>]| {
                 cells
@@ -341,6 +346,11 @@ fn block_text(block: &Block) -> String {
             .collect::<Vec<_>>()
             .join(" "),
         Block::Image(img) => format!("[{}]", img.alt),
+        Block::ImageGrid(images) => images
+            .iter()
+            .map(|i| format!("[{}]", i.alt))
+            .collect::<Vec<_>>()
+            .join(" "),
         Block::Table { head, rows } => std::iter::once(head)
             .chain(rows.iter())
             .map(|cells| {

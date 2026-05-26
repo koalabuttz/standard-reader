@@ -31,6 +31,9 @@ pub enum Block {
         text: String,
     },
     Image(Image),
+    /// A group of images meant to be laid out together as a grid (Offprint `imageGrid`),
+    /// kept distinct from standalone images so the frontend can arrange them in columns.
+    ImageGrid(Vec<Image>),
     /// A simple table: an optional header row of cells, then body rows. Each cell is inline
     /// content (block content inside a cell is flattened) — enough for the tables publishers emit.
     Table {

@@ -16,7 +16,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
 use ratatui_image::sliced::{SignedPosition, SlicedImage, SlicedProtocol};
 
-use standard_core::model::{Block as DocBlock, Inline};
+use standard_core::model::{Block as DocBlock, Image, Inline};
 
 /// Hard ceiling on image height (rows), so a tall/portrait image never dominates the pane.
 const MAX_IMAGE_ROWS: u16 = 20;
@@ -47,6 +47,22 @@ enum Segment {
         top: u16,
         height: u16,
     },
+    /// A grid of images laid out in columns; each cell positioned relative to the grid top.
+    Grid {
+        cells: Vec<GridCell>,
+        top: u16,
+        height: u16,
+    },
+}
+
+/// One image cell within a [`Segment::Grid`]: its cache key, offset from the grid's
+/// top-left (`dx`, `dy`), and rendered size (`w` × `h` cells).
+struct GridCell {
+    key: String,
+    dx: u16,
+    dy: u16,
+    w: u16,
+    h: u16,
 }
 
 impl Segment {
@@ -54,14 +70,16 @@ impl Segment {
         match self {
             Segment::Text { top, .. }
             | Segment::Image { top, .. }
-            | Segment::Callout { top, .. } => *top,
+            | Segment::Callout { top, .. }
+            | Segment::Grid { top, .. } => *top,
         }
     }
     fn height(&self) -> u16 {
         match self {
             Segment::Text { height, .. }
             | Segment::Image { height, .. }
-            | Segment::Callout { height, .. } => *height,
+            | Segment::Callout { height, .. }
+            | Segment::Grid { height, .. } => *height,
         }
     }
 }
@@ -111,18 +129,26 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
 /// Build (encode) the row-sliced protocol for each image at its current display size, once
 /// per size. Two passes so `&app.picker` and `&mut app.images` never overlap.
 fn ensure_slices(app: &mut App, segments: &[Segment]) {
-    let pending: Vec<(String, DynamicImage, Size)> = segments
-        .iter()
-        .filter_map(|seg| {
-            let Segment::Image {
+    // (key, target size) for every image that needs (re)slicing at its current display size.
+    let mut wanted: Vec<(&str, Size)> = Vec::new();
+    for seg in segments {
+        match seg {
+            Segment::Image {
                 key, width, height, ..
-            } = seg
-            else {
-                return None;
-            };
+            } => wanted.push((key, Size::new(*width, *height))),
+            Segment::Grid { cells, .. } => {
+                wanted.extend(cells.iter().map(|c| (c.key.as_str(), Size::new(c.w, c.h))));
+            }
+            _ => {}
+        }
+    }
+
+    let pending: Vec<(String, DynamicImage, Size)> = wanted
+        .into_iter()
+        .filter_map(|(key, size)| {
             let li = app.images.get(key)?;
-            (li.sliced.is_none() || li.sliced_size != (*width, *height))
-                .then(|| (key.clone(), li.image.clone(), Size::new(*width, *height)))
+            (li.sliced.is_none() || li.sliced_size != (size.width, size.height))
+                .then(|| (key.to_string(), li.image.clone(), size))
         })
         .collect();
 
@@ -188,6 +214,21 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
                         height,
                     });
                     y += height;
+                }
+                DocBlock::ImageGrid(images) => {
+                    flush_text(&mut run, theme, width, &mut segs, &mut y);
+                    let (cells, height) = grid_layout(app, images, width, vh);
+                    if !cells.is_empty() {
+                        if !segs.is_empty() {
+                            y += GAP;
+                        }
+                        segs.push(Segment::Grid {
+                            cells,
+                            top: y,
+                            height,
+                        });
+                        y += height;
+                    }
                 }
                 _ => run.push(block),
             }
@@ -279,6 +320,63 @@ fn image_display_size(app: &App, key: &str, avail_w: u16, vh: u16) -> (u16, u16)
     )
 }
 
+/// Column count for an image grid: more columns on wider panes, never more than images.
+fn grid_cols(n: usize, width: u16) -> u16 {
+    let by_width = if width >= 90 {
+        3
+    } else if width >= 40 {
+        2
+    } else {
+        1
+    };
+    (by_width.min(n).max(1)) as u16
+}
+
+/// Lay images out in a grid: pick columns for the width, size each cell to its column,
+/// centre it, and stack rows. Returns the positioned cells and the grid's total height.
+fn grid_layout(app: &App, images: &[Image], width: u16, vh: u16) -> (Vec<GridCell>, u16) {
+    const GAP_X: u16 = 1;
+    const GAP_Y: u16 = 1;
+    if images.is_empty() {
+        return (Vec::new(), 0);
+    }
+    let cols = grid_cols(images.len(), width);
+    let cell_w = (width.saturating_sub((cols - 1) * GAP_X) / cols).max(1);
+
+    let mut cells = Vec::with_capacity(images.len());
+    let mut row_heights: Vec<u16> = Vec::new();
+    for (i, img) in images.iter().enumerate() {
+        let key = image_key(&img.source);
+        let (w, h) = image_display_size(app, &key, cell_w, vh);
+        let col = (i % cols as usize) as u16;
+        let row = i / cols as usize;
+        if row >= row_heights.len() {
+            row_heights.push(0);
+        }
+        row_heights[row] = row_heights[row].max(h);
+        let dx = col * (cell_w + GAP_X) + cell_w.saturating_sub(w) / 2; // centre in the column
+        cells.push(GridCell {
+            key,
+            dx,
+            dy: 0,
+            w,
+            h,
+        });
+    }
+
+    // Row y-offsets, then assign each cell its row's offset.
+    let mut row_y = vec![0u16; row_heights.len()];
+    let mut acc = 0u16;
+    for (r, h) in row_heights.iter().enumerate() {
+        row_y[r] = acc;
+        acc += h + GAP_Y;
+    }
+    for (i, cell) in cells.iter_mut().enumerate() {
+        cell.dy = row_y[i / cols as usize];
+    }
+    (cells, acc.saturating_sub(GAP_Y))
+}
+
 fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segment], scroll: u16) {
     for seg in segments {
         let (top, height) = (seg.top(), seg.height());
@@ -359,6 +457,24 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                     .scroll((skip, 0))
                     .style(Style::default().fg(theme.fg).bg(fill));
                 f.render_widget(para, text_rect);
+            }
+            Segment::Grid { cells, .. } => {
+                // Each cell is a pre-sliced image positioned at its (dx, dy) within the grid,
+                // offset by scroll; SlicedImage clips each to the reader.
+                for cell in cells {
+                    if let Some(sliced) =
+                        app.images.get(&cell.key).and_then(|li| li.sliced.as_ref())
+                    {
+                        let x = cell.dx as i16;
+                        let y = ((top + cell.dy) as i32 - scroll as i32)
+                            .clamp(i16::MIN as i32, i16::MAX as i32)
+                            as i16;
+                        f.render_widget(
+                            SlicedImage::new(sliced, SignedPosition::from((x, y))),
+                            inner,
+                        );
+                    }
+                }
             }
         }
     }

@@ -444,8 +444,14 @@ impl App {
     /// Request any not-yet-loaded block images in `body` from the worker.
     fn request_body_images(&self, body: &RichDoc) {
         for block in &body.blocks {
-            if let Block::Image(img) = block {
-                self.request_image(img.source.clone());
+            match block {
+                Block::Image(img) => self.request_image(img.source.clone()),
+                Block::ImageGrid(images) => {
+                    for img in images {
+                        self.request_image(img.source.clone());
+                    }
+                }
+                _ => {}
             }
         }
     }

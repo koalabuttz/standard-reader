@@ -31,6 +31,12 @@ pub enum Block {
         text: String,
     },
     Image(Image),
+    /// A simple table: an optional header row of cells, then body rows. Each cell is inline
+    /// content (block content inside a cell is flattened) — enough for the tables publishers emit.
+    Table {
+        head: Vec<Vec<Inline>>,
+        rows: Vec<Vec<Vec<Inline>>>,
+    },
     Rule,
 }
 

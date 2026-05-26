@@ -11,7 +11,7 @@ use serde_json::Value;
 use super::facets::text_block_inlines;
 use super::image::blob_image;
 use super::{ContentDecoder, DecodeCtx};
-use crate::model::{Block, RichDoc};
+use crate::model::{Block, Inline, RichDoc};
 
 pub struct Pckt;
 
@@ -76,8 +76,9 @@ fn block(item: &Value, ctx: &DecodeCtx) -> Vec<Block> {
         "orderedList" => vec![list(item, ctx, true)],
         "image" => image(item, ctx).into_iter().collect(),
         "horizontalRule" => vec![Block::Rule],
-        // `gallery` is a ref to a separate record (needs a fetch); `table` and other
-        // unmodeled containers degrade by flattening their nested `content`.
+        "table" => vec![table(item)],
+        // `gallery` is a ref to a separate record (needs a fetch); other unmodeled
+        // containers degrade by flattening their nested `content`.
         _ => child_blocks(item, ctx),
     }
 }
@@ -104,6 +105,55 @@ fn list(item: &Value, ctx: &DecodeCtx, ordered: bool) -> Block {
         })
         .unwrap_or_default();
     Block::List { ordered, items }
+}
+
+/// A `table` whose `content` is rows (`tableRow`), each a list of cells
+/// (`tableHeader`/`tableCell`) whose `content` is blocks. The first all-header row becomes
+/// the header; each cell's blocks are flattened to inline text.
+fn table(item: &Value) -> Block {
+    let mut head: Vec<Vec<Inline>> = Vec::new();
+    let mut rows: Vec<Vec<Vec<Inline>>> = Vec::new();
+
+    let Some(row_vals) = item.get("content").and_then(Value::as_array) else {
+        return Block::Table { head, rows };
+    };
+    for (i, row) in row_vals.iter().enumerate() {
+        let Some(cell_vals) = row.get("content").and_then(Value::as_array) else {
+            continue;
+        };
+        let mut all_header = !cell_vals.is_empty();
+        let mut cells = Vec::with_capacity(cell_vals.len());
+        for cell in cell_vals {
+            if !cell
+                .get("$type")
+                .and_then(Value::as_str)
+                .is_some_and(|t| t.ends_with("tableHeader"))
+            {
+                all_header = false;
+            }
+            cells.push(cell_inlines(cell));
+        }
+        if i == 0 && all_header {
+            head = cells;
+        } else {
+            rows.push(cells);
+        }
+    }
+    Block::Table { head, rows }
+}
+
+/// Flatten a table cell's content blocks to a single line of inlines.
+fn cell_inlines(cell: &Value) -> Vec<Inline> {
+    let mut out = Vec::new();
+    if let Some(blocks) = cell.get("content").and_then(Value::as_array) {
+        for block in blocks {
+            if !out.is_empty() {
+                out.push(Inline::Text(" ".into()));
+            }
+            out.extend(text_block_inlines(block));
+        }
+    }
+    out
 }
 
 /// An image block — its blob and alt nest under `attrs`.

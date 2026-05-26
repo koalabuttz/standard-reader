@@ -34,7 +34,9 @@ impl Theme {
         Style::default().fg(self.fg)
     }
     pub fn heading(&self) -> Style {
-        Style::default().fg(self.accent).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(self.accent)
+            .add_modifier(Modifier::BOLD)
     }
     pub fn dim_style(&self) -> Style {
         Style::default().fg(self.dim)
@@ -52,6 +54,9 @@ impl Theme {
     }
     /// The selected row in a list.
     pub fn selected(&self) -> Style {
-        Style::default().fg(self.bg).bg(self.accent).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(self.bg)
+            .bg(self.accent)
+            .add_modifier(Modifier::BOLD)
     }
 }

@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
 use standard_core::atp::{AtUri, Transport};
@@ -36,10 +36,19 @@ pub enum ToWorker {
 /// Results from the worker to the UI.
 pub enum FromWorker {
     Feeds(Vec<Publication>),
-    Docs { publication: String, docs: Vec<Document> },
-    Doc { uri: String, body: RichDoc },
+    Docs {
+        publication: String,
+        docs: Vec<Document>,
+    },
+    Doc {
+        uri: String,
+        body: RichDoc,
+    },
     Results(Vec<Document>),
-    Image { key: String, image: image::DynamicImage },
+    Image {
+        key: String,
+        image: image::DynamicImage,
+    },
     Status(String),
     Error(String),
 }
@@ -129,7 +138,9 @@ impl Ctx {
         let identity = read::resolve_identity(&self.transport, &target)?;
         let publications = read::list_publications(&self.transport, &identity)?;
         if publications.is_empty() {
-            self.send(FromWorker::Status(format!("no publications found at {target}")));
+            self.send(FromWorker::Status(format!(
+                "no publications found at {target}"
+            )));
             return Ok(());
         }
         let mut added = 0;
@@ -157,7 +168,10 @@ impl Ctx {
     fn open_feed(&mut self, pub_uri: &str) -> Done {
         let cached = self.store.documents_for(pub_uri)?;
         if !cached.is_empty() {
-            self.send(FromWorker::Docs { publication: pub_uri.to_string(), docs: cached });
+            self.send(FromWorker::Docs {
+                publication: pub_uri.to_string(),
+                docs: cached,
+            });
         }
         self.refresh_docs(pub_uri)
     }
@@ -171,8 +185,14 @@ impl Ctx {
             self.store.upsert_document(doc, None)?;
         }
         // A repo can host several publications; this feed is the docs whose `site` matches.
-        let docs = repo_docs.into_iter().filter(|d| d.publication == pub_uri).collect();
-        self.send(FromWorker::Docs { publication: pub_uri.to_string(), docs });
+        let docs = repo_docs
+            .into_iter()
+            .filter(|d| d.publication == pub_uri)
+            .collect();
+        self.send(FromWorker::Docs {
+            publication: pub_uri.to_string(),
+            docs,
+        });
         Ok(())
     }
 
@@ -180,17 +200,24 @@ impl Ctx {
     /// marks it read.
     fn open_doc(&mut self, doc_uri: &str) -> Done {
         if let Some(stored) = self.store.document(doc_uri)?
-            && let Some(body) = stored.body {
-                self.store.set_read(doc_uri, true)?;
-                self.send(FromWorker::Doc { uri: doc_uri.to_string(), body });
-                return Ok(());
-            }
+            && let Some(body) = stored.body
+        {
+            self.store.set_read(doc_uri, true)?;
+            self.send(FromWorker::Doc {
+                uri: doc_uri.to_string(),
+                body,
+            });
+            return Ok(());
+        }
         let uri = AtUri::parse(doc_uri).ok_or("malformed document AT-URI")?;
         let pds = read::resolve_pds(&self.transport, &uri.did)?;
         let (meta, body) = read::get_document(&self.transport, &self.registry, &uri, &pds)?;
         self.store.upsert_document(&meta, Some(&body))?;
         self.store.set_read(doc_uri, true)?;
-        self.send(FromWorker::Doc { uri: doc_uri.to_string(), body });
+        self.send(FromWorker::Doc {
+            uri: doc_uri.to_string(),
+            body,
+        });
         Ok(())
     }
 
@@ -252,7 +279,10 @@ fn normalize(input: &str) -> String {
     if s.starts_with("did:") {
         return s.to_string();
     }
-    let s = s.strip_prefix("https://").or_else(|| s.strip_prefix("http://")).unwrap_or(s);
+    let s = s
+        .strip_prefix("https://")
+        .or_else(|| s.strip_prefix("http://"))
+        .unwrap_or(s);
     let host = s.split('/').next().unwrap_or(s);
     host.trim_start_matches('@').to_string()
 }
@@ -264,7 +294,10 @@ mod tests {
     #[test]
     fn normalizes_inputs() {
         assert_eq!(normalize("  david.yapfest.club "), "david.yapfest.club");
-        assert_eq!(normalize("https://half-baked.pckt.blog/a/post"), "half-baked.pckt.blog");
+        assert_eq!(
+            normalize("https://half-baked.pckt.blog/a/post"),
+            "half-baked.pckt.blog"
+        );
         assert_eq!(normalize("@alice.test"), "alice.test");
         assert_eq!(normalize("did:plc:abc"), "did:plc:abc");
     }

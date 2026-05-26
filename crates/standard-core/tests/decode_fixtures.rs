@@ -67,6 +67,14 @@ fn pckt_real_record() {
         has_underline(&doc.blocks),
         "underline facet should decode to Inline::Underline"
     );
+    // the table decodes to a Block::Table with a 3-column header and body rows.
+    assert!(
+        doc.blocks.iter().any(|b| matches!(
+            b,
+            Block::Table { head, rows } if head.len() == 3 && !rows.is_empty()
+        )),
+        "pckt table should decode to a Block::Table"
+    );
 }
 
 /// Recursively search decoded blocks for an `Inline::Underline`.

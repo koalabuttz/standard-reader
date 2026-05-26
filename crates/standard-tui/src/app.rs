@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 use std::sync::mpsc::Sender;
 
+use image::{DynamicImage, GenericImageView};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
-use image::{DynamicImage, GenericImageView};
 use ratatui_image::picker::Picker;
 use ratatui_image::sliced::SlicedProtocol;
 
@@ -62,8 +62,14 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 6] =
-        [Self::AddFeed, Self::Search, Self::Refresh, Self::MarkRead, Self::Help, Self::Quit];
+    pub const ALL: [Action; 6] = [
+        Self::AddFeed,
+        Self::Search,
+        Self::Refresh,
+        Self::MarkRead,
+        Self::Help,
+        Self::Quit,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -184,7 +190,13 @@ impl App {
                 // Slicing is built lazily in the reader, once the display size is known.
                 self.images.insert(
                     key,
-                    LoadedImage { image, width, height, sliced: None, sliced_size: (0, 0) },
+                    LoadedImage {
+                        image,
+                        width,
+                        height,
+                        sliced: None,
+                        sliced_size: (0, 0),
+                    },
                 );
             }
             FromWorker::Results(results) => {
@@ -317,16 +329,18 @@ impl App {
             MouseEventKind::Down(_) => {
                 if self.mode == Mode::DocList {
                     if let Some(i) = hit(self.rects.list, ev.column, ev.row)
-                        && i < self.docs.len() {
-                            self.doc_sel = i;
-                            self.open_doc();
-                        }
-                } else if let Some(i) = hit(self.rects.sidebar, ev.column, ev.row)
-                    && i < self.feeds.len() {
-                        self.feed_sel = i;
-                        self.focus = Focus::Sidebar;
-                        self.open_feed();
+                        && i < self.docs.len()
+                    {
+                        self.doc_sel = i;
+                        self.open_doc();
                     }
+                } else if let Some(i) = hit(self.rects.sidebar, ev.column, ev.row)
+                    && i < self.feeds.len()
+                {
+                    self.feed_sel = i;
+                    self.focus = Focus::Sidebar;
+                    self.open_feed();
+                }
             }
             _ => {}
         }
@@ -335,7 +349,11 @@ impl App {
     // --- actions ----------------------------------------------------------------
 
     pub fn palette_matches(&self) -> Vec<Action> {
-        Action::ALL.iter().copied().filter(|a| fuzzy(&self.input, a.label())).collect()
+        Action::ALL
+            .iter()
+            .copied()
+            .filter(|a| fuzzy(&self.input, a.label()))
+            .collect()
     }
 
     fn run(&mut self, action: Action) {
@@ -400,7 +418,11 @@ impl App {
         let Some(d) = self.docs.get(self.doc_sel) else {
             return;
         };
-        self.reading_title = if d.title.is_empty() { "(untitled)".into() } else { d.title.clone() };
+        self.reading_title = if d.title.is_empty() {
+            "(untitled)".into()
+        } else {
+            d.title.clone()
+        };
         self.reading_uri = Some(d.uri.clone());
         self.reading_cover = d.cover_image.as_ref().map(|i| i.source.clone());
         let doc_uri = d.uri.clone();
@@ -444,10 +466,11 @@ impl App {
 
     fn unfollow_current_feed(&mut self) {
         if self.focus == Focus::Sidebar
-            && let Some(p) = self.feeds.get(self.feed_sel) {
-                self.status = format!("unfollowed {}", p.name);
-                self.send(ToWorker::Unfollow(p.uri.clone()));
-            }
+            && let Some(p) = self.feeds.get(self.feed_sel)
+        {
+            self.status = format!("unfollowed {}", p.name);
+            self.send(ToWorker::Unfollow(p.uri.clone()));
+        }
     }
 
     fn mark_read(&mut self) {
@@ -466,7 +489,9 @@ impl App {
 
     fn move_down(&mut self) {
         match self.focus {
-            Focus::Sidebar => self.feed_sel = (self.feed_sel + 1).min(self.feeds.len().saturating_sub(1)),
+            Focus::Sidebar => {
+                self.feed_sel = (self.feed_sel + 1).min(self.feeds.len().saturating_sub(1))
+            }
             Focus::Reader => self.scroll = self.scroll.saturating_add(1),
         }
     }
@@ -499,13 +524,20 @@ impl App {
 
 /// Row index clicked inside a bordered list `rect` (None if outside / on the border).
 fn hit(rect: Rect, x: u16, y: u16) -> Option<usize> {
-    let inside = x > rect.x && x < rect.right().saturating_sub(1) && y > rect.y && y < rect.bottom().saturating_sub(1);
+    let inside = x > rect.x
+        && x < rect.right().saturating_sub(1)
+        && y > rect.y
+        && y < rect.bottom().saturating_sub(1);
     inside.then(|| (y - rect.y - 1) as usize)
 }
 
 /// Case-insensitive subsequence match (the command-palette filter).
 pub fn fuzzy(query: &str, candidate: &str) -> bool {
-    let mut q = query.chars().filter(|c| !c.is_whitespace()).map(|c| c.to_ascii_lowercase()).peekable();
+    let mut q = query
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .map(|c| c.to_ascii_lowercase())
+        .peekable();
     if q.peek().is_none() {
         return true;
     }

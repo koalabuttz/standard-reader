@@ -145,27 +145,41 @@ fn run_fetch(target: &str) -> Result<(), Box<dyn Error>> {
     let mut cache = RedbStore::open(cache_path()?)?;
 
     let reader = read::resolve_identity(&t, target)?;
-    println!("resolved {target}\n  did: {}\n  pds: {}\n", reader.did, reader.pds);
+    println!(
+        "resolved {target}\n  did: {}\n  pds: {}\n",
+        reader.did, reader.pds
+    );
 
     let subs = read::list_subscriptions(&t, &reader)?;
     let publications: Vec<AtUri> = if subs.is_empty() {
         println!("no subscriptions — showing this repo's own publication(s):\n");
-        read::list_publications(&t, &reader)?.iter().filter_map(|p| AtUri::parse(&p.uri)).collect()
+        read::list_publications(&t, &reader)?
+            .iter()
+            .filter_map(|p| AtUri::parse(&p.uri))
+            .collect()
     } else {
         println!("{} subscription(s):\n", subs.len());
-        subs.iter().filter_map(|s| AtUri::parse(&s.publication)).collect()
+        subs.iter()
+            .filter_map(|s| AtUri::parse(&s.publication))
+            .collect()
     };
 
     for pub_uri in &publications {
         let (publication, repo) = read::get_publication(&t, pub_uri)?;
         cache.upsert_publication(&publication)?;
-        println!("══ {} · {}\n   {}", publication.name, publication.url, publication.uri);
+        println!(
+            "══ {} · {}\n   {}",
+            publication.name, publication.url, publication.uri
+        );
 
         let (repo_docs, cursor) = read::list_documents(&t, &repo, None)?;
         for doc in &repo_docs {
             cache.upsert_document(doc, None)?;
         }
-        let docs: Vec<&Document> = repo_docs.iter().filter(|d| d.publication == publication.uri).collect();
+        let docs: Vec<&Document> = repo_docs
+            .iter()
+            .filter(|d| d.publication == publication.uri)
+            .collect();
         println!(
             "   {} document(s){} ({} in repo)",
             docs.len(),
@@ -173,7 +187,11 @@ fn run_fetch(target: &str) -> Result<(), Box<dyn Error>> {
             repo_docs.len()
         );
         for doc in &docs {
-            println!("   • {}  [{}]", title_or_untitled(&doc.title), doc.published_at);
+            println!(
+                "   • {}  [{}]",
+                title_or_untitled(&doc.title),
+                doc.published_at
+            );
         }
 
         if let Some(first) = docs.first() {
@@ -205,12 +223,19 @@ fn run_cached() -> Result<(), Box<dyn Error>> {
         let docs = cache.documents_for(&publication.uri)?;
         println!("   {} document(s)", docs.len());
         for doc in &docs {
-            println!("   • {}  [{}]", title_or_untitled(&doc.title), doc.published_at);
+            println!(
+                "   • {}  [{}]",
+                title_or_untitled(&doc.title),
+                doc.published_at
+            );
         }
-        if let Some(stored) = docs
-            .iter()
-            .find_map(|d| cache.document(&d.uri).ok().flatten().filter(|s| s.body.is_some()))
-        {
+        if let Some(stored) = docs.iter().find_map(|d| {
+            cache
+                .document(&d.uri)
+                .ok()
+                .flatten()
+                .filter(|s| s.body.is_some())
+        }) {
             println!("\n   ┌─ reading: {}", title_or_untitled(&stored.meta.title));
             print_doc(stored.body.as_ref().unwrap());
             println!("   └─");
@@ -232,7 +257,11 @@ fn cache_path() -> Result<PathBuf, Box<dyn Error>> {
 }
 
 fn title_or_untitled(title: &str) -> &str {
-    if title.is_empty() { "(untitled)" } else { title }
+    if title.is_empty() {
+        "(untitled)"
+    } else {
+        title
+    }
 }
 
 // A minimal RichDoc → text renderer for the debug CLI (the TUI uses ui::doc).
@@ -258,7 +287,11 @@ fn print_block(block: &Block, indent: usize) {
         }
         Block::List { ordered, items } => {
             for (i, item) in items.iter().enumerate() {
-                let marker = if *ordered { format!("{}.", i + 1) } else { "•".to_string() };
+                let marker = if *ordered {
+                    format!("{}.", i + 1)
+                } else {
+                    "•".to_string()
+                };
                 let text = item.iter().map(block_text).collect::<Vec<_>>().join(" ");
                 println!("{pad}{marker} {text}");
             }
@@ -271,6 +304,21 @@ fn print_block(block: &Block, indent: usize) {
             println!("{pad}```");
         }
         Block::Image(img) => println!("{pad}🖼  {} ({:?})", img.alt, img.source),
+        Block::Table { head, rows } => {
+            let row_text = |cells: &[Vec<Inline>]| {
+                cells
+                    .iter()
+                    .map(|c| inlines(c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            };
+            if !head.is_empty() {
+                println!("{pad}{}", row_text(head));
+            }
+            for row in rows {
+                println!("{pad}{}", row_text(row));
+            }
+        }
         Block::Rule => println!("{pad}───"),
     }
 }
@@ -280,10 +328,23 @@ fn block_text(block: &Block) -> String {
         Block::Paragraph(c) | Block::Heading { content: c, .. } => inlines(c),
         Block::Code { text, .. } => text.clone(),
         Block::Quote(bs) => bs.iter().map(block_text).collect::<Vec<_>>().join(" "),
-        Block::List { items, .. } => {
-            items.iter().flat_map(|i| i.iter().map(block_text)).collect::<Vec<_>>().join(" ")
-        }
+        Block::List { items, .. } => items
+            .iter()
+            .flat_map(|i| i.iter().map(block_text))
+            .collect::<Vec<_>>()
+            .join(" "),
         Block::Image(img) => format!("[{}]", img.alt),
+        Block::Table { head, rows } => std::iter::once(head)
+            .chain(rows.iter())
+            .map(|cells| {
+                cells
+                    .iter()
+                    .map(|c| inlines(c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            })
+            .collect::<Vec<_>>()
+            .join(" / "),
         Block::Rule => "───".to_string(),
     }
 }
@@ -298,7 +359,9 @@ fn inlines(spans: &[Inline]) -> String {
             Inline::Strike(c) => out.push_str(&format!("~~{}~~", inlines(c))),
             Inline::Underline(c) => out.push_str(&format!("__{}__", inlines(c))),
             Inline::Code(t) => out.push_str(&format!("`{t}`")),
-            Inline::Link { href, content } => out.push_str(&format!("[{}]({href})", inlines(content))),
+            Inline::Link { href, content } => {
+                out.push_str(&format!("[{}]({href})", inlines(content)))
+            }
             Inline::Image(img) => out.push_str(&format!("🖼 {}", img.alt)),
             Inline::LineBreak => out.push(' '),
         }

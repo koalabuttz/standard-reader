@@ -4,11 +4,11 @@ pub mod doc;
 pub mod reader;
 pub mod theme;
 
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
 
 use crate::app::{Action, App, Focus, Mode};
 use theme::Theme;
@@ -47,7 +47,10 @@ fn panel<'a>(theme: &Theme, title: &'a str, focused: bool) -> Block<'a> {
     Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border))
-        .title(Span::styled(format!(" {title} "), theme.accent_style().add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            format!(" {title} "),
+            theme.accent_style().add_modifier(Modifier::BOLD),
+        ))
         .style(theme.base())
 }
 
@@ -62,7 +65,11 @@ fn draw_sidebar(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
         f.render_widget(hint, area);
         return;
     }
-    let items: Vec<ListItem> = app.feeds.iter().map(|p| ListItem::new(p.name.clone())).collect();
+    let items: Vec<ListItem> = app
+        .feeds
+        .iter()
+        .map(|p| ListItem::new(p.name.clone()))
+        .collect();
     let list = List::new(items)
         .block(block)
         .highlight_style(theme.selected())
@@ -73,18 +80,36 @@ fn draw_sidebar(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 }
 
 fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
-    let title = if app.list_title.is_empty() { "Documents".to_string() } else { app.list_title.clone() };
+    let title = if app.list_title.is_empty() {
+        "Documents".to_string()
+    } else {
+        app.list_title.clone()
+    };
     let block = panel(theme, &title, true);
     if app.docs.is_empty() {
-        let msg = if app.loading { "loading…" } else { "No documents." };
-        f.render_widget(Paragraph::new(msg).style(theme.dim_style()).alignment(Alignment::Center).block(block), area);
+        let msg = if app.loading {
+            "loading…"
+        } else {
+            "No documents."
+        };
+        f.render_widget(
+            Paragraph::new(msg)
+                .style(theme.dim_style())
+                .alignment(Alignment::Center)
+                .block(block),
+            area,
+        );
         return;
     }
     let items: Vec<ListItem> = app
         .docs
         .iter()
         .map(|d| {
-            let title = if d.title.is_empty() { "(untitled)" } else { &d.title };
+            let title = if d.title.is_empty() {
+                "(untitled)"
+            } else {
+                &d.title
+            };
             let date = d.published_at.get(..10).unwrap_or("");
             ListItem::new(Line::from(vec![
                 Span::styled(title.to_string(), theme.body()),
@@ -92,7 +117,10 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
             ]))
         })
         .collect();
-    let list = List::new(items).block(block).highlight_style(theme.selected()).highlight_symbol("▸ ");
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(theme.selected())
+        .highlight_symbol("▸ ");
     let mut state = ListState::default();
     state.select(Some(app.doc_sel));
     f.render_stateful_widget(list, area, &mut state);
@@ -120,7 +148,10 @@ fn draw_input(f: &mut Frame, app: &App, theme: &Theme, area: Rect, title: &str) 
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme.accent_style())
-        .title(Span::styled(format!(" {title} "), theme.accent_style().add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            format!(" {title} "),
+            theme.accent_style().add_modifier(Modifier::BOLD),
+        ))
         .style(Style::default().fg(theme.fg).bg(theme.panel));
     let text = Line::from(vec![
         Span::styled(&app.input, theme.body()),
@@ -139,7 +170,10 @@ fn draw_palette(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let input_block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme.accent_style())
-        .title(Span::styled(" Command ", theme.accent_style().add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " Command ",
+            theme.accent_style().add_modifier(Modifier::BOLD),
+        ))
         .style(Style::default().fg(theme.fg).bg(theme.panel));
     let input = Line::from(vec![
         Span::styled(&app.input, theme.body()),
@@ -147,7 +181,10 @@ fn draw_palette(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     ]);
     f.render_widget(Paragraph::new(input).block(input_block), rows[0]);
 
-    let items: Vec<ListItem> = matches.iter().map(|a: &Action| ListItem::new(a.label())).collect();
+    let items: Vec<ListItem> = matches
+        .iter()
+        .map(|a: &Action| ListItem::new(a.label()))
+        .collect();
     let list = List::new(items)
         .block(Block::new().style(Style::default().bg(theme.panel)))
         .highlight_style(theme.selected())
@@ -179,7 +216,10 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme.accent_style())
-        .title(Span::styled(" Help ", theme.accent_style().add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " Help ",
+            theme.accent_style().add_modifier(Modifier::BOLD),
+        ))
         .style(Style::default().fg(theme.fg).bg(theme.panel));
     let lines: Vec<Line> = keys
         .iter()
@@ -209,10 +249,10 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 mod tests {
     use super::*;
     use crate::worker::ToWorker;
+    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Position;
-    use ratatui::Terminal;
     use ratatui_image::picker::Picker;
     use standard_core::model::{Block, Inline, Publication, RichDoc};
     use std::sync::mpsc::channel;
@@ -245,7 +285,10 @@ mod tests {
         }];
         app.reading_title = "Hello world".into();
         app.reading = Some(RichDoc {
-            blocks: vec![Block::Heading { level: 1, content: vec![Inline::Text("Hello world".into())] }],
+            blocks: vec![Block::Heading {
+                level: 1,
+                content: vec![Inline::Text("Hello world".into())],
+            }],
         });
 
         let theme = Theme::modern_dark();

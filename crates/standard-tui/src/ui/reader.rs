@@ -9,11 +9,11 @@
 //! real font-cell metrics) and rendered centered, as soon as its top scrolls into view.
 
 use image::DynamicImage;
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect, Size};
 use ratatui::style::Style;
 use ratatui::text::{Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
-use ratatui::Frame;
 use ratatui_image::sliced::{SignedPosition, SlicedImage, SlicedProtocol};
 
 use standard_core::model::Block as DocBlock;
@@ -23,13 +23,23 @@ const MAX_IMAGE_ROWS: u16 = 20;
 
 use super::doc;
 use super::theme::Theme;
-use crate::app::{image_key, App, Focus, Mode};
+use crate::app::{App, Focus, Mode, image_key};
 
 const GAP: u16 = 1; // blank row between segments
 
 enum Segment {
-    Text { text: Text<'static>, top: u16, height: u16 },
-    Image { key: String, alt: String, top: u16, height: u16, width: u16 },
+    Text {
+        text: Text<'static>,
+        top: u16,
+        height: u16,
+    },
+    Image {
+        key: String,
+        alt: String,
+        top: u16,
+        height: u16,
+        width: u16,
+    },
 }
 
 impl Segment {
@@ -48,7 +58,11 @@ impl Segment {
 /// Draw the reader pane (bordered panel + scrolled block-flow body).
 pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
     let focused = app.focus == Focus::Reader && app.mode == Mode::Browse;
-    let title = if app.reading_title.is_empty() { "Reader".to_string() } else { app.reading_title.clone() };
+    let title = if app.reading_title.is_empty() {
+        "Reader".to_string()
+    } else {
+        app.reading_title.clone()
+    };
     let border = if focused { theme.accent } else { theme.border };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
@@ -65,7 +79,9 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
             "Select a feed (Enter), pick a post, and it appears here."
         };
         f.render_widget(
-            Paragraph::new(msg).style(theme.dim_style()).alignment(Alignment::Center),
+            Paragraph::new(msg)
+                .style(theme.dim_style())
+                .alignment(Alignment::Center),
             inner,
         );
         return;
@@ -87,7 +103,12 @@ fn ensure_slices(app: &mut App, segments: &[Segment]) {
     let pending: Vec<(String, DynamicImage, Size)> = segments
         .iter()
         .filter_map(|seg| {
-            let Segment::Image { key, width, height, .. } = seg else { return None };
+            let Segment::Image {
+                key, width, height, ..
+            } = seg
+            else {
+                return None;
+            };
             let li = app.images.get(key)?;
             (li.sliced.is_none() || li.sliced_size != (*width, *height))
                 .then(|| (key.clone(), li.image.clone(), Size::new(*width, *height)))
@@ -98,10 +119,11 @@ fn ensure_slices(app: &mut App, segments: &[Segment]) {
         // Encodes once per size; `new` returns owned, releasing the picker borrow before
         // we take `&mut app.images`.
         if let Ok(sliced) = SlicedProtocol::new(&app.picker, image, Some(size))
-            && let Some(li) = app.images.get_mut(&key) {
-                li.sliced = Some(sliced);
-                li.sliced_size = (size.width, size.height);
-            }
+            && let Some(li) = app.images.get_mut(&key)
+        {
+            li.sliced = Some(sliced);
+            li.sliced_size = (size.width, size.height);
+        }
     }
 }
 
@@ -116,7 +138,13 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
         if !segs.is_empty() {
             *y += GAP;
         }
-        segs.push(Segment::Image { key, alt, top: *y, height: rows, width: cols });
+        segs.push(Segment::Image {
+            key,
+            alt,
+            top: *y,
+            height: rows,
+            width: cols,
+        });
         *y += rows;
     };
 
@@ -140,16 +168,28 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
     (segs, y)
 }
 
-fn flush_text(run: &mut Vec<&DocBlock>, theme: &Theme, width: u16, segs: &mut Vec<Segment>, y: &mut u16) {
+fn flush_text(
+    run: &mut Vec<&DocBlock>,
+    theme: &Theme,
+    width: u16,
+    segs: &mut Vec<Segment>,
+    y: &mut u16,
+) {
     if run.is_empty() {
         return;
     }
     let text = doc::blocks_to_text(run.iter().copied(), theme);
-    let height = Paragraph::new(text.clone()).wrap(Wrap { trim: false }).line_count(width) as u16;
+    let height = Paragraph::new(text.clone())
+        .wrap(Wrap { trim: false })
+        .line_count(width) as u16;
     if !segs.is_empty() {
         *y += GAP;
     }
-    segs.push(Segment::Text { text, top: *y, height });
+    segs.push(Segment::Text {
+        text,
+        top: *y,
+        height,
+    });
     *y += height;
     run.clear();
 }
@@ -180,7 +220,10 @@ fn image_display_size(app: &App, key: &str, avail_w: u16, vh: u16) -> (u16, u16)
         h = cap_h;
         w = h * natural_w / natural_h;
     }
-    (w.round().clamp(1.0, avail_w) as u16, h.round().clamp(1.0, cap_h) as u16)
+    (
+        w.round().clamp(1.0, avail_w) as u16,
+        h.round().clamp(1.0, cap_h) as u16,
+    )
 }
 
 fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segment], scroll: u16) {
@@ -206,14 +249,23 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                     .style(theme.body());
                 f.render_widget(para, rect);
             }
-            Segment::Image { key, alt, width: cols, .. } => {
+            Segment::Image {
+                key,
+                alt,
+                width: cols,
+                ..
+            } => {
                 // Pre-encoded slices: render the rows that fall within the reader, at a
                 // signed vertical offset, so scrolling never re-encodes (no lag, no resize)
                 // and a partly-visible image shows correctly whether its top or bottom is cut.
                 if let Some(sliced) = app.images.get(key).and_then(|li| li.sliced.as_ref()) {
                     let x = (inner.width.saturating_sub(*cols) / 2) as i16;
-                    let y = (top as i32 - scroll as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                    f.render_widget(SlicedImage::new(sliced, SignedPosition::from((x, y))), inner);
+                    let y =
+                        (top as i32 - scroll as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                    f.render_widget(
+                        SlicedImage::new(sliced, SignedPosition::from((x, y))),
+                        inner,
+                    );
                     continue;
                 }
                 let label = if app.images.contains_key(key) {
@@ -273,7 +325,7 @@ mod tests {
     #[test]
     fn renders_a_loaded_image_without_panic() {
         use crate::app::LoadedImage;
-        use ratatui::{backend::TestBackend, Terminal};
+        use ratatui::{Terminal, backend::TestBackend};
 
         let (tx, _rx) = channel::<ToWorker>();
         let mut app = App::new(tx, Picker::halfblocks());
@@ -282,12 +334,21 @@ mod tests {
         let image = image::DynamicImage::ImageRgba8(image::RgbaImage::new(4, 4));
         app.images.insert(
             key,
-            LoadedImage { image, width: 4, height: 4, sliced: None, sliced_size: (0, 0) },
+            LoadedImage {
+                image,
+                width: 4,
+                height: 4,
+                sliced: None,
+                sliced_size: (0, 0),
+            },
         );
         app.reading = Some(RichDoc {
             blocks: vec![
                 DocBlock::Paragraph(vec![Inline::Text("before".into())]),
-                DocBlock::Image(Image { alt: "pic".into(), source }),
+                DocBlock::Image(Image {
+                    alt: "pic".into(),
+                    source,
+                }),
                 DocBlock::Paragraph(vec![Inline::Text("after".into())]),
             ],
         });
@@ -296,6 +357,8 @@ mod tests {
         let theme = Theme::modern_dark();
         let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
         // The block-flow reader (incl. the StatefulImage path) must render without panicking.
-        terminal.draw(|f| crate::ui::draw(f, &mut app, &theme)).unwrap();
+        terminal
+            .draw(|f| crate::ui::draw(f, &mut app, &theme))
+            .unwrap();
     }
 }

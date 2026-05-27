@@ -92,6 +92,9 @@ fn run(
         }
     };
     let log_path = config_dir.join("sr.log");
+    // Fresh log per run, so it stays small and shows only the current session (it's a debug
+    // log, not a persistent record). Truncate-on-start beats unbounded append.
+    truncate_log(&log_path);
     let auth = build_auth(&config_dir, &evt_tx);
     append_log(
         &log_path,
@@ -180,6 +183,15 @@ struct Ctx {
     /// can't fit the status line go here. `tail -f` it to watch the sign-in flow.
     log_path: PathBuf,
     tx: Sender<FromWorker>,
+}
+
+/// Reset the debug log to empty (called once at worker start). Best-effort.
+fn truncate_log(path: &std::path::Path) {
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path);
 }
 
 /// Append a timestamped line to the debug log (best-effort; never fails the caller).

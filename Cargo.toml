@@ -10,3 +10,8 @@ repository = "https://github.com/koalabuttz/standard-reader"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Dev builds keep only line tables (file:line for panic backtraces), not full DWARF — we never
+# run this under a debugger, and it ~halves the `target` dir + speeds up linking.
+[profile.dev]
+debug = "line-tables-only"

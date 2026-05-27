@@ -47,7 +47,7 @@ pub fn from_markdown(md: &str) -> RichDoc {
         builder.handle(event);
     }
     RichDoc {
-        blocks: builder.finish(),
+        blocks: hoist_images(builder.finish()),
     }
 }
 
@@ -147,7 +147,7 @@ impl Builder {
             return;
         };
         match frame {
-            Frame::Paragraph(content) => self.push_block(paragraph_block(content)),
+            Frame::Paragraph(content) => self.push_block(Block::Paragraph(content)),
             Frame::Heading { level, content } => self.push_block(Block::Heading { level, content }),
             Frame::Quote(blocks) => self.push_block(Block::Quote(blocks)),
             Frame::Code { lang, text } => {
@@ -213,31 +213,134 @@ impl Builder {
     }
 }
 
-/// Build a paragraph block — but promote an **image-only** paragraph (Markdown `![](…)`, which
-/// `pulldown-cmark` emits as an inline image inside a paragraph) to a block-level image so the
-/// frontend fetches and renders it. One image → [`Block::Image`]; several on adjacent lines →
-/// [`Block::ImageGrid`]. Anything with real text stays a paragraph (the inline image degrades
-/// to its alt text — true intra-paragraph image rendering is out of scope).
-fn paragraph_block(content: Vec<Inline>) -> Block {
-    let is_filler = |i: &Inline| {
-        matches!(i, Inline::LineBreak) || matches!(i, Inline::Text(t) if t.trim().is_empty())
-    };
-    let images: Vec<Image> = content
-        .iter()
-        .filter_map(|i| match i {
-            Inline::Image(img) => Some(img.clone()),
-            _ => None,
-        })
-        .collect();
-    let only_images = !images.is_empty()
-        && content
-            .iter()
-            .all(|i| matches!(i, Inline::Image(_)) || is_filler(i));
-    match (only_images, images.len()) {
-        (false, _) => Block::Paragraph(content),
-        (true, 1) => Block::Image(images.into_iter().next().unwrap()),
-        (true, _) => Block::ImageGrid(images),
+// --- Image hoisting ----------------------------------------------------------------
+//
+// The reader renders only *top-level* `Block::Image`/`ImageGrid` as actual images; anything
+// nested in a paragraph, quote, or list degrades to alt text. But `pulldown-cmark` emits a
+// Markdown image (`![](…)`) as an inline image inside a paragraph — and CommonMark lazy
+// continuation can even pull it into a preceding blockquote. So after building, lift every
+// image to its own top-level block (in document order) so it fetches and renders.
+
+/// Whether an inline is whitespace/break filler (ignored when deciding if text is "real").
+fn is_filler(i: &Inline) -> bool {
+    matches!(i, Inline::LineBreak) || matches!(i, Inline::Text(t) if t.trim().is_empty())
+}
+
+/// Any non-filler inline present?
+fn has_real(inlines: &[Inline]) -> bool {
+    inlines.iter().any(|i| !is_filler(i))
+}
+
+/// Group hoisted images into a block: one → [`Block::Image`], several → [`Block::ImageGrid`].
+fn push_images(images: Vec<Image>, out: &mut Vec<Block>) {
+    match images.len() {
+        0 => {}
+        1 => out.push(Block::Image(images.into_iter().next().unwrap())),
+        _ => out.push(Block::ImageGrid(images)),
     }
+}
+
+/// Lift every image to a top-level block, preserving document order.
+fn hoist_images(blocks: Vec<Block>) -> Vec<Block> {
+    let mut out = Vec::new();
+    for block in blocks {
+        match block {
+            // Split a paragraph around its images: text run → paragraph, image run → image block.
+            Block::Paragraph(inlines) => {
+                let mut text: Vec<Inline> = Vec::new();
+                let mut imgs: Vec<Image> = Vec::new();
+                for inline in inlines {
+                    match inline {
+                        Inline::Image(img) => {
+                            if has_real(&text) {
+                                out.push(Block::Paragraph(std::mem::take(&mut text)));
+                            } else {
+                                text.clear();
+                            }
+                            imgs.push(img);
+                        }
+                        other if is_filler(&other) => text.push(other),
+                        other => {
+                            push_images(std::mem::take(&mut imgs), &mut out);
+                            text.push(other);
+                        }
+                    }
+                }
+                push_images(imgs, &mut out);
+                if has_real(&text) {
+                    out.push(Block::Paragraph(text));
+                }
+            }
+            // Containers keep their text; their images hoist out (after the container).
+            Block::Quote(inner) => {
+                let (kept, imgs) = strip_images(inner);
+                if !kept.is_empty() {
+                    out.push(Block::Quote(kept));
+                }
+                push_images(imgs, &mut out);
+            }
+            Block::List { ordered, items } => {
+                let mut imgs = Vec::new();
+                let items = items
+                    .into_iter()
+                    .map(|item| {
+                        let (kept, mut found) = strip_images(item);
+                        imgs.append(&mut found);
+                        kept
+                    })
+                    .collect();
+                out.push(Block::List { ordered, items });
+                push_images(imgs, &mut out);
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Recursively remove every image from `blocks`, returning the de-imaged blocks plus the
+/// images in document order (used to lift images out of nested containers).
+fn strip_images(blocks: Vec<Block>) -> (Vec<Block>, Vec<Image>) {
+    let mut kept = Vec::new();
+    let mut imgs = Vec::new();
+    for block in blocks {
+        match block {
+            Block::Image(img) => imgs.push(img),
+            Block::ImageGrid(mut grid) => imgs.append(&mut grid),
+            Block::Paragraph(inlines) => {
+                let mut text = Vec::new();
+                for inline in inlines {
+                    match inline {
+                        Inline::Image(img) => imgs.push(img),
+                        other => text.push(other),
+                    }
+                }
+                if has_real(&text) {
+                    kept.push(Block::Paragraph(text));
+                }
+            }
+            Block::Quote(inner) => {
+                let (k, mut i) = strip_images(inner);
+                imgs.append(&mut i);
+                if !k.is_empty() {
+                    kept.push(Block::Quote(k));
+                }
+            }
+            Block::List { ordered, items } => {
+                let items = items
+                    .into_iter()
+                    .map(|item| {
+                        let (k, mut i) = strip_images(item);
+                        imgs.append(&mut i);
+                        k
+                    })
+                    .collect();
+                kept.push(Block::List { ordered, items });
+            }
+            other => kept.push(other),
+        }
+    }
+    (kept, imgs)
 }
 
 fn heading_level(level: HeadingLevel) -> u8 {
@@ -329,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn image_only_paragraphs_become_block_images() {
+    fn images_are_hoisted_to_top_level_blocks() {
         // Standalone image → Block::Image.
         assert!(matches!(
             decode_str("![a](https://i.test/a.png)").as_slice(),
@@ -340,10 +443,17 @@ mod tests {
             decode_str("![a](https://i.test/a.png)\n![b](https://i.test/b.png)").as_slice(),
             [Block::ImageGrid(imgs)] if imgs.len() == 2
         ));
-        // An image with real text stays a paragraph (degrades to alt text inline).
+        // An image mixed with text is split out: text para, image block, text para.
         assert!(matches!(
             decode_str("see ![a](https://i.test/a.png) here").as_slice(),
-            [Block::Paragraph(_)]
+            [Block::Paragraph(_), Block::Image(_), Block::Paragraph(_)]
+        ));
+        // The real-world bug: an image on the line after `> Quote` (no blank line) gets pulled
+        // into the blockquote by CommonMark lazy continuation. It must hoist out to a top-level
+        // image so the reader renders it, leaving the quote's text behind.
+        assert!(matches!(
+            decode_str("> Quote\n![a](https://i.test/a.png)").as_slice(),
+            [Block::Quote(_), Block::Image(_)]
         ));
     }
 

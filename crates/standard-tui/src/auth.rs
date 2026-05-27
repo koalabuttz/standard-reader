@@ -36,8 +36,9 @@ use atrium_identity::handle::{
 use atrium_oauth::store::session::{Session, SessionStore};
 use atrium_oauth::store::state::MemoryStateStore;
 use atrium_oauth::{
-    AtprotoLocalhostClientMetadata, AuthorizeOptions, CallbackParams, KnownScope, OAuthClient,
-    OAuthClientConfig, OAuthResolverConfig, Scope,
+    AtprotoClientMetadata, AtprotoLocalhostClientMetadata, AuthMethod, AuthorizeOptions,
+    CallbackParams, GrantType, KnownScope, OAuthClient, OAuthClientConfig, OAuthResolverConfig,
+    Scope,
 };
 use atrium_xrpc::HttpClient;
 use atrium_xrpc::http;
@@ -80,11 +81,13 @@ const CALLBACK_TIMEOUT_SECS: u64 = 300;
 /// The lexicon collection the reader mirrors its follow-list into.
 const SUBSCRIPTION_NSID: &str = "site.standard.graph.subscription";
 
-/// The committed hosted `client_id` (provisional). The localhost dev-client is used in this
-/// build (no hosting needed); swap to this for a distributable release after validating the
-/// metadata. Kept as a documented constant so the swap is a one-liner.
-#[allow(dead_code)]
-pub const HOSTED_CLIENT_ID: &str = "https://davidlewis.xyz/standard-reader/client_metadata.json";
+/// The hosted OAuth `client_id` — a URL serving this app's `client_metadata.json`. The
+/// authorization server fetches it, so it must resolve directly (the apex `davidlewis.xyz`
+/// 301-redirects to `www`, so we use `www`). The matching document lives in the website repo
+/// at `standard-reader/client_metadata.json`. Used by default; set `SR_OAUTH_LOCALHOST` to fall
+/// back to the no-hosting dev client.
+const HOSTED_CLIENT_ID: &str = "https://www.davidlewis.xyz/standard-reader/client_metadata.json";
+const CLIENT_URI: &str = "https://www.davidlewis.xyz";
 
 /// The signed-in identity, persisted in `account.json` so startup needn't hit the network.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -300,34 +303,60 @@ fn build_client(session_path: PathBuf) -> AuthResult<Client> {
         client: http.client.clone(),
     };
     let resolver_http = Arc::new(http.clone());
-    let config = OAuthClientConfig {
-        client_metadata: AtprotoLocalhostClientMetadata {
-            redirect_uris: Some(vec![REDIRECT_URI.to_string()]),
-            scopes: Some(vec![
-                Scope::Known(KnownScope::Atproto),
-                Scope::Known(KnownScope::TransitionGeneric),
-            ]),
-        },
-        keys: None,
-        resolver: OAuthResolverConfig {
-            did_resolver: CommonDidResolver::new(CommonDidResolverConfig {
-                plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
-                http_client: Arc::clone(&resolver_http),
-            }),
-            handle_resolver: AtprotoHandleResolver::new(AtprotoHandleResolverConfig {
-                dns_txt_resolver: dns,
-                http_client: Arc::clone(&resolver_http),
-            }),
-            authorization_server_metadata: Default::default(),
-            protected_resource_metadata: Default::default(),
-        },
-        state_store: MemoryStateStore::default(),
-        session_store: FileSessionStore {
-            path: session_path,
-        },
-        http_client: http,
+    let resolver = OAuthResolverConfig {
+        did_resolver: CommonDidResolver::new(CommonDidResolverConfig {
+            plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
+            http_client: Arc::clone(&resolver_http),
+        }),
+        handle_resolver: AtprotoHandleResolver::new(AtprotoHandleResolverConfig {
+            dns_txt_resolver: dns,
+            http_client: Arc::clone(&resolver_http),
+        }),
+        authorization_server_metadata: Default::default(),
+        protected_resource_metadata: Default::default(),
     };
-    Ok(OAuthClient::new(config)?)
+    let state_store = MemoryStateStore::default();
+    let session_store = FileSessionStore { path: session_path };
+    let scopes = vec![
+        Scope::Known(KnownScope::Atproto),
+        Scope::Known(KnownScope::TransitionGeneric),
+    ];
+
+    // Default to the hosted client (a real client_id + branded consent screen). The dev client
+    // needs no hosting but shows a generic prompt — kept as `SR_OAUTH_LOCALHOST` for local work
+    // or before the hosted metadata is deployed. `M` only flows into `OAuthClient::new`, so both
+    // arms build the same `Client` type.
+    if std::env::var_os("SR_OAUTH_LOCALHOST").is_some() {
+        Ok(OAuthClient::new(OAuthClientConfig {
+            client_metadata: AtprotoLocalhostClientMetadata {
+                redirect_uris: Some(vec![REDIRECT_URI.to_string()]),
+                scopes: Some(scopes),
+            },
+            keys: None,
+            resolver,
+            state_store,
+            session_store,
+            http_client: http,
+        })?)
+    } else {
+        Ok(OAuthClient::new(OAuthClientConfig {
+            client_metadata: AtprotoClientMetadata {
+                client_id: HOSTED_CLIENT_ID.to_string(),
+                client_uri: Some(CLIENT_URI.to_string()),
+                redirect_uris: vec![REDIRECT_URI.to_string()],
+                token_endpoint_auth_method: AuthMethod::None,
+                grant_types: vec![GrantType::AuthorizationCode, GrantType::RefreshToken],
+                scopes,
+                jwks_uri: None,
+                token_endpoint_auth_signing_alg: None,
+            },
+            keys: None,
+            resolver,
+            state_store,
+            session_store,
+            http_client: http,
+        })?)
+    }
 }
 
 /// `at://<did>/<collection>/<rkey>` → `<rkey>` (the trailing path segment).

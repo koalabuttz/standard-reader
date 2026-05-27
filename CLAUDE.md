@@ -63,7 +63,7 @@ Adding a platform = **one new `ContentDecoder`** in `decode/<name>.rs` + one lin
 
 ## Auth
 
-OAuth via loopback redirect (`atrium-oauth`). `client_metadata.json` (the OAuth **`client_id`**) is hosted at `https://davidlewis.xyz/standard-reader/client_metadata.json`; the browser redirects to `http://127.0.0.1:4599/callback`. **The committed `client_metadata.json` is provisional** — validate `redirect_uris` / `scope` against `atrium-oauth` before going live. Store the session in a **`0600` file** under XDG config (the dev box's Crostini lacks a Secret Service daemon, so the `keyring` crate fails there; keep keyring opt-in).
+OAuth via loopback redirect (`atrium-oauth`). The **`client_id`** is the hosted `client_metadata.json` at `https://www.davidlewis.xyz/standard-reader/client_metadata.json` (canonical `www` host — the apex 301-redirects, which a `client_id` must not do); the served copy lives in the **website repo** (`standard-reader/client_metadata.json`), with a matching reference copy at this repo's root. The browser redirects to `http://127.0.0.1:4599/callback` (a `native`-client loopback redirect — atproto-valid, and `atrium-oauth` doesn't restrict it). `build_client` uses this hosted client by default; set **`SR_OAUTH_LOCALHOST=1`** to fall back to the no-hosting dev client (local work, or before the metadata is deployed). Store the session in a **`0600` file** under XDG config (the dev box's Crostini lacks a Secret Service daemon, so the `keyring` crate fails there; keep keyring opt-in).
 
 ## Storage & search
 

@@ -100,8 +100,40 @@ impl RedbStore {
         let store = Self {
             db: Database::create(path)?,
         };
+        store.migrate_follows()?;
         store.init_tables()?;
         Ok(store)
+    }
+
+    /// Migrate the `FOLLOWS` table from its old value type `()` to `&str` (the atproto rkey).
+    /// An older cache stored it as `()`, which makes opening it as `<&str, &str>` fail and the
+    /// whole cache refuse to open. Preserve the followed URIs (rkey unknown → empty) and rewrite
+    /// under the new type. It's a cache, so the follow set is the only thing worth keeping.
+    fn migrate_follows(&self) -> Result<()> {
+        const OLD_FOLLOWS: TableDefinition<&str, ()> = TableDefinition::new("follows");
+        // Read the table's keys only if it exists *and* is still the old `()` type.
+        let keys: Vec<String> = {
+            let r = self.db.begin_read()?;
+            match r.open_table(OLD_FOLLOWS) {
+                Ok(table) => table
+                    .iter()?
+                    .filter_map(|e| e.ok().map(|(k, _)| k.value().to_string()))
+                    .collect(),
+                // New type already, or absent → nothing to migrate.
+                Err(_) => return Ok(()),
+            }
+        };
+        // Rewrite the followed URIs under the new `&str` type with empty rkeys.
+        let w = self.db.begin_write()?;
+        {
+            w.delete_table(OLD_FOLLOWS)?;
+            let mut new = w.open_table(FOLLOWS)?;
+            for key in &keys {
+                new.insert(key.as_str(), "")?;
+            }
+        }
+        w.commit()?;
+        Ok(())
     }
 
     /// An in-memory cache (tests).
@@ -504,6 +536,38 @@ mod tests {
         s.unfollow("at://d/p/1").unwrap();
         assert!(!s.is_followed("at://d/p/1").unwrap());
         assert_eq!(s.follows().unwrap(), ["at://d/p/2"]);
+    }
+
+    #[test]
+    fn migrates_old_unit_typed_follows_to_rkey_table() {
+        // Build a DB with the *old* `follows` table typed `<&str, ()>`.
+        const OLD: TableDefinition<&str, ()> = TableDefinition::new("follows");
+        let db = Database::builder()
+            .create_with_backend(redb::backends::InMemoryBackend::new())
+            .unwrap();
+        {
+            let w = db.begin_write().unwrap();
+            {
+                let mut t = w.open_table(OLD).unwrap();
+                t.insert("at://d/p/1", ()).unwrap();
+                t.insert("at://d/p/2", ()).unwrap();
+            }
+            w.commit().unwrap();
+        }
+
+        // Opening as the new store migrates it in place (instead of failing to open).
+        let mut store = RedbStore { db };
+        store.migrate_follows().unwrap();
+        store.init_tables().unwrap();
+
+        let mut follows = store.follows().unwrap();
+        follows.sort();
+        assert_eq!(follows, ["at://d/p/1", "at://d/p/2"]);
+        assert_eq!(store.follow_rkey("at://d/p/1").unwrap(), None, "rkey unknown post-migrate");
+
+        // The table is now the new type — rkeys can be recorded.
+        store.set_follow_rkey("at://d/p/1", "3kabc").unwrap();
+        assert_eq!(store.follow_rkey("at://d/p/1").unwrap().as_deref(), Some("3kabc"));
     }
 
     #[test]

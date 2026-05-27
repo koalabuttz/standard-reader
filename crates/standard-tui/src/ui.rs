@@ -8,7 +8,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
 use crate::app::{Action, App, Focus, Mode};
 use theme::Theme;
@@ -37,7 +37,9 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
         Mode::Help => draw_help(f, theme, area),
         Mode::Search => draw_input(f, app, theme, area, "Search"),
         Mode::AddFeed => draw_input(f, app, theme, area, "Add a blog — handle, DID, or URL"),
+        Mode::SignIn => draw_input(f, app, theme, area, "Sign in — your handle or DID"),
         Mode::Palette => draw_palette(f, app, theme, area),
+        Mode::SyncPrompt => draw_sync_prompt(f, app, theme, area),
         _ => {}
     }
 }
@@ -56,7 +58,12 @@ fn panel<'a>(theme: &Theme, title: &'a str, focused: bool) -> Block<'a> {
 
 fn draw_sidebar(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let focused = app.focus == Focus::Sidebar;
-    let block = panel(theme, "Feeds", focused);
+    // The signed-in identity (or a hint to sign in) along the panel's bottom edge.
+    let account = match &app.account {
+        Some(a) => format!(" @{} ", a.handle),
+        None => " not signed in · L ".into(),
+    };
+    let block = panel(theme, "Feeds", focused).title_bottom(Span::styled(account, theme.dim_style()));
     if app.feeds.is_empty() {
         let hint = Paragraph::new("No feeds yet.\n\nPress a to add a blog\nby handle.")
             .style(theme.dim_style())
@@ -129,11 +136,12 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 fn draw_footer(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let hints = match app.mode {
         Mode::Browse => {
-            "a add · ⇥ focus · enter open · o browser · / search · : palette · ? help · q quit"
+            "a add · ⇥ focus · enter open · o browser · / search · L sign in · : palette · ? help"
         }
         Mode::DocList => "↑↓ select · enter read · o browser · esc back · / search",
-        Mode::Search | Mode::AddFeed => "type · enter submit · esc cancel",
+        Mode::Search | Mode::AddFeed | Mode::SignIn => "type · enter submit · esc cancel",
         Mode::Palette => "↑↓ choose · enter run · esc cancel",
+        Mode::SyncPrompt => "s subscribe · r remove · esc dismiss",
         Mode::Help => "any key to close",
     };
     let line = Line::from(vec![
@@ -212,6 +220,7 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
         ("o", "open this post in your browser"),
         ("i", "toggle images (text-only mode)"),
         ("m", "mark the open post read"),
+        ("L", "sign in / out (atproto)"),
         ("? ", "this help"),
         ("q", "quit"),
     ];
@@ -235,6 +244,49 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
         })
         .collect();
     f.render_widget(Paragraph::new(lines).block(block), popup);
+}
+
+/// The subscription-reconciliation modal: local-only follows + the s/r/esc choices.
+fn draw_sync_prompt(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
+    let height = (app.sync_prompt.len() as u16 + 7).min(area.height);
+    let popup = centered(area, 64, height);
+    f.render_widget(Clear, popup);
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(theme.accent_style())
+        .title(Span::styled(
+            " Sync subscriptions ",
+            theme.accent_style().add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().fg(theme.fg).bg(theme.panel));
+
+    let bold = theme.accent_style().add_modifier(Modifier::BOLD);
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "Followed here but not in your atproto account:",
+            theme.body(),
+        )),
+        Line::from(""),
+    ];
+    for (_, name) in &app.sync_prompt {
+        lines.push(Line::from(vec![
+            Span::styled("  • ", theme.accent_style()),
+            Span::styled(name.clone(), theme.body()),
+        ]));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("s", bold),
+        Span::styled(" subscribe   ", theme.body()),
+        Span::styled("r", bold),
+        Span::styled(" remove locally   ", theme.body()),
+        Span::styled("esc", bold),
+        Span::styled(" later", theme.body()),
+    ]));
+    f.render_widget(
+        Paragraph::new(lines).block(block).wrap(Wrap { trim: false }),
+        popup,
+    );
 }
 
 /// A centered rect of the given width/height, clamped to `area`.

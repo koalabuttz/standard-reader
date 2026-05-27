@@ -9,6 +9,7 @@
 //! CLI paths over the same pipeline.
 
 mod app;
+mod auth;
 mod store;
 mod transport;
 mod ui;
@@ -76,7 +77,7 @@ fn print_usage() {
 // --- the interactive reader -------------------------------------------------------
 
 fn run_tui() -> Result<(), Box<dyn Error>> {
-    let (tx, rx) = worker::spawn(cache_path()?);
+    let (tx, rx) = worker::spawn(cache_path()?, config_dir()?);
     let mut terminal = ratatui::init();
     // Detect the terminal graphics protocol + font size (before mouse capture, so the
     // query's stdin replies aren't interleaved with mouse reports). Fall back to halfblocks.
@@ -254,6 +255,19 @@ fn cache_path() -> Result<PathBuf, Box<dyn Error>> {
     let dir = base.join("standard-reader");
     std::fs::create_dir_all(&dir)?;
     Ok(dir.join("cache.redb"))
+}
+
+/// The config directory (`$XDG_CONFIG_HOME/standard-reader`, else `~/.config/...`). Auth is
+/// *config*, not cache data, so the OAuth session/account files live here, separate from the
+/// re-fetchable `redb` cache under `$XDG_DATA_HOME`.
+fn config_dir() -> Result<PathBuf, Box<dyn Error>> {
+    let base = match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => PathBuf::from(std::env::var_os("HOME").ok_or("HOME not set")?).join(".config"),
+    };
+    let dir = base.join("standard-reader");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
 }
 
 fn title_or_untitled(title: &str) -> &str {

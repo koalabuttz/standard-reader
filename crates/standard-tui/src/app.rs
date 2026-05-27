@@ -13,6 +13,7 @@ use ratatui_image::sliced::SlicedProtocol;
 
 use standard_core::model::{Block, Document, ImageSource, Publication, RichDoc};
 
+use crate::auth::Account;
 use crate::worker::{FromWorker, ToWorker};
 
 /// Stable cache key for an image source (the blob CID, or the URL).
@@ -48,6 +49,10 @@ pub enum Mode {
     Palette,
     Help,
     AddFeed,
+    /// Prompt for a handle/DID to sign in via OAuth.
+    SignIn,
+    /// Reconcile local-only follows against the account's atproto subscriptions.
+    SyncPrompt,
 }
 
 /// Palette actions (also reachable by their direct keys).
@@ -57,16 +62,20 @@ pub enum Action {
     Search,
     Refresh,
     MarkRead,
+    SignIn,
+    SignOut,
     Help,
     Quit,
 }
 
 impl Action {
-    pub const ALL: [Action; 6] = [
+    pub const ALL: [Action; 8] = [
         Self::AddFeed,
         Self::Search,
         Self::Refresh,
         Self::MarkRead,
+        Self::SignIn,
+        Self::SignOut,
         Self::Help,
         Self::Quit,
     ];
@@ -77,6 +86,8 @@ impl Action {
             Action::Search => "Search",
             Action::Refresh => "Refresh feed",
             Action::MarkRead => "Mark read",
+            Action::SignIn => "Sign in",
+            Action::SignOut => "Sign out",
             Action::Help => "Help",
             Action::Quit => "Quit",
         }
@@ -120,6 +131,10 @@ pub struct App {
     pub images: HashMap<String, LoadedImage>,
     /// Text-only toggle: when false, images aren't fetched and render as placeholders.
     pub show_images: bool,
+    /// The signed-in account, or `None` when signed out.
+    pub account: Option<Account>,
+    /// Local-only follows awaiting reconciliation `(publication_uri, name)`; drives `SyncPrompt`.
+    pub sync_prompt: Vec<(String, String)>,
     tx: Sender<ToWorker>,
 }
 
@@ -148,6 +163,8 @@ impl App {
             picker,
             images: HashMap::new(),
             show_images: true,
+            account: None,
+            sync_prompt: Vec::new(),
             tx,
         };
         app.send(ToWorker::LoadHome);
@@ -216,6 +233,21 @@ impl App {
                     self.request_current_images();
                 }
             }
+            FromWorker::Account(account) => {
+                self.status = match &account {
+                    Some(a) => format!("signed in as @{}", a.handle),
+                    None => "signed out".into(),
+                };
+                self.account = account;
+            }
+            FromWorker::SyncDiff { local_only } => {
+                if local_only.is_empty() {
+                    self.sync_prompt.clear();
+                } else {
+                    self.sync_prompt = local_only;
+                    self.mode = Mode::SyncPrompt;
+                }
+            }
             FromWorker::Status(s) => self.status = s,
             FromWorker::Error(e) => {
                 self.loading = false;
@@ -228,9 +260,10 @@ impl App {
 
     pub fn on_key(&mut self, key: KeyEvent) {
         match self.mode {
-            Mode::Search | Mode::AddFeed => self.input_key(key),
+            Mode::Search | Mode::AddFeed | Mode::SignIn => self.input_key(key),
             Mode::Palette => self.palette_key(key),
             Mode::Help => self.mode = Mode::Browse,
+            Mode::SyncPrompt => self.sync_prompt_key(key),
             Mode::DocList => self.doclist_key(key),
             Mode::Browse => self.browse_key(key),
         }
@@ -250,6 +283,7 @@ impl App {
             KeyCode::Char('m') => self.mark_read(),
             KeyCode::Char('o') => self.open_in_browser(),
             KeyCode::Char('i') => self.toggle_images(),
+            KeyCode::Char('L') => self.toggle_account(),
             KeyCode::Tab => self.toggle_focus(),
             KeyCode::Enter if self.focus == Focus::Sidebar => self.open_feed(),
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
@@ -362,9 +396,13 @@ impl App {
     // --- actions ----------------------------------------------------------------
 
     pub fn palette_matches(&self) -> Vec<Action> {
+        let signed_in = self.account.is_some();
         Action::ALL
             .iter()
             .copied()
+            // Only the relevant sign-in/out action for the current state.
+            .filter(|a| !matches!(a, Action::SignIn if signed_in))
+            .filter(|a| !matches!(a, Action::SignOut if !signed_in))
             .filter(|a| fuzzy(&self.input, a.label()))
             .collect()
     }
@@ -375,6 +413,11 @@ impl App {
             Action::Search => self.enter_input(Mode::Search),
             Action::Refresh => self.refresh_current_feed(),
             Action::MarkRead => self.mark_read(),
+            Action::SignIn => self.enter_input(Mode::SignIn),
+            Action::SignOut => {
+                self.status = "signing out…".into();
+                self.send(ToWorker::Logout);
+            }
             Action::Help => self.mode = Mode::Help,
             Action::Quit => self.quit(),
         }
@@ -409,10 +452,50 @@ impl App {
                 self.loading = true;
                 self.send(ToWorker::Search(value));
             }
+            Mode::SignIn if !value.is_empty() => {
+                self.status = "signing in…".into();
+                self.send(ToWorker::Login(value));
+            }
             _ => {}
         }
         self.mode = Mode::Browse;
         self.input.clear();
+    }
+
+    /// `s` Subscribe local-only follows upstream, `r` remove them locally, Esc dismiss.
+    fn sync_prompt_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('s') => {
+                let uris: Vec<String> =
+                    self.sync_prompt.iter().map(|(uri, _)| uri.clone()).collect();
+                self.send(ToWorker::SubscribeLocal(uris));
+                self.dismiss_sync_prompt();
+            }
+            KeyCode::Char('r') => {
+                for (uri, _) in &self.sync_prompt {
+                    self.send(ToWorker::Unfollow(uri.clone()));
+                }
+                self.status = format!("removed {} local-only feed(s)", self.sync_prompt.len());
+                self.dismiss_sync_prompt();
+            }
+            KeyCode::Esc => self.dismiss_sync_prompt(),
+            _ => {}
+        }
+    }
+
+    fn dismiss_sync_prompt(&mut self) {
+        self.sync_prompt.clear();
+        self.mode = Mode::Browse;
+    }
+
+    /// `L`: sign out if signed in, else prompt for a handle to sign in.
+    fn toggle_account(&mut self) {
+        if self.account.is_some() {
+            self.status = "signing out…".into();
+            self.send(ToWorker::Logout);
+        } else {
+            self.enter_input(Mode::SignIn);
+        }
     }
 
     fn open_feed(&mut self) {

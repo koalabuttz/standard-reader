@@ -28,8 +28,10 @@ const DOCS_BY_PUB: MultimapTableDefinition<&str, &str> =
     MultimapTableDefinition::new("docs_by_pub");
 // search term → doc uri  (persisted inverted index over textContent)
 const INDEX: MultimapTableDefinition<&str, &str> = MultimapTableDefinition::new("index");
-// publication uri → ()  (the local follow-list; the app's own subscriptions, no auth)
-const FOLLOWS: TableDefinition<&str, ()> = TableDefinition::new("follows");
+// publication uri → atproto rkey  (the local follow-list; empty string when the follow is
+// local-only / its `site.standard.graph.subscription` rkey isn't known — e.g. signed out, or
+// added before sign-in. A non-empty rkey lets `unfollow` issue the matching `deleteRecord`.)
+const FOLLOWS: TableDefinition<&str, &str> = TableDefinition::new("follows");
 // key → value  (persisted preferences, e.g. "show_images")
 const SETTINGS: TableDefinition<&str, &str> = TableDefinition::new("settings");
 
@@ -129,16 +131,43 @@ impl RedbStore {
     }
 
     /// The local follow-list — publication URIs the user follows (the app's own
-    /// subscriptions, persisted without atproto auth). OAuth later mirrors this to
-    /// `site.standard.graph.subscription`.
+    /// subscriptions, persisted without atproto auth). OAuth mirrors this to
+    /// `site.standard.graph.subscription`. Adding a follow leaves its rkey empty (unknown
+    /// until pushed/imported); an existing rkey is preserved so re-following a synced feed
+    /// doesn't lose its upstream link.
     pub fn follow(&mut self, publication_uri: &str) -> Result<()> {
         let w = self.db.begin_write()?;
         {
             let mut table = w.open_table(FOLLOWS)?;
-            table.insert(publication_uri, ())?;
+            if table.get(publication_uri)?.is_none() {
+                table.insert(publication_uri, "")?;
+            }
         }
         w.commit()?;
         Ok(())
+    }
+
+    /// Record the atproto rkey of a followed publication's upstream subscription record
+    /// (set after a `createRecord`, or when importing the account's existing subscriptions).
+    /// Also ensures the publication is in the follow-list.
+    pub fn set_follow_rkey(&mut self, publication_uri: &str, rkey: &str) -> Result<()> {
+        let w = self.db.begin_write()?;
+        {
+            let mut table = w.open_table(FOLLOWS)?;
+            table.insert(publication_uri, rkey)?;
+        }
+        w.commit()?;
+        Ok(())
+    }
+
+    /// The upstream subscription rkey for a followed publication, if known (empty → `None`).
+    pub fn follow_rkey(&self, publication_uri: &str) -> Result<Option<String>> {
+        let r = self.db.begin_read()?;
+        let table = r.open_table(FOLLOWS)?;
+        Ok(table.get(publication_uri)?.and_then(|g| {
+            let rkey = g.value();
+            (!rkey.is_empty()).then(|| rkey.to_string())
+        }))
     }
 
     pub fn unfollow(&mut self, publication_uri: &str) -> Result<()> {
@@ -475,6 +504,27 @@ mod tests {
         s.unfollow("at://d/p/1").unwrap();
         assert!(!s.is_followed("at://d/p/1").unwrap());
         assert_eq!(s.follows().unwrap(), ["at://d/p/2"]);
+    }
+
+    #[test]
+    fn follow_rkey_round_trips_and_is_preserved() {
+        let mut s = RedbStore::in_memory().unwrap();
+        // A plain follow has no upstream rkey yet.
+        s.follow("at://d/p/1").unwrap();
+        assert_eq!(s.follow_rkey("at://d/p/1").unwrap(), None);
+
+        // Pushing/importing records the rkey…
+        s.set_follow_rkey("at://d/p/1", "3kabc").unwrap();
+        assert_eq!(s.follow_rkey("at://d/p/1").unwrap().as_deref(), Some("3kabc"));
+
+        // …and a redundant follow() must not clobber it.
+        s.follow("at://d/p/1").unwrap();
+        assert_eq!(s.follow_rkey("at://d/p/1").unwrap().as_deref(), Some("3kabc"));
+
+        // Unfollow drops both membership and rkey.
+        s.unfollow("at://d/p/1").unwrap();
+        assert_eq!(s.follow_rkey("at://d/p/1").unwrap(), None);
+        assert!(!s.is_followed("at://d/p/1").unwrap());
     }
 
     #[test]

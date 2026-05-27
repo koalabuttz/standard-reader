@@ -30,4 +30,15 @@ ratatui-image = { version = "11", default-features = false, features = ["crosste
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 # Open a post's web URL in the user's browser (xdg-open / open / start).
 open = "5"
-# Remaining frontend deps (atrium-oauth) land as the TUI grows.
+# OAuth sign-in + writes (DPoP, browser loopback). `default-client` is off because it
+# pulls `reqwest/default-tls` (openssl, a C dep); we supply a rustls `HttpClient` instead,
+# reusing reqwest's async side. `atrium-api` drops its bluesky namespaces — we only touch
+# `com.atproto.repo.*` (subscription records) + the `Agent`. async/tokio stays frontend-only.
+atrium-oauth = { version = "0.1", default-features = false }
+atrium-api = { version = "0.25", default-features = false, features = ["agent"] }
+atrium-identity = "0.1"
+atrium-xrpc = "0.12"
+# The `Store<K,V>` trait that atrium's `SessionStore` extends — needed to back the OAuth
+# session with our own 0600 file instead of atrium's in-memory default.
+atrium-common = "0.1"
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "sync"] }

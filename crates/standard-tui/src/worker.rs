@@ -16,6 +16,7 @@ use standard_core::model::{Document, ImageSource, Publication, RichDoc};
 use standard_core::read;
 use standard_core::store::Store;
 
+use crate::auth::{Account, Auth};
 use crate::store::RedbStore;
 use crate::transport::ReqwestTransport;
 
@@ -31,6 +32,13 @@ pub enum ToWorker {
     Unfollow(String),
     LoadImage { key: String, source: ImageSource },
     SetShowImages(bool),
+    /// Sign in via OAuth using a handle or DID.
+    Login(String),
+    /// Sign out: revoke + forget the session.
+    Logout,
+    /// Push the given local-only follows up as `site.standard.graph.subscription` records
+    /// (the "Subscribe" answer to the sync-reconciliation prompt).
+    SubscribeLocal(Vec<String>),
     Quit,
 }
 
@@ -51,19 +59,31 @@ pub enum FromWorker {
         image: image::DynamicImage,
     },
     ShowImages(bool),
+    /// The current signed-in identity (or `None` when signed out).
+    Account(Option<Account>),
+    /// Follows present locally but not on atproto — the reconciliation prompt's contents,
+    /// as `(publication_uri, display_name)` pairs.
+    SyncDiff {
+        local_only: Vec<(String, String)>,
+    },
     Status(String),
     Error(String),
 }
 
 /// Spawn the worker; returns the command sender and the result receiver.
-pub fn spawn(cache_path: PathBuf) -> (Sender<ToWorker>, Receiver<FromWorker>) {
+pub fn spawn(cache_path: PathBuf, config_dir: PathBuf) -> (Sender<ToWorker>, Receiver<FromWorker>) {
     let (cmd_tx, cmd_rx) = channel::<ToWorker>();
     let (evt_tx, evt_rx) = channel::<FromWorker>();
-    thread::spawn(move || run(cache_path, cmd_rx, evt_tx));
+    thread::spawn(move || run(cache_path, config_dir, cmd_rx, evt_tx));
     (cmd_tx, evt_rx)
 }
 
-fn run(cache_path: PathBuf, cmd_rx: Receiver<ToWorker>, evt_tx: Sender<FromWorker>) {
+fn run(
+    cache_path: PathBuf,
+    config_dir: PathBuf,
+    cmd_rx: Receiver<ToWorker>,
+    evt_tx: Sender<FromWorker>,
+) {
     let store = match RedbStore::open(&cache_path) {
         Ok(s) => s,
         Err(e) => {
@@ -76,12 +96,17 @@ fn run(cache_path: PathBuf, cmd_rx: Receiver<ToWorker>, evt_tx: Sender<FromWorke
         store,
         registry: Registry::with_defaults(),
         pds_cache: HashMap::new(),
+        account: None,
+        auth: build_auth(&config_dir, &evt_tx),
         tx: evt_tx,
     };
     // Report the persisted text-only preference up front.
     ctx.send(FromWorker::ShowImages(
         ctx.store.show_images().unwrap_or(true),
     ));
+    // Restore a saved OAuth session (if any) and reconcile subscriptions before serving.
+    ctx.restore_session();
+
     while let Ok(msg) = cmd_rx.recv() {
         if matches!(msg, ToWorker::Quit) {
             break;
@@ -92,13 +117,46 @@ fn run(cache_path: PathBuf, cmd_rx: Receiver<ToWorker>, evt_tx: Sender<FromWorke
     }
 }
 
+/// Build the auth context (a tokio runtime + the OAuth client). Auth is optional: if either
+/// the runtime or the client can't be built, the reader still works for (unauthenticated)
+/// reads — only sign-in and subscription sync are disabled.
+fn build_auth(config_dir: &std::path::Path, tx: &Sender<FromWorker>) -> Option<AuthCtx> {
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            let _ = tx.send(FromWorker::Error(format!("auth disabled (no runtime): {e}")));
+            return None;
+        }
+    };
+    match Auth::new(config_dir) {
+        Ok(auth) => Some(AuthCtx { runtime, auth }),
+        Err(e) => {
+            let _ = tx.send(FromWorker::Error(format!("auth disabled: {e}")));
+            None
+        }
+    }
+}
+
 struct Ctx {
     transport: ReqwestTransport,
     store: RedbStore,
     registry: Registry,
     /// did → PDS endpoint, so image-blob fetches don't re-resolve per image.
     pds_cache: HashMap<String, String>,
+    /// The signed-in identity, or `None` when signed out.
+    account: Option<Account>,
+    /// The OAuth runtime + client, or `None` if auth couldn't be initialized.
+    auth: Option<AuthCtx>,
     tx: Sender<FromWorker>,
+}
+
+/// The async side, kept off `standard-core`: a worker-owned tokio runtime and the OAuth client.
+struct AuthCtx {
+    runtime: tokio::runtime::Runtime,
+    auth: Auth,
 }
 
 type Done = Result<(), Box<dyn Error>>;
@@ -117,12 +175,12 @@ impl Ctx {
             ToWorker::Search(query) => self.search(&query),
             ToWorker::Refresh(uri) => self.refresh_docs(&uri),
             ToWorker::SetRead(uri, read) => Ok(self.store.set_read(&uri, read)?),
-            ToWorker::Unfollow(uri) => {
-                self.store.unfollow(&uri)?;
-                self.load_home()
-            }
+            ToWorker::Unfollow(uri) => self.unfollow(&uri),
             ToWorker::LoadImage { key, source } => self.load_image(key, source),
             ToWorker::SetShowImages(on) => Ok(self.store.set_show_images(on)?),
+            ToWorker::Login(ident) => self.login(&ident),
+            ToWorker::Logout => self.logout(),
+            ToWorker::SubscribeLocal(uris) => self.subscribe_local(uris),
             ToWorker::Quit => Ok(()),
         }
     }
@@ -154,7 +212,7 @@ impl Ctx {
         for publication in &publications {
             self.store.upsert_publication(publication)?;
             if !self.store.is_followed(&publication.uri)? {
-                self.store.follow(&publication.uri)?;
+                self.follow(&publication.uri)?;
                 added += 1;
             }
         }
@@ -277,6 +335,227 @@ impl Ctx {
         self.pds_cache.insert(did.to_string(), pds.clone());
         Ok(pds)
     }
+
+    // --- Auth + subscription sync ------------------------------------------------
+
+    /// Restore a persisted OAuth session on startup; on success, reconcile subscriptions.
+    fn restore_session(&mut self) {
+        let Some(auth) = &self.auth else {
+            self.send(FromWorker::Account(None));
+            return;
+        };
+        match auth.runtime.block_on(auth.auth.restore()) {
+            Ok(Some(account)) => {
+                self.account = Some(account.clone());
+                self.send(FromWorker::Account(Some(account.clone())));
+                if let Err(e) = self.sync_subscriptions(&account) {
+                    self.send(FromWorker::Error(format!("syncing subscriptions: {e}")));
+                }
+            }
+            Ok(None) => self.send(FromWorker::Account(None)),
+            Err(e) => {
+                self.send(FromWorker::Account(None));
+                self.send(FromWorker::Error(format!("restoring session: {e}")));
+            }
+        }
+    }
+
+    /// The OAuth browser flow: open the browser, await the loopback callback, persist the
+    /// session, then reconcile subscriptions. The worker is blocked for the flow's duration.
+    fn login(&mut self, ident: &str) -> Done {
+        let Some(auth) = &self.auth else {
+            self.send(FromWorker::Error("sign-in is unavailable".into()));
+            return Ok(());
+        };
+        self.send(FromWorker::Status(
+            "opening your browser to sign in…".into(),
+        ));
+        let ident = normalize(ident);
+        match auth.runtime.block_on(auth.auth.login(&ident)) {
+            Ok(account) => {
+                self.account = Some(account.clone());
+                self.send(FromWorker::Account(Some(account.clone())));
+                self.send(FromWorker::Status(format!("signed in as @{}", account.handle)));
+                self.sync_subscriptions(&account)?;
+            }
+            Err(e) => self.send(FromWorker::Error(format!("sign-in failed: {e}"))),
+        }
+        Ok(())
+    }
+
+    /// Revoke the session upstream and forget it locally. Local follows stay (now unsynced).
+    fn logout(&mut self) -> Done {
+        if let Some(auth) = &self.auth {
+            let _ = auth.runtime.block_on(auth.auth.logout());
+        }
+        self.account = None;
+        self.send(FromWorker::Account(None));
+        self.send(FromWorker::Status("signed out".into()));
+        Ok(())
+    }
+
+    /// Reconcile the local follow-list with the account's atproto subscriptions:
+    /// import remote-only subscriptions silently; record rkeys for those in both; collect
+    /// local-only follows into a [`FromWorker::SyncDiff`] for the user to resolve.
+    fn sync_subscriptions(&mut self, account: &Account) -> Done {
+        // The account's own subscriptions, read unauthenticated from its repo.
+        let identity = read::resolve_identity(&self.transport, &account.did)?;
+        let remote: HashMap<String, String> = read::list_subscriptions(&self.transport, &identity)?
+            .into_iter()
+            .map(|s| (s.publication, rkey_from_uri(&s.uri)))
+            .collect();
+
+        let diff = diff_subscriptions(&self.store.follows()?, &remote);
+
+        // Remote-only → fetch + cache, follow, record rkey.
+        for (pub_uri, rkey) in &diff.remote_only {
+            if let Err(e) = self.cache_publication(pub_uri) {
+                // Best-effort: a since-deleted publication shouldn't abort the whole sync.
+                self.send(FromWorker::Status(format!("couldn't import {pub_uri}: {e}")));
+            }
+            self.store.follow(pub_uri)?;
+            self.store.set_follow_rkey(pub_uri, rkey)?;
+        }
+        // Already followed → just record the upstream rkey.
+        for (pub_uri, rkey) in &diff.in_both {
+            self.store.set_follow_rkey(pub_uri, rkey)?;
+        }
+
+        // Local-only → ask the user (could be an intentional add or a stale unfollow).
+        let mut local_only = Vec::new();
+        for pub_uri in diff.local_only {
+            let name = self
+                .store
+                .publication(&pub_uri)?
+                .map(|p| p.name)
+                .unwrap_or_else(|| pub_uri.clone());
+            local_only.push((pub_uri, name));
+        }
+
+        self.load_home()?;
+        if !local_only.is_empty() {
+            self.send(FromWorker::SyncDiff { local_only });
+        }
+        Ok(())
+    }
+
+    /// Push the given local-only follows up as subscription records (the modal's "Subscribe").
+    fn subscribe_local(&mut self, pub_uris: Vec<String>) -> Done {
+        let Some(did) = self.account.as_ref().map(|a| a.did.clone()) else {
+            self.send(FromWorker::Error("not signed in".into()));
+            return Ok(());
+        };
+        let mut subscribed = 0;
+        for pub_uri in &pub_uris {
+            match self.create_subscription(&did, pub_uri) {
+                Ok(rkey) => {
+                    self.store.set_follow_rkey(pub_uri, &rkey)?;
+                    subscribed += 1;
+                }
+                Err(e) => self.send(FromWorker::Status(format!(
+                    "couldn't subscribe to {pub_uri}: {e}"
+                ))),
+            }
+        }
+        self.send(FromWorker::Status(format!(
+            "subscribed to {subscribed} feed(s)"
+        )));
+        self.load_home()
+    }
+
+    /// Add a local follow, mirroring it upstream as a subscription record when signed in.
+    fn follow(&mut self, pub_uri: &str) -> Done {
+        let newly = !self.store.is_followed(pub_uri)?;
+        self.store.follow(pub_uri)?;
+        if newly
+            && let Some(did) = self.account.as_ref().map(|a| a.did.clone())
+        {
+            match self.create_subscription(&did, pub_uri) {
+                Ok(rkey) => self.store.set_follow_rkey(pub_uri, &rkey)?,
+                Err(e) => self.send(FromWorker::Status(format!(
+                    "followed locally; upstream sync failed: {e}"
+                ))),
+            }
+        }
+        Ok(())
+    }
+
+    /// Remove a local follow, deleting its upstream subscription record when one is known.
+    fn unfollow(&mut self, pub_uri: &str) -> Done {
+        if let Some(did) = self.account.as_ref().map(|a| a.did.clone())
+            && let Some(rkey) = self.store.follow_rkey(pub_uri)?
+            && let Some(auth) = &self.auth
+            && let Err(e) = auth
+                .runtime
+                .block_on(auth.auth.delete_subscription(&did, &rkey))
+        {
+            self.send(FromWorker::Status(format!(
+                "removed locally; upstream delete failed: {e}"
+            )));
+        }
+        self.store.unfollow(pub_uri)?;
+        self.load_home()
+    }
+
+    /// Create one `site.standard.graph.subscription` record (auth required); returns its rkey.
+    fn create_subscription(&self, did: &str, pub_uri: &str) -> Result<String, Box<dyn Error>> {
+        let auth = self.auth.as_ref().ok_or("auth unavailable")?;
+        auth.runtime
+            .block_on(auth.auth.create_subscription(did, pub_uri))
+            .map_err(|e| -> Box<dyn Error> { e.to_string().into() })
+    }
+
+    /// Fetch + cache a publication and its documents (no UI emission); used for sync imports.
+    fn cache_publication(&mut self, pub_uri: &str) -> Done {
+        let uri = AtUri::parse(pub_uri).ok_or("malformed publication AT-URI")?;
+        let (publication, repo) = read::get_publication(&self.transport, &uri)?;
+        self.store.upsert_publication(&publication)?;
+        let (repo_docs, _) = read::list_documents(&self.transport, &repo, None)?;
+        for doc in &repo_docs {
+            self.store.upsert_document(doc, None)?;
+        }
+        Ok(())
+    }
+}
+
+/// `at://<did>/<collection>/<rkey>` → `<rkey>` (the trailing path segment).
+fn rkey_from_uri(uri: &str) -> String {
+    uri.rsplit('/').next().unwrap_or_default().to_string()
+}
+
+/// How the local follow-list and the account's atproto subscriptions differ.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SubscriptionDiff {
+    /// On atproto but not followed locally — import: fetch + cache + follow + record rkey.
+    remote_only: Vec<(String, String)>,
+    /// Followed both places — just record the upstream rkey.
+    in_both: Vec<(String, String)>,
+    /// Followed locally but not on atproto — ask the user (add vs. stale unfollow is ambiguous).
+    local_only: Vec<String>,
+}
+
+/// Partition a sync. `local` = followed publication URIs; `remote` = publication uri → rkey.
+/// Output vectors are sorted so the result is deterministic (the `remote` map is unordered).
+fn diff_subscriptions(local: &[String], remote: &HashMap<String, String>) -> SubscriptionDiff {
+    let local_set: std::collections::HashSet<&str> = local.iter().map(String::as_str).collect();
+    let mut diff = SubscriptionDiff::default();
+    for (pub_uri, rkey) in remote {
+        let entry = (pub_uri.clone(), rkey.clone());
+        if local_set.contains(pub_uri.as_str()) {
+            diff.in_both.push(entry);
+        } else {
+            diff.remote_only.push(entry);
+        }
+    }
+    for pub_uri in local {
+        if !remote.contains_key(pub_uri) {
+            diff.local_only.push(pub_uri.clone());
+        }
+    }
+    diff.remote_only.sort();
+    diff.in_both.sort();
+    diff.local_only.sort();
+    diff
 }
 
 /// Normalize user input to a resolvable handle/DID: pass `did:…` through; strip a URL
@@ -296,7 +575,47 @@ fn normalize(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize;
+    use super::{SubscriptionDiff, diff_subscriptions, normalize, rkey_from_uri};
+    use std::collections::HashMap;
+
+    #[test]
+    fn rkey_is_the_trailing_segment() {
+        assert_eq!(
+            rkey_from_uri("at://did:plc:x/site.standard.graph.subscription/3kabc"),
+            "3kabc"
+        );
+        assert_eq!(rkey_from_uri("bare"), "bare");
+    }
+
+    #[test]
+    fn diff_partitions_remote_only_in_both_and_local_only() {
+        let local = vec![
+            "at://p/both".to_string(),
+            "at://p/localonly".to_string(),
+        ];
+        let remote = HashMap::from([
+            ("at://p/both".to_string(), "rk_both".to_string()),
+            ("at://p/remoteonly".to_string(), "rk_remote".to_string()),
+        ]);
+
+        let diff = diff_subscriptions(&local, &remote);
+        assert_eq!(
+            diff,
+            SubscriptionDiff {
+                remote_only: vec![("at://p/remoteonly".into(), "rk_remote".into())],
+                in_both: vec![("at://p/both".into(), "rk_both".into())],
+                local_only: vec!["at://p/localonly".into()],
+            }
+        );
+    }
+
+    #[test]
+    fn diff_with_no_remote_makes_everything_local_only() {
+        let local = vec!["at://p/a".to_string(), "at://p/b".to_string()];
+        let diff = diff_subscriptions(&local, &HashMap::new());
+        assert!(diff.remote_only.is_empty() && diff.in_both.is_empty());
+        assert_eq!(diff.local_only, ["at://p/a", "at://p/b"]);
+    }
 
     #[test]
     fn normalizes_inputs() {

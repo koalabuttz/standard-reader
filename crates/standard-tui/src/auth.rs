@@ -101,7 +101,7 @@ type Client = OAuthClient<
     MemoryStateStore,
     FileSessionStore,
     CommonDidResolver<RustlsHttpClient>,
-    AtprotoHandleResolver<StubDnsTxtResolver, RustlsHttpClient>,
+    AtprotoHandleResolver<DohDnsTxtResolver, RustlsHttpClient>,
     RustlsHttpClient,
 >;
 
@@ -134,10 +134,20 @@ impl Auth {
 
     /// Run the full browser OAuth flow: PAR/authorize → open the browser → wait on the
     /// loopback callback → exchange the code → persist the session. Returns the new account.
-    pub async fn login(&self, ident: &str) -> AuthResult<Account> {
-        // Reserve the port before kicking off the browser so there's no redirect race.
-        let listener = TcpListener::bind(("127.0.0.1", CALLBACK_PORT))?;
+    ///
+    /// `progress` is called at each step (binding, authorize, browser, waiting, exchange) so
+    /// the frontend can report where the flow is — and surface the authorize URL, in case the
+    /// browser doesn't open on its own (e.g. a headless/Crostini box).
+    pub async fn login(&self, ident: &str, progress: impl Fn(String)) -> AuthResult<Account> {
+        // Reserve the port before kicking off the browser so there's no redirect race. Bind to
+        // all interfaces, not just loopback: the registered redirect is `127.0.0.1`, but on
+        // ChromeOS/Crostini the browser runs outside the container and the forwarded callback
+        // arrives on the container's network interface — a `127.0.0.1`-only listener wouldn't
+        // accept it. (`0.0.0.0` still accepts the plain-loopback case on a normal desktop.)
+        progress(format!("binding callback server on 0.0.0.0:{CALLBACK_PORT}…"));
+        let listener = TcpListener::bind(("0.0.0.0", CALLBACK_PORT))?;
 
+        progress(format!("requesting authorization for {ident} (resolving identity + PAR)…"));
         let url = self
             .client
             .authorize(ident, AuthorizeOptions {
@@ -149,12 +159,17 @@ impl Auth {
             })
             .await?;
 
-        open::that(&url).map_err(|e| -> AuthError {
-            format!("couldn't open a browser ({e}); visit this URL to sign in:\n{url}").into()
-        })?;
+        progress(format!("authorize in your browser — if it didn't open, visit: {url}"));
+        // Detached so we don't block the runtime waiting on the opener process (some desktops,
+        // notably Crostini, don't return promptly). If it fails, the URL was already surfaced.
+        match open::that_detached(&url) {
+            Ok(_) => progress(format!("browser launched; waiting for the redirect to :{CALLBACK_PORT}…")),
+            Err(e) => progress(format!("couldn't launch a browser ({e}); open the URL above manually…")),
+        }
 
         // Blocking accept on a worker-pool thread so it doesn't stall the runtime.
         let params = tokio::task::spawn_blocking(move || wait_for_callback(listener)).await??;
+        progress("callback received; exchanging code for tokens…".into());
         let (session, _) = self.client.callback(params).await?;
 
         let did = session.did().await.ok_or("the OAuth session had no DID")?;
@@ -281,6 +296,9 @@ struct SubscriptionRecord<'a> {
 
 fn build_client(session_path: PathBuf) -> AuthResult<Client> {
     let http = RustlsHttpClient::new()?;
+    let dns = DohDnsTxtResolver {
+        client: http.client.clone(),
+    };
     let resolver_http = Arc::new(http.clone());
     let config = OAuthClientConfig {
         client_metadata: AtprotoLocalhostClientMetadata {
@@ -297,7 +315,7 @@ fn build_client(session_path: PathBuf) -> AuthResult<Client> {
                 http_client: Arc::clone(&resolver_http),
             }),
             handle_resolver: AtprotoHandleResolver::new(AtprotoHandleResolverConfig {
-                dns_txt_resolver: StubDnsTxtResolver,
+                dns_txt_resolver: dns,
                 http_client: Arc::clone(&resolver_http),
             }),
             authorization_server_metadata: Default::default(),
@@ -350,14 +368,37 @@ impl HttpClient for RustlsHttpClient {
     }
 }
 
-/// A no-op DNS-TXT resolver: returns no records so [`AtprotoHandleResolver`] falls back to the
-/// HTTPS `/.well-known/atproto-did` method (handled by our async rustls client). Avoids pulling
-/// a DNS stack; mirrors `read::resolve_did`'s own well-known-only resolution.
-struct StubDnsTxtResolver;
+/// Resolves `_atproto.<handle>` TXT records over **DNS-over-HTTPS** (Google's JSON endpoint),
+/// so handle sign-in works for DNS-based handles (e.g. `pfrazee.com`) without pulling a DNS
+/// stack — just an HTTPS GET on the same rustls reqwest client. Returns the raw TXT strings;
+/// `AtprotoHandleResolver` picks out the `did=…` one (and falls back to HTTPS well-known if we
+/// return nothing). Mirrors the core's `read::resolve_did` DoH fallback.
+#[derive(Clone)]
+struct DohDnsTxtResolver {
+    client: reqwest::Client,
+}
 
-impl DnsTxtResolver for StubDnsTxtResolver {
-    async fn resolve(&self, _query: &str) -> Result<Vec<String>, Box<dyn Error + Send + Sync + 'static>> {
-        Ok(Vec::new())
+impl DnsTxtResolver for DohDnsTxtResolver {
+    async fn resolve(
+        &self,
+        query: &str,
+    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync + 'static>> {
+        let url = format!("https://dns.google/resolve?name={query}&type=TXT");
+        let bytes = self.client.get(&url).send().await?.bytes().await?;
+        let doc: serde_json::Value = serde_json::from_slice(&bytes)?;
+        // `{ "Answer": [ { "data": "did=did:plc:…" }, … ] }` (data is sometimes quote-wrapped).
+        let records = doc
+            .get("Answer")
+            .and_then(|a| a.as_array())
+            .map(|answers| {
+                answers
+                    .iter()
+                    .filter_map(|a| a.get("data").and_then(|d| d.as_str()))
+                    .map(|s| s.trim_matches('"').to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(records)
     }
 }
 
@@ -442,7 +483,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 const CALLBACK_HTML: &str = "<!doctype html><html><head><meta charset=\"utf-8\">\
 <title>standard-reader</title></head>\
 <body style=\"font-family:system-ui;text-align:center;padding-top:4rem;color:#222\">\
-<h2>You're signed in to standard-reader.</h2>\
+<h2>You're logged in to standard-reader.</h2>\
 <p>You can close this tab and return to the terminal.</p></body></html>";
 
 /// Accept a single connection on the bound loopback listener (polling until the deadline),

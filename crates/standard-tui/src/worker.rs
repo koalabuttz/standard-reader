@@ -91,13 +91,23 @@ fn run(
             return;
         }
     };
+    let log_path = config_dir.join("sr.log");
+    let auth = build_auth(&config_dir, &evt_tx);
+    append_log(
+        &log_path,
+        &format!(
+            "worker started; auth {}",
+            if auth.is_some() { "enabled" } else { "disabled" }
+        ),
+    );
     let mut ctx = Ctx {
         transport: ReqwestTransport::new(),
         store,
         registry: Registry::with_defaults(),
         pds_cache: HashMap::new(),
         account: None,
-        auth: build_auth(&config_dir, &evt_tx),
+        auth,
+        log_path,
         tx: evt_tx,
     };
     // Report the persisted text-only preference up front.
@@ -111,8 +121,24 @@ fn run(
         if matches!(msg, ToWorker::Quit) {
             break;
         }
-        if let Err(e) = ctx.handle(msg) {
-            let _ = ctx.tx.send(FromWorker::Error(e.to_string()));
+        // Catch panics (e.g. deep in the async auth stack) so they surface as an error instead
+        // of silently killing the worker and freezing the UI. The runtime survives an unwound
+        // `block_on`, so the next command still works.
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ctx.handle(msg))) {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                append_log(&ctx.log_path, &format!("error: {e}"));
+                let _ = ctx.tx.send(FromWorker::Error(e.to_string()));
+            }
+            Err(panic) => {
+                let what = panic
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown panic".into());
+                append_log(&ctx.log_path, &format!("PANIC: {what}"));
+                let _ = ctx.tx.send(FromWorker::Error(format!("internal error: {what}")));
+            }
         }
     }
 }
@@ -150,7 +176,22 @@ struct Ctx {
     account: Option<Account>,
     /// The OAuth runtime + client, or `None` if auth couldn't be initialized.
     auth: Option<AuthCtx>,
+    /// A debug log (`<config>/sr.log`) — the TUI owns the terminal, so progress/errors that
+    /// can't fit the status line go here. `tail -f` it to watch the sign-in flow.
+    log_path: PathBuf,
     tx: Sender<FromWorker>,
+}
+
+/// Append a timestamped line to the debug log (best-effort; never fails the caller).
+fn append_log(path: &std::path::Path, msg: &str) {
+    use std::io::Write;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(f, "[{ts}] {msg}");
+    }
 }
 
 /// The async side, kept off `standard-core`: a worker-owned tokio runtime and the OAuth client.
@@ -364,21 +405,32 @@ impl Ctx {
     /// session, then reconcile subscriptions. The worker is blocked for the flow's duration.
     fn login(&mut self, ident: &str) -> Done {
         let Some(auth) = &self.auth else {
-            self.send(FromWorker::Error("sign-in is unavailable".into()));
+            self.send(FromWorker::Error("log-in is unavailable".into()));
             return Ok(());
         };
-        self.send(FromWorker::Status(
-            "opening your browser to sign in…".into(),
-        ));
         let ident = normalize(ident);
-        match auth.runtime.block_on(auth.auth.login(&ident)) {
+        append_log(&self.log_path, &format!("login: start, ident={ident}"));
+        // Report each step to both the status line and the log (the worker is blocked in
+        // `block_on` meanwhile; the UI thread drains the channel and re-renders). Clones so the
+        // closure doesn't borrow `self` across the `block_on`.
+        let progress_tx = self.tx.clone();
+        let progress_log = self.log_path.clone();
+        let progress = move |msg: String| {
+            append_log(&progress_log, &format!("login: {msg}"));
+            let _ = progress_tx.send(FromWorker::Status(msg));
+        };
+        match auth.runtime.block_on(auth.auth.login(&ident, progress)) {
             Ok(account) => {
+                append_log(&self.log_path, &format!("login: ok, did={}", account.did));
                 self.account = Some(account.clone());
                 self.send(FromWorker::Account(Some(account.clone())));
-                self.send(FromWorker::Status(format!("signed in as @{}", account.handle)));
+                self.send(FromWorker::Status(format!("logged in as @{}", account.handle)));
                 self.sync_subscriptions(&account)?;
             }
-            Err(e) => self.send(FromWorker::Error(format!("sign-in failed: {e}"))),
+            Err(e) => {
+                append_log(&self.log_path, &format!("login: failed: {e}"));
+                self.send(FromWorker::Error(format!("log-in failed: {e}")));
+            }
         }
         Ok(())
     }
@@ -390,7 +442,7 @@ impl Ctx {
         }
         self.account = None;
         self.send(FromWorker::Account(None));
-        self.send(FromWorker::Status("signed out".into()));
+        self.send(FromWorker::Status("logged out".into()));
         Ok(())
     }
 
@@ -442,7 +494,7 @@ impl Ctx {
     /// Push the given local-only follows up as subscription records (the modal's "Subscribe").
     fn subscribe_local(&mut self, pub_uris: Vec<String>) -> Done {
         let Some(did) = self.account.as_ref().map(|a| a.did.clone()) else {
-            self.send(FromWorker::Error("not signed in".into()));
+            self.send(FromWorker::Error("not logged in".into()));
             return Ok(());
         };
         let mut subscribed = 0;

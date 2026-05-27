@@ -37,7 +37,7 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
         Mode::Help => draw_help(f, theme, area),
         Mode::Search => draw_input(f, app, theme, area, "Search"),
         Mode::AddFeed => draw_input(f, app, theme, area, "Add a blog — handle, DID, or URL"),
-        Mode::SignIn => draw_input(f, app, theme, area, "Sign in — your handle or DID"),
+        Mode::SignIn => draw_input(f, app, theme, area, "Log in — your handle or DID"),
         Mode::Palette => draw_palette(f, app, theme, area),
         Mode::SyncPrompt => draw_sync_prompt(f, app, theme, area),
         _ => {}
@@ -58,10 +58,10 @@ fn panel<'a>(theme: &Theme, title: &'a str, focused: bool) -> Block<'a> {
 
 fn draw_sidebar(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let focused = app.focus == Focus::Sidebar;
-    // The signed-in identity (or a hint to sign in) along the panel's bottom edge.
+    // The logged-in identity (or a hint to log in) along the panel's bottom edge.
     let account = match &app.account {
         Some(a) => format!(" @{} ", a.handle),
-        None => " not signed in · L ".into(),
+        None => " not logged in · L ".into(),
     };
     let block = panel(theme, "Feeds", focused).title_bottom(Span::styled(account, theme.dim_style()));
     if app.feeds.is_empty() {
@@ -134,15 +134,20 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 }
 
 fn draw_footer(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
-    let hints = match app.mode {
+    let login_hint = if app.account.is_some() {
+        "L log out"
+    } else {
+        "L log in"
+    };
+    let hints: String = match app.mode {
         Mode::Browse => {
-            "a add · ⇥ focus · enter open · o browser · / search · L sign in · : palette · ? help"
+            format!("a add · ⇥ focus · enter open · o browser · / search · {login_hint} · : palette · ? help")
         }
-        Mode::DocList => "↑↓ select · enter read · o browser · esc back · / search",
-        Mode::Search | Mode::AddFeed | Mode::SignIn => "type · enter submit · esc cancel",
-        Mode::Palette => "↑↓ choose · enter run · esc cancel",
-        Mode::SyncPrompt => "s subscribe · r remove · esc dismiss",
-        Mode::Help => "any key to close",
+        Mode::DocList => "↑↓ select · enter read · o browser · esc back · / search".into(),
+        Mode::Search | Mode::AddFeed | Mode::SignIn => "type · enter submit · esc cancel".into(),
+        Mode::Palette => "↑↓ choose · enter run · esc cancel".into(),
+        Mode::SyncPrompt => "s subscribe · r remove · esc dismiss".into(),
+        Mode::Help => "any key to close".into(),
     };
     let line = Line::from(vec![
         Span::styled(format!(" {} ", app.status), theme.dim_style()),
@@ -220,7 +225,7 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
         ("o", "open this post in your browser"),
         ("i", "toggle images (text-only mode)"),
         ("m", "mark the open post read"),
-        ("L", "sign in / out (atproto)"),
+        ("L", "log in / out (atproto)"),
         ("? ", "this help"),
         ("q", "quit"),
     ];

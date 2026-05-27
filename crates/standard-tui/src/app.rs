@@ -86,8 +86,8 @@ impl Action {
             Action::Search => "Search",
             Action::Refresh => "Refresh feed",
             Action::MarkRead => "Mark read",
-            Action::SignIn => "Sign in",
-            Action::SignOut => "Sign out",
+            Action::SignIn => "Log in",
+            Action::SignOut => "Log out",
             Action::Help => "Help",
             Action::Quit => "Quit",
         }
@@ -235,8 +235,8 @@ impl App {
             }
             FromWorker::Account(account) => {
                 self.status = match &account {
-                    Some(a) => format!("signed in as @{}", a.handle),
-                    None => "signed out".into(),
+                    Some(a) => format!("logged in as @{}", a.handle),
+                    None => "logged out".into(),
                 };
                 self.account = account;
             }
@@ -415,7 +415,7 @@ impl App {
             Action::MarkRead => self.mark_read(),
             Action::SignIn => self.enter_input(Mode::SignIn),
             Action::SignOut => {
-                self.status = "signing out…".into();
+                self.status = "logging out…".into();
                 self.send(ToWorker::Logout);
             }
             Action::Help => self.mode = Mode::Help,
@@ -453,7 +453,7 @@ impl App {
                 self.send(ToWorker::Search(value));
             }
             Mode::SignIn if !value.is_empty() => {
-                self.status = "signing in…".into();
+                self.status = "logging in…".into();
                 self.send(ToWorker::Login(value));
             }
             _ => {}
@@ -491,7 +491,7 @@ impl App {
     /// `L`: sign out if signed in, else prompt for a handle to sign in.
     fn toggle_account(&mut self) {
         if self.account.is_some() {
-            self.status = "signing out…".into();
+            self.status = "logging out…".into();
             self.send(ToWorker::Logout);
         } else {
             self.enter_input(Mode::SignIn);

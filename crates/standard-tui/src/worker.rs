@@ -30,6 +30,7 @@ pub enum ToWorker {
     SetRead(String, bool),
     Unfollow(String),
     LoadImage { key: String, source: ImageSource },
+    SetShowImages(bool),
     Quit,
 }
 
@@ -49,6 +50,7 @@ pub enum FromWorker {
         key: String,
         image: image::DynamicImage,
     },
+    ShowImages(bool),
     Status(String),
     Error(String),
 }
@@ -76,6 +78,10 @@ fn run(cache_path: PathBuf, cmd_rx: Receiver<ToWorker>, evt_tx: Sender<FromWorke
         pds_cache: HashMap::new(),
         tx: evt_tx,
     };
+    // Report the persisted text-only preference up front.
+    ctx.send(FromWorker::ShowImages(
+        ctx.store.show_images().unwrap_or(true),
+    ));
     while let Ok(msg) = cmd_rx.recv() {
         if matches!(msg, ToWorker::Quit) {
             break;
@@ -116,6 +122,7 @@ impl Ctx {
                 self.load_home()
             }
             ToWorker::LoadImage { key, source } => self.load_image(key, source),
+            ToWorker::SetShowImages(on) => Ok(self.store.set_show_images(on)?),
             ToWorker::Quit => Ok(()),
         }
     }

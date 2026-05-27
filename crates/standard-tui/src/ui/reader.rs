@@ -185,7 +185,9 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
         *y += rows;
     };
 
-    if let Some(src) = &app.reading_cover {
+    if app.show_images
+        && let Some(src) = &app.reading_cover
+    {
         push_image(&mut segs, &mut y, image_key(src), "cover".into());
     }
 
@@ -193,7 +195,7 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
         let mut run: Vec<&DocBlock> = Vec::new();
         for block in &body.blocks {
             match block {
-                DocBlock::Image(img) => {
+                DocBlock::Image(img) if app.show_images => {
                     flush_text(&mut run, theme, width, &mut segs, &mut y);
                     push_image(&mut segs, &mut y, image_key(&img.source), img.alt.clone());
                 }
@@ -215,7 +217,7 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
                     });
                     y += height;
                 }
-                DocBlock::ImageGrid(images) => {
+                DocBlock::ImageGrid(images) if app.show_images => {
                     flush_text(&mut run, theme, width, &mut segs, &mut y);
                     let (cells, height) = grid_layout(app, images, width, vh);
                     if !cells.is_empty() {
@@ -324,10 +326,22 @@ fn image_display_size(app: &App, key: &str, avail_w: u16, vh: u16) -> (u16, u16)
 /// pane width), pick the count whose last row is fullest, tie-breaking toward more columns.
 /// e.g. 3→3-up, 4→2+2 (not 3+1), 5→3+2, 6→3+3.
 fn grid_cols(n: usize, width: u16) -> usize {
-    let max = if width >= 90 { 3 } else if width >= 40 { 2 } else { 1 }.min(n).max(1);
+    let max = if width >= 90 {
+        3
+    } else if width >= 40 {
+        2
+    } else {
+        1
+    }
+    .min(n)
+    .max(1);
     (1..=max)
         .max_by_key(|&cols| {
-            let last_fill = if n.is_multiple_of(cols) { cols } else { n % cols };
+            let last_fill = if n.is_multiple_of(cols) {
+                cols
+            } else {
+                n % cols
+            };
             (last_fill, cols) // higher fill wins; ties → more columns
         })
         .unwrap_or(1)
@@ -365,7 +379,13 @@ fn grid_layout(app: &App, images: &[Image], width: u16, vh: u16) -> (Vec<GridCel
         let mut row_h = 0u16;
         for (k, (key, w, h)) in row.iter().enumerate() {
             let dx = row_off + k as u16 * (cell_w + GAP_X) + cell_w.saturating_sub(*w) / 2;
-            cells.push(GridCell { key: key.clone(), dx, dy: row_top, w: *w, h: *h });
+            cells.push(GridCell {
+                key: key.clone(),
+                dx,
+                dy: row_top,
+                w: *w,
+                h: *h,
+            });
             row_h = row_h.max(*h);
         }
         row_top += row_h + GAP_Y;

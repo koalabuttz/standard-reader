@@ -210,6 +210,7 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
         ("r", "refresh the selected feed"),
         ("d", "unfollow the selected feed"),
         ("o", "open this post in your browser"),
+        ("i", "toggle images (text-only mode)"),
         ("m", "mark the open post read"),
         ("? ", "this help"),
         ("q", "quit"),

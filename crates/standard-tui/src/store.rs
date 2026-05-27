@@ -30,6 +30,8 @@ const DOCS_BY_PUB: MultimapTableDefinition<&str, &str> =
 const INDEX: MultimapTableDefinition<&str, &str> = MultimapTableDefinition::new("index");
 // publication uri → ()  (the local follow-list; the app's own subscriptions, no auth)
 const FOLLOWS: TableDefinition<&str, ()> = TableDefinition::new("follows");
+// key → value  (persisted preferences, e.g. "show_images")
+const SETTINGS: TableDefinition<&str, &str> = TableDefinition::new("settings");
 
 /// Errors from the cache: a redb failure or a (de)serialization failure.
 #[derive(Debug)]
@@ -120,6 +122,7 @@ impl RedbStore {
             w.open_multimap_table(DOCS_BY_PUB)?;
             w.open_multimap_table(INDEX)?;
             w.open_table(FOLLOWS)?;
+            w.open_table(SETTINGS)?;
         }
         w.commit()?;
         Ok(())
@@ -163,6 +166,26 @@ impl RedbStore {
             out.push(entry?.0.value().to_string());
         }
         Ok(out)
+    }
+
+    /// Whether to download + render images (persisted preference; defaults to on).
+    pub fn show_images(&self) -> Result<bool> {
+        let r = self.db.begin_read()?;
+        let table = r.open_table(SETTINGS)?;
+        Ok(table
+            .get("show_images")?
+            .map(|v| v.value() != "0")
+            .unwrap_or(true))
+    }
+
+    pub fn set_show_images(&mut self, on: bool) -> Result<()> {
+        let w = self.db.begin_write()?;
+        {
+            let mut table = w.open_table(SETTINGS)?;
+            table.insert("show_images", if on { "1" } else { "0" })?;
+        }
+        w.commit()?;
+        Ok(())
     }
 
     /// Every cached publication. Not part of the `Store` trait (which is keyed lookup);
@@ -452,6 +475,16 @@ mod tests {
         s.unfollow("at://d/p/1").unwrap();
         assert!(!s.is_followed("at://d/p/1").unwrap());
         assert_eq!(s.follows().unwrap(), ["at://d/p/2"]);
+    }
+
+    #[test]
+    fn show_images_setting_round_trips() {
+        let mut s = RedbStore::in_memory().unwrap();
+        assert!(s.show_images().unwrap(), "defaults to on");
+        s.set_show_images(false).unwrap();
+        assert!(!s.show_images().unwrap());
+        s.set_show_images(true).unwrap();
+        assert!(s.show_images().unwrap());
     }
 
     #[test]

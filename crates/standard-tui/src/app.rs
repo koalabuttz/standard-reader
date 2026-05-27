@@ -118,6 +118,8 @@ pub struct App {
     pub picker: Picker,
     /// Decoded + encoded images, keyed by [`image_key`].
     pub images: HashMap<String, LoadedImage>,
+    /// Text-only toggle: when false, images aren't fetched and render as placeholders.
+    pub show_images: bool,
     tx: Sender<ToWorker>,
 }
 
@@ -145,6 +147,7 @@ impl App {
             rects: Rects::default(),
             picker,
             images: HashMap::new(),
+            show_images: true,
             tx,
         };
         app.send(ToWorker::LoadHome);
@@ -207,6 +210,12 @@ impl App {
                 self.loading = false;
                 self.status = format!("{} result(s)", self.docs.len());
             }
+            FromWorker::ShowImages(on) => {
+                self.show_images = on;
+                if on {
+                    self.request_current_images();
+                }
+            }
             FromWorker::Status(s) => self.status = s,
             FromWorker::Error(e) => {
                 self.loading = false;
@@ -240,6 +249,7 @@ impl App {
             KeyCode::Char('d') => self.unfollow_current_feed(),
             KeyCode::Char('m') => self.mark_read(),
             KeyCode::Char('o') => self.open_in_browser(),
+            KeyCode::Char('i') => self.toggle_images(),
             KeyCode::Tab => self.toggle_focus(),
             KeyCode::Enter if self.focus == Focus::Sidebar => self.open_feed(),
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
@@ -268,6 +278,7 @@ impl App {
             KeyCode::Char('G') => self.doc_sel = self.docs.len().saturating_sub(1),
             KeyCode::Char('/') => self.enter_input(Mode::Search),
             KeyCode::Char('o') => self.open_in_browser(),
+            KeyCode::Char('i') => self.toggle_images(),
             KeyCode::Char('?') => self.mode = Mode::Help,
             _ => {}
         }
@@ -457,9 +468,37 @@ impl App {
     }
 
     fn request_image(&self, source: ImageSource) {
+        if !self.show_images {
+            return; // text-only mode: don't fetch
+        }
         let key = image_key(&source);
         if !self.images.contains_key(&key) {
             self.send(ToWorker::LoadImage { key, source });
+        }
+    }
+
+    /// (Re)request the images of the currently open document + its cover.
+    fn request_current_images(&self) {
+        if let Some(body) = &self.reading {
+            self.request_body_images(body);
+        }
+        if let Some(src) = &self.reading_cover {
+            self.request_image(src.clone());
+        }
+    }
+
+    /// Toggle text-only mode (`i`); persist it and load this doc's images when turning on.
+    fn toggle_images(&mut self) {
+        self.show_images = !self.show_images;
+        self.send(ToWorker::SetShowImages(self.show_images));
+        self.status = if self.show_images {
+            "images: on"
+        } else {
+            "images: off (text-only)"
+        }
+        .into();
+        if self.show_images {
+            self.request_current_images();
         }
     }
 

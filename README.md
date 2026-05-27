@@ -5,8 +5,56 @@ writing published to the AT Protocol (Leaflet, Pckt, Offprint, GreenGale, and an
 blog that publishes `site.standard.*` records). Sign in with your atproto account,
 pull your subscriptions, and read — with images and real formatting, online or off.
 
-> Status: **scaffold.** The engine (`standard-core`) is taking shape; the terminal
-> frontend (`sr`) comes next. No build step beyond `cargo`, no runtime services.
+> Status: **a working interactive reader.** Add a blog by handle, browse the sidebar →
+> document list → reader, and read a block-flow with inline + cover images, search, and a
+> command palette — all over an offline cache. Reading needs no auth; signing in mirrors
+> your follow-list to atproto subscriptions. No build step beyond `cargo`, no runtime
+> services. (RSS support is a later goal.)
+
+## Features
+
+- **Read offline, with real images.** A block-flow reader renders inline + cover images
+  (`ratatui-image`; iTerm2 graphics where available, halfblocks elsewhere) over a `redb`
+  cache, so anything you've opened reads with no network.
+- **Six content decoders + a plaintext fallback** — Markdown/markpub, Leaflet, Pckt,
+  Offprint, WordPress HTML, and Unthread all map to one neutral `RichDoc`; unknown content
+  degrades to typeset `textContent` rather than failing.
+- **Full-text search** across the cache (a hand-rolled inverted index over the spec's
+  `textContent` field).
+- **Keyboard-first**, with a command palette, `?` help, vim/arrow navigation, and mouse.
+- **A local follow-list, no account required** — add a blog by handle, DID, or URL and it
+  persists. Sign in (OAuth) and it **mirrors to atproto** `site.standard.graph.subscription`,
+  reconciling local-only follows without silent deletes.
+- **Graceful images** — JPEG/PNG/GIF/WebP decode directly from the PDS; formats the lean
+  build can't decode (notably **AVIF**, which GreenGale emits) fall back to the Bluesky CDN's
+  transcode-to-JPEG, then cache offline.
+- **A portable core.** The engine has zero platform dependencies — a **PS Vita** frontend is
+  a stated future goal, reusing all of it.
+
+## Usage
+
+```
+cargo run -p standard-reader            # launches the reader (binary: sr)
+```
+
+```
+sr                      launch the interactive reader
+sr fetch <handle|did>   (debug) fetch + decode + cache, print to stdout
+sr cached               (debug) render the local cache, no network
+```
+
+Keys in the reader:
+
+| key | action | key | action |
+| --- | ------ | --- | ------ |
+| `a` | add a feed (handle / DID / URL) | `Enter` | open feed, then open a post |
+| `/` | search across feeds | `Tab` | switch focus sidebar ↔ reader |
+| `:` / `Ctrl-P` | command palette | `j`/`k`, `↑`/`↓` | move selection / scroll |
+| `r` | refresh the selected feed | `g` / `G` | top / bottom |
+| `d` | unfollow the selected feed | `PgUp`/`PgDn` | scroll ±10 |
+| `m` | mark the open post read | `o` | open the post in a browser |
+| `i` | toggle images (text-only) | `L` | sign in / out (atproto OAuth) |
+| `?` | help | `q` | quit |
 
 ## Architecture: a portable core, a swappable frontend
 
@@ -31,39 +79,57 @@ platform must cross:
 
 So the hard part — atproto reads, content decoding, caching, search — is written
 once and reused; a different platform reimplements only transport, storage, and
-drawing the `RichDoc`.
+drawing the `RichDoc`. The desktop frontend keeps fetches non-blocking by running core
+operations on a worker thread and channeling results into the `ratatui` render loop.
 
 ## Content decoding
 
 `site.standard.document.content` is an open union; each publisher embeds its own
-lexicon. Decoders map them all to one `RichDoc`:
+lexicon. `textContent` is flat plaintext (a fallback only). Decoders dispatch on
+`content.$type` and map them all to one `RichDoc`:
 
-| `content.$type`     | shape                                  | decoder      |
-| ------------------- | -------------------------------------- | ------------ |
-| *(bare string)*     | Markdown (GreenGale, Sequoia, markpub) | `Markdown`   |
-| `pub.leaflet.*`     | blocks + facets                        | `Leaflet`    |
-| `blog.pckt.content` | `items: [blog.pckt.block.*]`           | `Pckt`       |
-| *(unknown/absent)*  | typeset `textContent`                  | `Plaintext`  |
+| `content.$type`                         | shape                                          | decoder     |
+| --------------------------------------- | ---------------------------------------------- | ----------- |
+| *(bare string)* / `at.markpub.markdown` | Markdown (GreenGale body, Sequoia, markpub)    | `Markdown`  |
+| `pub.leaflet.content`                   | `pages[].blocks[].block` + byte-range facets   | `Leaflet`   |
+| `blog.pckt.content`                     | `items: [blog.pckt.block.*]` + facets          | `Pckt`      |
+| `app.offprint.content`                  | blocks + byte-range facets                     | `Offprint`  |
+| `org.wordpress.html`                    | `{ html }` — rendered HTML                     | `Wordpress` |
+| `at.unthread.content`                   | `{ content }` — a Markdown string              | `Unthread`  |
+| `*#contentRef`                          | **reference** to another record (GreenGale)    | two-phase   |
+| *(unknown / absent)*                    | typeset `textContent`                          | `Plaintext` |
 
-Two render modes: **uniform** (the reader's consistent theme) and **author's**
-(honoring each publication's `basicTheme`).
+Leaflet/Pckt/Offprint share one byte-range **facet engine**. GreenGale is **two-phase**:
+the `#contentRef` names an AT-URI the frontend fetches and re-decodes (the same idea, at
+block granularity, resolves Pckt galleries). Adding a platform is one new `ContentDecoder`
+plus one line in the registry; decoders are pure and never panic on partial input.
+
+Two render modes are planned: **uniform** (the reader's own consistent theme — what ships
+today) and **author's** (honoring each publication's `basicTheme`). Both decode the same
+structure; the mode only changes theming.
 
 ## Build
 
 ```
 cargo build
-cargo test -p standard-core
+cargo test                     # the full suite (78 tests across both crates)
+cargo test -p standard-core    # just the engine
 cargo run -p standard-reader   # runs the `sr` binary
 ```
 
 ## OAuth
 
 `client_metadata.json` is the atproto OAuth **`client_id`**, served at
-`https://davidlewis.xyz/standard-reader/client_metadata.json`. Login uses the
-loopback redirect (`http://127.0.0.1:4599/callback`). The file here is
-**provisional** — validate `redirect_uris`/`scope` against `atrium-oauth` before
-going live.
+`https://www.davidlewis.xyz/standard-reader/client_metadata.json` — the canonical `www`
+host, because the apex 301-redirects and a `client_id` must not redirect. (A reference copy
+lives at this repo's root; the served copy is in the website repo.) Login uses the loopback
+redirect to `http://127.0.0.1:4599/callback` (DPoP/PKCE/PAR via `atrium-oauth`).
+
+The session is stored in a **`0600` file under XDG config** — no system keyring required (the
+`keyring` crate is opt-in). Set **`SR_OAUTH_LOCALHOST=1`** to fall back to the no-hosting dev
+client (local work, or before the metadata is deployed). Reading public feeds needs no auth —
+sign-in only enables write/sync of subscriptions.
 
 ## License
 
-MIT
+[GNU GPL v3](LICENSE) (or later).

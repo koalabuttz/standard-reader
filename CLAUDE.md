@@ -58,7 +58,7 @@ Adding a platform = **one new `ContentDecoder`** in `decode/<name>.rs` + one lin
 - A reader's **subscriptions live in its own repo**: `listRecords` for `site.standard.graph.subscription`; each record points to a publication AT-URI.
 - A document's `site` field is the AT-URI of its owning publication.
 - Resolve identity: handle → DID (`com.atproto.identity.resolveHandle`) → PDS (`plc.directory` `serviceEndpoint`) → `listRecords` / `getRecord`.
-- Images: blob CID via `com.atproto.sync.getBlob?did=<did>&cid=<cid>`. `coverImage` is a blob.
+- Images: blob CID via `com.atproto.sync.getBlob?did=<did>&cid=<cid>`. `coverImage` is a blob. The lean `image` build decodes JPEG/PNG/GIF/WebP only; **AVIF** (which GreenGale emits) and other unsupported formats fall back to the **bsky CDN transcode** (`cdn.bsky.app/img/feed_fullsize/plain/<did>/<cid>@jpeg`) — triggered only on local decode failure, so decodable formats stay direct-from-PDS (no pure-Rust AVIF decoder exists worth pulling in; dav1d is a C dep).
 - **Direct PDS reads, no aggregator.** A personal-subscriptions reader has a bounded set of publications; firehose indexing (à la docs.surf) is for *global discovery* and is unnecessary here.
 - **Known-good test record:** `did:plc:xn3l7ogsxym5ixxugidum5dw` (handle `david.yapfest.club`, PDS `https://yapfest.club`) has both a GreenGale (Markdown) and a Pckt (blocks) document — use it to test decoders/reads.
 

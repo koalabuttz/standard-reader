@@ -351,32 +351,60 @@ impl Ctx {
     }
 
     /// Fetch an image's bytes (cache-first), decode, and hand the `DynamicImage` to the UI
-    /// thread to encode for the terminal. A decode failure leaves the placeholder in place.
+    /// thread to encode for the terminal. If the bytes don't decode (e.g. AVIF, which the lean
+    /// `image` build doesn't support), retry through the bsky CDN's transcode-to-JPEG — so
+    /// JPEG/PNG/WebP stay direct-from-PDS and only undecodable formats touch the CDN.
     fn load_image(&mut self, key: String, source: ImageSource) -> Done {
-        let bytes = match &source {
-            ImageSource::Blob { did, cid } => match self.store.blob(cid)? {
-                Some(b) => b,
-                None => {
-                    let pds = self.pds_for(did)?;
-                    let b = read::get_blob(&self.transport, &pds, did, cid)?;
-                    self.store.put_blob(cid, &b)?;
-                    b
-                }
-            },
-            ImageSource::Url(url) => match self.store.blob(url)? {
-                Some(b) => b,
-                None => {
-                    let b = self.transport.get(url)?;
-                    self.store.put_blob(url, &b)?;
-                    b
-                }
-            },
+        let bytes = self.image_bytes(&source)?;
+        let err = match image::load_from_memory(&bytes) {
+            Ok(image) => {
+                self.send(FromWorker::Image { key, image });
+                return Ok(());
+            }
+            Err(e) => e,
         };
-        match image::load_from_memory(&bytes) {
-            Ok(image) => self.send(FromWorker::Image { key, image }),
-            Err(e) => self.send(FromWorker::Status(format!("image decode failed: {e}"))),
+        // Undecodable. Fall back to the CDN transcode if we can name the blob (did+cid).
+        if let Some(cdn) = cdn_image_url(&source) {
+            append_log(
+                &self.log_path,
+                &format!("image decode failed ({err}); retrying via CDN: {cdn}"),
+            );
+            if let Ok(transcoded) = self.cached_url(&cdn)
+                && let Ok(image) = image::load_from_memory(&transcoded)
+            {
+                self.send(FromWorker::Image { key, image });
+                return Ok(());
+            }
         }
+        self.send(FromWorker::Status(format!("image decode failed: {err}")));
         Ok(())
+    }
+
+    /// An image's original bytes, cache-first (blob CID for `Blob`, URL for `Url`).
+    fn image_bytes(&mut self, source: &ImageSource) -> Result<Vec<u8>, Box<dyn Error>> {
+        match source {
+            ImageSource::Blob { did, cid } => {
+                if let Some(b) = self.store.blob(cid)? {
+                    return Ok(b);
+                }
+                let pds = self.pds_for(did)?;
+                let b = read::get_blob(&self.transport, &pds, did, cid)?;
+                self.store.put_blob(cid, &b)?;
+                Ok(b)
+            }
+            ImageSource::Url(url) => self.cached_url(url),
+        }
+    }
+
+    /// Fetch a URL's bytes, cache-first (keyed by the URL). Used for plain image URLs and the
+    /// CDN transcode fallback.
+    fn cached_url(&mut self, url: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+        if let Some(b) = self.store.blob(url)? {
+            return Ok(b);
+        }
+        let b = self.transport.get(url)?;
+        self.store.put_blob(url, &b)?;
+        Ok(b)
     }
 
     /// PDS endpoint for a DID, resolving (and caching) on first use.
@@ -587,6 +615,69 @@ fn rkey_from_uri(uri: &str) -> String {
     uri.rsplit('/').next().unwrap_or_default().to_string()
 }
 
+/// The bsky CDN transcode URL for an image — used as a fallback when the original bytes don't
+/// decode (e.g. AVIF). Needs the blob's `did`+`cid`: a `Blob` source has them directly; a `Url`
+/// source must be a `com.atproto.sync.getBlob` URL (GreenGale emits these). Returns `None` for
+/// arbitrary external image URLs (nothing to transcode).
+fn cdn_image_url(source: &ImageSource) -> Option<String> {
+    let (did, cid) = match source {
+        ImageSource::Blob { did, cid } => (did.clone(), cid.clone()),
+        ImageSource::Url(url) => getblob_did_cid(url)?,
+    };
+    Some(format!(
+        "https://cdn.bsky.app/img/feed_fullsize/plain/{did}/{cid}@jpeg"
+    ))
+}
+
+/// Extract `(did, cid)` from a `com.atproto.sync.getBlob` URL's query string.
+fn getblob_did_cid(url: &str) -> Option<(String, String)> {
+    if !url.contains("getBlob") {
+        return None;
+    }
+    let query = url.split_once('?')?.1;
+    let (mut did, mut cid) = (None, None);
+    for pair in query.split('&') {
+        if let Some((key, value)) = pair.split_once('=') {
+            match key {
+                "did" => did = Some(percent_decode(value)),
+                "cid" => cid = Some(percent_decode(value)),
+                _ => {}
+            }
+        }
+    }
+    Some((did?, cid?))
+}
+
+/// Minimal `%XX` / `+` URL-decode (enough for getBlob query values, e.g. `%3A` → `:`).
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => match u8::from_str_radix(&input[i + 1..i + 3], 16) {
+                Ok(byte) => {
+                    out.push(byte);
+                    i += 3;
+                }
+                Err(_) => {
+                    out.push(b'%');
+                    i += 1;
+                }
+            },
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            other => {
+                out.push(other);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// How the local follow-list and the account's atproto subscriptions differ.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct SubscriptionDiff {
@@ -641,6 +732,31 @@ fn normalize(input: &str) -> String {
 mod tests {
     use super::{SubscriptionDiff, diff_subscriptions, normalize, rkey_from_uri};
     use std::collections::HashMap;
+
+    #[test]
+    fn cdn_url_from_blob_and_getblob_url() {
+        use standard_core::model::ImageSource;
+        // A blob source → CDN transcode URL directly.
+        assert_eq!(
+            super::cdn_image_url(&ImageSource::Blob {
+                did: "did:plc:abc".into(),
+                cid: "bafcid".into()
+            })
+            .as_deref(),
+            Some("https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:abc/bafcid@jpeg")
+        );
+        // A getBlob URL (percent-encoded did) → did/cid extracted, CDN URL built.
+        let url = "https://yapfest.club/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Axyz&cid=bafblob";
+        assert_eq!(
+            super::cdn_image_url(&ImageSource::Url(url.into())).as_deref(),
+            Some("https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:xyz/bafblob@jpeg")
+        );
+        // An arbitrary external image URL → no transcode target.
+        assert_eq!(
+            super::cdn_image_url(&ImageSource::Url("https://example.com/pic.png".into())),
+            None
+        );
+    }
 
     #[test]
     fn rkey_is_the_trailing_segment() {

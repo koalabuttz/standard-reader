@@ -1,7 +1,7 @@
 {
   "client_id": "https://www.davidlewis.xyz/standard-reader/client_metadata.json",
   "client_name": "standard-reader",
-  "client_uri": "https://www.davidlewis.xyz",
+  "client_uri": "https://www.davidlewis.xyz/standard-reader",
   "redirect_uris": ["http://127.0.0.1:4599/callback"],
   "scope": "atproto transition:generic",
   "grant_types": ["authorization_code", "refresh_token"],

@@ -373,19 +373,15 @@ fn grid_layout(app: &App, images: &[Image], width: u16, vh: u16) -> (Vec<GridCel
     let mut cells = Vec::with_capacity(n);
     let mut row_top = 0u16;
     for row in sized.chunks(cols) {
-        let in_row = row.len() as u16;
-        let row_width = in_row * cell_w + in_row.saturating_sub(1) * GAP_X;
-        let row_off = width.saturating_sub(row_width) / 2; // centre the row in the pane
+        // Pack the row's images edge-to-edge (one-column gutter) and centre the whole row,
+        // so height-capped images sit side by side instead of floating in wide cells.
+        let row_width: u16 =
+            row.iter().map(|(_, w, _)| *w).sum::<u16>() + (row.len() as u16).saturating_sub(1) * GAP_X;
+        let mut x = width.saturating_sub(row_width) / 2;
         let mut row_h = 0u16;
-        for (k, (key, w, h)) in row.iter().enumerate() {
-            let dx = row_off + k as u16 * (cell_w + GAP_X) + cell_w.saturating_sub(*w) / 2;
-            cells.push(GridCell {
-                key: key.clone(),
-                dx,
-                dy: row_top,
-                w: *w,
-                h: *h,
-            });
+        for (key, w, h) in row {
+            cells.push(GridCell { key: key.clone(), dx: x, dy: row_top, w: *w, h: *h });
+            x += w + GAP_X;
             row_h = row_h.max(*h);
         }
         row_top += row_h + GAP_Y;

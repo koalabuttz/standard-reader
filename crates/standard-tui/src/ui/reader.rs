@@ -39,6 +39,10 @@ enum Segment {
         top: u16,
         height: u16,
         width: u16,
+        /// Left columns reserved for container framing (quote bar / list indent); 0 = full-width.
+        indent: u16,
+        /// Draw a quote bar in the reserved gutter (for images nested in a blockquote).
+        bar: bool,
     },
     /// A callout box: pre-built text (emoji already prefixed) drawn over a tinted fill.
     Callout {
@@ -170,9 +174,18 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
     let mut segs: Vec<Segment> = Vec::new();
     let mut y: u16 = 0;
 
-    let push_image = |segs: &mut Vec<Segment>, y: &mut u16, key: String, alt: String| {
-        let (cols, rows) = image_display_size(app, &key, width, vh);
-        if !segs.is_empty() {
+    // `indent` reserves left columns for container framing; `bar` draws a quote bar there.
+    // `gap` adds the usual blank row before the image (suppressed to keep a framed image flush
+    // against the quote text above it).
+    let push_image = |segs: &mut Vec<Segment>,
+                      y: &mut u16,
+                      key: String,
+                      alt: String,
+                      indent: u16,
+                      bar: bool,
+                      gap: bool| {
+        let (cols, rows) = image_display_size(app, &key, width.saturating_sub(indent), vh);
+        if gap && !segs.is_empty() {
             *y += GAP;
         }
         segs.push(Segment::Image {
@@ -181,6 +194,8 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
             top: *y,
             height: rows,
             width: cols,
+            indent,
+            bar,
         });
         *y += rows;
     };
@@ -188,7 +203,7 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
     if app.show_images
         && let Some(src) = &app.reading_cover
     {
-        push_image(&mut segs, &mut y, image_key(src), "cover".into());
+        push_image(&mut segs, &mut y, image_key(src), "cover".into(), 0, false, true);
     }
 
     if let Some(body) = &app.reading {
@@ -197,7 +212,43 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
             match block {
                 DocBlock::Image(img) if app.show_images => {
                     flush_text(&mut run, theme, width, &mut segs, &mut y);
-                    push_image(&mut segs, &mut y, image_key(&img.source), img.alt.clone());
+                    push_image(&mut segs, &mut y, image_key(&img.source), img.alt.clone(), 0, false, true);
+                }
+                // A quote/list with image(s) nested in it: render the de-imaged container as text
+                // (its bar/markers via doc.rs), then the images framed in place — so a photo
+                // lazy-continued into a `> quote` shows inside the quote, matching the source.
+                DocBlock::Quote(_) | DocBlock::List { .. }
+                    if app.show_images && contains_image(block) =>
+                {
+                    flush_text(&mut run, theme, width, &mut segs, &mut y);
+                    let is_quote = matches!(block, DocBlock::Quote(_));
+                    let (stripped, images) = strip_container_images(block.clone());
+                    if container_has_text(&stripped) {
+                        let text = doc::blocks_to_text(std::iter::once(&stripped), theme);
+                        let height = Paragraph::new(text.clone())
+                            .wrap(Wrap { trim: false })
+                            .line_count(width) as u16;
+                        if !segs.is_empty() {
+                            y += GAP;
+                        }
+                        segs.push(Segment::Text {
+                            text,
+                            top: y,
+                            height,
+                        });
+                        y += height;
+                    }
+                    for img in images {
+                        push_image(
+                            &mut segs,
+                            &mut y,
+                            image_key(&img.source),
+                            img.alt,
+                            2, // align under the `▍ ` quote bar / list marker
+                            is_quote,
+                            false,
+                        );
+                    }
                 }
                 DocBlock::Callout {
                     emoji,
@@ -239,6 +290,80 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
     }
 
     (segs, y)
+}
+
+/// Whether a block contains an image anywhere (recursing into quotes/lists + inline content).
+fn contains_image(block: &DocBlock) -> bool {
+    match block {
+        DocBlock::Image(_) | DocBlock::ImageGrid(_) => true,
+        DocBlock::Paragraph(c) | DocBlock::Heading { content: c, .. } => {
+            c.iter().any(|i| matches!(i, Inline::Image(_)))
+        }
+        DocBlock::Quote(blocks) => blocks.iter().any(contains_image),
+        DocBlock::List { items, .. } => items.iter().flatten().any(contains_image),
+        _ => false,
+    }
+}
+
+/// Remove every image from a container block (for layout), returning the de-imaged block plus
+/// the images in document order. Used to render a quote/list's text and its images separately.
+fn strip_container_images(block: DocBlock) -> (DocBlock, Vec<Image>) {
+    let mut images = Vec::new();
+    let stripped = strip_block(block, &mut images);
+    (stripped, images)
+}
+
+fn strip_block(block: DocBlock, images: &mut Vec<Image>) -> DocBlock {
+    fn drain(inlines: Vec<Inline>, images: &mut Vec<Image>) -> Vec<Inline> {
+        inlines
+            .into_iter()
+            .filter_map(|i| match i {
+                Inline::Image(img) => {
+                    images.push(img);
+                    None
+                }
+                other => Some(other),
+            })
+            .collect()
+    }
+    match block {
+        DocBlock::Paragraph(inlines) => DocBlock::Paragraph(drain(inlines, images)),
+        DocBlock::Heading { level, content } => DocBlock::Heading {
+            level,
+            content: drain(content, images),
+        },
+        DocBlock::Quote(blocks) => {
+            DocBlock::Quote(blocks.into_iter().map(|b| strip_block(b, images)).collect())
+        }
+        DocBlock::List { ordered, items } => DocBlock::List {
+            ordered,
+            items: items
+                .into_iter()
+                .map(|item| item.into_iter().map(|b| strip_block(b, images)).collect())
+                .collect(),
+        },
+        DocBlock::Image(img) => {
+            images.push(img);
+            DocBlock::Paragraph(Vec::new())
+        }
+        DocBlock::ImageGrid(grid) => {
+            images.extend(grid);
+            DocBlock::Paragraph(Vec::new())
+        }
+        other => other,
+    }
+}
+
+/// Whether a de-imaged container still has text worth rendering (else only its images remain).
+fn container_has_text(block: &DocBlock) -> bool {
+    match block {
+        DocBlock::Paragraph(c) | DocBlock::Heading { content: c, .. } => {
+            c.iter().any(|i| !matches!(i, Inline::Text(t) if t.trim().is_empty()))
+        }
+        DocBlock::Quote(blocks) => blocks.iter().any(container_has_text),
+        DocBlock::List { items, .. } => items.iter().flatten().any(container_has_text),
+        _ => true,
+    }
 }
 
 /// Build a callout's body text (emoji prefixed) and its height for the available width.
@@ -416,19 +541,32 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                 key,
                 alt,
                 width: cols,
+                indent,
+                bar,
                 ..
             } => {
+                // Quote framing: a thin bar down the reserved gutter (matches doc.rs's `▍`).
+                if *bar {
+                    let bar_col = Paragraph::new(
+                        (0..rect.height)
+                            .map(|_| Line::styled("▍", Style::default().fg(theme.accent2)))
+                            .collect::<Vec<_>>(),
+                    );
+                    f.render_widget(bar_col, Rect { width: 1, ..rect });
+                }
                 // Pre-encoded slices: render the rows that fall within the reader, at a
                 // signed vertical offset, so scrolling never re-encodes (no lag, no resize)
                 // and a partly-visible image shows correctly whether its top or bottom is cut.
                 if let Some(sliced) = app.images.get(key).and_then(|li| li.sliced.as_ref()) {
-                    let x = (inner.width.saturating_sub(*cols) / 2) as i16;
+                    // Framed images sit left-aligned after the gutter; standalone ones center.
+                    let x = if *indent > 0 {
+                        *indent as i16
+                    } else {
+                        (inner.width.saturating_sub(*cols) / 2) as i16
+                    };
                     let y =
                         (top as i32 - scroll as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                    f.render_widget(
-                        SlicedImage::new(sliced, SignedPosition::from((x, y))),
-                        inner,
-                    );
+                    f.render_widget(SlicedImage::new(sliced, SignedPosition::from((x, y))), inner);
                     continue;
                 }
                 let label = if app.images.contains_key(key) {
@@ -436,11 +574,23 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                 } else {
                     format!("🖼 loading… {alt}")
                 };
+                let (prect, align) = if *indent > 0 {
+                    (
+                        Rect {
+                            x: rect.x + *indent,
+                            width: rect.width.saturating_sub(*indent),
+                            ..rect
+                        },
+                        Alignment::Left,
+                    )
+                } else {
+                    (rect, Alignment::Center)
+                };
                 f.render_widget(
                     Paragraph::new(label.trim().to_string())
                         .style(theme.dim_style())
-                        .alignment(Alignment::Center),
-                    rect,
+                        .alignment(align),
+                    prect,
                 );
             }
             Segment::Callout { text, tint, .. } => {
@@ -555,6 +705,37 @@ mod tests {
         // tops are strictly increasing and total covers the last segment.
         assert!(segs[0].top() < segs[1].top() && segs[1].top() < segs[2].top());
         assert!(total >= segs[2].top() + segs[2].height());
+    }
+
+    #[test]
+    fn quote_nested_image_renders_framed_in_place() {
+        // An image lazy-continued into a `> Quote`: the quote text renders, then the image as a
+        // framed segment (quote bar + indent) — instead of being hoisted outside the quote.
+        let app = app_with(RichDoc {
+            blocks: vec![DocBlock::Quote(vec![DocBlock::Paragraph(vec![
+                Inline::Text("Quote".into()),
+                Inline::Image(Image {
+                    alt: "shot".into(),
+                    source: ImageSource::Url("https://i.test/a.avif".into()),
+                }),
+            ])])],
+        });
+        let theme = Theme::modern_dark();
+        let (segs, _) = build(&app, &theme, 80, 40);
+
+        assert!(
+            matches!(segs.first(), Some(Segment::Text { .. })),
+            "the quote's text comes first"
+        );
+        let framed = segs.iter().find_map(|s| match s {
+            Segment::Image { bar, indent, .. } => Some((*bar, *indent)),
+            _ => None,
+        });
+        assert_eq!(
+            framed,
+            Some((true, 2)),
+            "the quote's image renders framed (bar + indent), in place"
+        );
     }
 
     #[test]

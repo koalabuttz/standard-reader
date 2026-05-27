@@ -215,11 +215,11 @@ impl Builder {
 
 // --- Image hoisting ----------------------------------------------------------------
 //
-// The reader renders only *top-level* `Block::Image`/`ImageGrid` as actual images; anything
-// nested in a paragraph, quote, or list degrades to alt text. But `pulldown-cmark` emits a
-// Markdown image (`![](…)`) as an inline image inside a paragraph — and CommonMark lazy
-// continuation can even pull it into a preceding blockquote. So after building, lift every
-// image to its own top-level block (in document order) so it fetches and renders.
+// `pulldown-cmark` emits a Markdown image (`![](…)`) as an inline image inside a paragraph, but
+// the reader draws real images only as block-level `Block::Image`/`ImageGrid`. So split each
+// top-level paragraph around its images into block images (in document order). Images nested in
+// a quote or list are left in place — the reader renders those framed by the container (so an
+// image lazy-continued into a `> quote` shows *inside* the quote, matching the source).
 
 /// Whether an inline is whitespace/break filler (ignored when deciding if text is "real").
 fn is_filler(i: &Inline) -> bool {
@@ -271,76 +271,11 @@ fn hoist_images(blocks: Vec<Block>) -> Vec<Block> {
                     out.push(Block::Paragraph(text));
                 }
             }
-            // Containers keep their text; their images hoist out (after the container).
-            Block::Quote(inner) => {
-                let (kept, imgs) = strip_images(inner);
-                if !kept.is_empty() {
-                    out.push(Block::Quote(kept));
-                }
-                push_images(imgs, &mut out);
-            }
-            Block::List { ordered, items } => {
-                let mut imgs = Vec::new();
-                let items = items
-                    .into_iter()
-                    .map(|item| {
-                        let (kept, mut found) = strip_images(item);
-                        imgs.append(&mut found);
-                        kept
-                    })
-                    .collect();
-                out.push(Block::List { ordered, items });
-                push_images(imgs, &mut out);
-            }
+            // Quotes/lists keep their images nested; the reader frames them in place.
             other => out.push(other),
         }
     }
     out
-}
-
-/// Recursively remove every image from `blocks`, returning the de-imaged blocks plus the
-/// images in document order (used to lift images out of nested containers).
-fn strip_images(blocks: Vec<Block>) -> (Vec<Block>, Vec<Image>) {
-    let mut kept = Vec::new();
-    let mut imgs = Vec::new();
-    for block in blocks {
-        match block {
-            Block::Image(img) => imgs.push(img),
-            Block::ImageGrid(mut grid) => imgs.append(&mut grid),
-            Block::Paragraph(inlines) => {
-                let mut text = Vec::new();
-                for inline in inlines {
-                    match inline {
-                        Inline::Image(img) => imgs.push(img),
-                        other => text.push(other),
-                    }
-                }
-                if has_real(&text) {
-                    kept.push(Block::Paragraph(text));
-                }
-            }
-            Block::Quote(inner) => {
-                let (k, mut i) = strip_images(inner);
-                imgs.append(&mut i);
-                if !k.is_empty() {
-                    kept.push(Block::Quote(k));
-                }
-            }
-            Block::List { ordered, items } => {
-                let items = items
-                    .into_iter()
-                    .map(|item| {
-                        let (k, mut i) = strip_images(item);
-                        imgs.append(&mut i);
-                        k
-                    })
-                    .collect();
-                kept.push(Block::List { ordered, items });
-            }
-            other => kept.push(other),
-        }
-    }
-    (kept, imgs)
 }
 
 fn heading_level(level: HeadingLevel) -> u8 {
@@ -448,12 +383,11 @@ mod tests {
             decode_str("see ![a](https://i.test/a.png) here").as_slice(),
             [Block::Paragraph(_), Block::Image(_), Block::Paragraph(_)]
         ));
-        // The real-world bug: an image on the line after `> Quote` (no blank line) gets pulled
-        // into the blockquote by CommonMark lazy continuation. It must hoist out to a top-level
-        // image so the reader renders it, leaving the quote's text behind.
+        // An image lazy-continued into a `> Quote` stays nested in the quote (the reader frames
+        // it in place), rather than being hoisted out to a top-level block.
         assert!(matches!(
             decode_str("> Quote\n![a](https://i.test/a.png)").as_slice(),
-            [Block::Quote(_), Block::Image(_)]
+            [Block::Quote(_)]
         ));
     }
 

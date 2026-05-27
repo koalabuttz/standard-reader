@@ -11,7 +11,7 @@ use ratatui::layout::Rect;
 use ratatui_image::picker::Picker;
 use ratatui_image::sliced::SlicedProtocol;
 
-use standard_core::model::{Block, Document, ImageSource, Publication, RichDoc};
+use standard_core::model::{Block, Document, ImageSource, Inline, Publication, RichDoc};
 
 use crate::auth::Account;
 use crate::worker::{FromWorker, ToWorker};
@@ -535,18 +535,13 @@ impl App {
         self.send(ToWorker::OpenDoc(doc_uri));
     }
 
-    /// Request any not-yet-loaded block images in `body` from the worker.
+    /// Request any not-yet-loaded images in `body` from the worker — including ones nested in
+    /// quotes/lists or inline within a paragraph (the reader renders those framed in place).
     fn request_body_images(&self, body: &RichDoc) {
-        for block in &body.blocks {
-            match block {
-                Block::Image(img) => self.request_image(img.source.clone()),
-                Block::ImageGrid(images) => {
-                    for img in images {
-                        self.request_image(img.source.clone());
-                    }
-                }
-                _ => {}
-            }
+        let mut sources = Vec::new();
+        collect_image_sources(&body.blocks, &mut sources);
+        for source in sources {
+            self.request_image(source);
         }
     }
 
@@ -677,6 +672,46 @@ impl App {
     fn quit(&mut self) {
         self.should_quit = true;
         self.send(ToWorker::Quit);
+    }
+}
+
+/// Collect every image source in `blocks`, in document order — recursing into quotes/lists and
+/// scanning inline content (so images nested in a quote, list, or mid-paragraph are fetched too).
+fn collect_image_sources(blocks: &[Block], out: &mut Vec<ImageSource>) {
+    for block in blocks {
+        match block {
+            Block::Image(img) => out.push(img.source.clone()),
+            Block::ImageGrid(images) => out.extend(images.iter().map(|i| i.source.clone())),
+            Block::Quote(inner) => collect_image_sources(inner, out),
+            Block::List { items, .. } => {
+                for item in items {
+                    collect_image_sources(item, out);
+                }
+            }
+            Block::Paragraph(inlines)
+            | Block::Heading {
+                content: inlines, ..
+            }
+            | Block::Callout {
+                content: inlines, ..
+            } => collect_inline_images(inlines, out),
+            _ => {}
+        }
+    }
+}
+
+/// Collect image sources from inline content (recursing into styled/link spans).
+fn collect_inline_images(inlines: &[Inline], out: &mut Vec<ImageSource>) {
+    for inline in inlines {
+        match inline {
+            Inline::Image(img) => out.push(img.source.clone()),
+            Inline::Strong(c)
+            | Inline::Emphasis(c)
+            | Inline::Strike(c)
+            | Inline::Underline(c)
+            | Inline::Link { content: c, .. } => collect_inline_images(c, out),
+            _ => {}
+        }
     }
 }
 

@@ -346,6 +346,7 @@ fn print_block(block: &Block, indent: usize) {
             );
         }
         Block::Rule => println!("{pad}───"),
+        Block::GalleryRef { uri } => println!("{pad}[gallery: {uri}]"),
     }
 }
 
@@ -380,6 +381,7 @@ fn block_text(block: &Block) -> String {
             format!("{} {}", emoji.as_deref().unwrap_or("›"), inlines(content))
         }
         Block::Rule => "───".to_string(),
+        Block::GalleryRef { .. } => "[gallery]".to_string(),
     }
 }
 

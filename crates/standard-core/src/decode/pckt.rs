@@ -77,10 +77,34 @@ fn block(item: &Value, ctx: &DecodeCtx) -> Vec<Block> {
         "image" => image(item, ctx).into_iter().collect(),
         "horizontalRule" => vec![Block::Rule],
         "table" => vec![table(item)],
-        // `gallery` is a ref to a separate record (needs a fetch); other unmodeled
-        // containers degrade by flattening their nested `content`.
+        // `gallery` carries only a `ref` to a separate `blog.pckt.gallery` record. The decoder
+        // is pure (no I/O), so emit a placeholder; `read::get_document` fetches the record and
+        // resolves it to an `ImageGrid` (the same two-phase pattern as `#contentRef`).
+        "gallery" => item
+            .get("ref")
+            .and_then(Value::as_str)
+            .map(|uri| Block::GalleryRef { uri: uri.to_string() })
+            .into_iter()
+            .collect(),
+        // Other unmodeled containers degrade by flattening their nested `content`.
         _ => child_blocks(item, ctx),
     }
+}
+
+/// Decode a fetched `blog.pckt.gallery` record's `images` into a flat list of [`Image`]s
+/// (for an [`Block::ImageGrid`]). Each entry holds a top-level `blob` (CID under `ref.$link`);
+/// `did` is the gallery record's repo. Pure — the fetch happens in `read::get_document`.
+pub(crate) fn gallery_images(record: &Value, did: &str) -> Vec<crate::model::Image> {
+    record
+        .get("images")
+        .and_then(Value::as_array)
+        .map(|images| {
+            images
+                .iter()
+                .filter_map(|img| blob_image(img.get("blob")?, did, ""))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Blocks under a container's `content` array.
@@ -161,4 +185,64 @@ fn image(item: &Value, ctx: &DecodeCtx) -> Option<Block> {
     let attrs = item.get("attrs")?;
     let alt = attrs.get("alt").and_then(Value::as_str).unwrap_or("");
     blob_image(attrs.get("blob")?, ctx.repo_did, alt).map(Block::Image)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::ImageSource;
+
+    const CTX: DecodeCtx = DecodeCtx {
+        repo_did: "did:plc:test",
+    };
+
+    #[test]
+    fn gallery_block_becomes_a_ref_placeholder() {
+        let content = serde_json::json!({
+            "$type": "blog.pckt.content",
+            "items": [{
+                "$type": "blog.pckt.block.gallery",
+                "ref": "at://did:plc:abc/blog.pckt.gallery/3rk"
+            }]
+        });
+        let blocks = Pckt.decode(&content, &CTX).unwrap().blocks;
+        assert_eq!(
+            blocks,
+            vec![Block::GalleryRef {
+                uri: "at://did:plc:abc/blog.pckt.gallery/3rk".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn gallery_block_without_ref_is_skipped() {
+        let content = serde_json::json!({
+            "$type": "blog.pckt.content",
+            "items": [{ "$type": "blog.pckt.block.gallery" }]
+        });
+        assert!(Pckt.decode(&content, &CTX).unwrap().blocks.is_empty());
+    }
+
+    #[test]
+    fn gallery_images_maps_blobs_to_blob_sources() {
+        // The shape of a real `blog.pckt.gallery` record (two image entries).
+        let record = serde_json::json!({
+            "$type": "blog.pckt.gallery",
+            "images": [
+                { "src": "blob:bafa", "blob": { "$type": "blob", "ref": { "$link": "bafa" }, "mimeType": "image/png", "size": 1 } },
+                { "src": "blob:bafb", "blob": { "$type": "blob", "ref": { "$link": "bafb" }, "mimeType": "image/jpeg", "size": 2 } }
+            ],
+            "layout": "grid"
+        });
+        let images = gallery_images(&record, "did:plc:owner");
+        assert_eq!(images.len(), 2);
+        assert!(matches!(
+            &images[0].source,
+            ImageSource::Blob { did, cid } if did == "did:plc:owner" && cid == "bafa"
+        ));
+        assert!(matches!(
+            &images[1].source,
+            ImageSource::Blob { did, cid } if did == "did:plc:owner" && cid == "bafb"
+        ));
+    }
 }

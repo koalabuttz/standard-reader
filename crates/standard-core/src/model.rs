@@ -48,6 +48,13 @@ pub enum Block {
         content: Vec<Inline>,
     },
     Rule,
+    /// A reference to a separate gallery record (Pckt `blog.pckt.block.gallery`, which carries
+    /// only an AT-URI). Emitted by the decoder and resolved to an [`Block::ImageGrid`] by
+    /// [`crate::read::get_document`] before any frontend sees it — like the `#contentRef` seam,
+    /// but for one block. A frontend that does encounter it (resolution failed) renders nothing.
+    GalleryRef {
+        uri: String,
+    },
 }
 
 /// Inline (span-level) content. Leaflet/Bluesky "facets" (byte-range annotations)

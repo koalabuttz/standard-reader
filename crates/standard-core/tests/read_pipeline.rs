@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use standard_core::atp::{AtUri, Transport, xrpc};
 use standard_core::decode::Registry;
-use standard_core::model::{Block, Inline};
+use standard_core::model::{Block, ImageSource, Inline};
 use standard_core::read;
 
 const DAVID_DID: &str = "did:plc:xn3l7ogsxym5ixxugidum5dw";
@@ -131,6 +131,17 @@ fn mock() -> MockTransport {
         fixture("greengale.document.json"),
     );
 
+    // David's Pckt doc (contains a gallery block) + the referenced gallery record, for the
+    // per-block two-phase resolution.
+    r.insert(
+        xrpc::get_record(DAVID_PDS, DAVID_DID, "site.standard.document", "3mmrd52hpdakk"),
+        fixture("pckt.json"),
+    );
+    r.insert(
+        xrpc::get_record(DAVID_PDS, DAVID_DID, "blog.pckt.gallery", "3mmrn4i26e5al"),
+        fixture("xrpc/getrecord_gallery_pckt.json"),
+    );
+
     MockTransport { responses: r }
 }
 
@@ -190,6 +201,38 @@ fn unthread_content_decodes_as_markdown() {
             if inlines.iter().any(|i| matches!(i, Inline::Emphasis(_))))
     });
     assert!(has_emphasis, "unthread markdown should produce formatted inlines");
+}
+
+#[test]
+fn pckt_gallery_ref_resolves_to_image_grid() {
+    let t = mock();
+    let registry = Registry::with_defaults();
+    // David's Pckt doc has a `gallery` block referencing `blog.pckt.gallery/3mmrn4i26e5al`.
+    // get_document must fetch that record and splice in a resolved ImageGrid (two-phase, per
+    // block) — and leave no GalleryRef placeholder behind.
+    let uri = AtUri::parse(&format!(
+        "at://{DAVID_DID}/site.standard.document/3mmrd52hpdakk"
+    ))
+    .unwrap();
+    let (_, body) = read::get_document(&t, &registry, &uri, DAVID_PDS).unwrap();
+
+    let grid = body
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::ImageGrid(images) => Some(images),
+            _ => None,
+        })
+        .expect("the gallery should resolve to a Block::ImageGrid");
+    assert_eq!(grid.len(), 2, "the fixture gallery has two images");
+    assert!(
+        grid.iter().all(|i| matches!(&i.source, ImageSource::Blob { .. })),
+        "gallery images are atproto blobs"
+    );
+    assert!(
+        !body.blocks.iter().any(|b| matches!(b, Block::GalleryRef { .. })),
+        "no unresolved GalleryRef should remain"
+    );
 }
 
 #[test]

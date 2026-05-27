@@ -16,7 +16,10 @@
 //! | *(unknown / absent)*               | fall back to `textContent`              | [`Plaintext`] |
 //!
 //! Adding a platform = one new [`ContentDecoder`] in its own `decode/<name>.rs` plus one
-//! line in [`Registry::with_defaults`]; the three block formats share [`facets`].
+//! line in [`Registry::with_defaults`]; the three block formats share [`facets`]. A Pckt
+//! `gallery` block is itself a *reference* to a separate record — the decoder emits a
+//! [`crate::model::Block::GalleryRef`] placeholder that [`crate::read::get_document`] resolves
+//! to an [`crate::model::Block::ImageGrid`] (the `#contentRef` pattern, at block granularity).
 
 use serde_json::Value;
 
@@ -39,6 +42,10 @@ pub use markdown::Markdown;
 pub use offprint::Offprint;
 pub use pckt::Pckt;
 pub use unthread::Unthread;
+
+// Resolving a Pckt `gallery` block's referenced record into images is decoder-specific but
+// driven from the read layer (which does the fetch); expose just that helper, not the module.
+pub(crate) use pckt::gallery_images;
 
 /// Context a decoder needs beyond the `content` value itself.
 pub struct DecodeCtx<'a> {

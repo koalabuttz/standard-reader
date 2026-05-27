@@ -17,8 +17,8 @@ use serde_json::Value;
 
 use crate::atp::{AtUri, Transport, xrpc};
 use crate::decode::image::blob_image;
-use crate::decode::{DecodeCtx, Registry, content_ref};
-use crate::model::{Document, Publication, RichDoc, Subscription};
+use crate::decode::{DecodeCtx, Registry, content_ref, gallery_images};
+use crate::model::{Block, Document, Image, Publication, RichDoc, Subscription};
 
 /// A resolved repo: its DID and the PDS that hosts it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -389,7 +389,57 @@ pub fn get_document<T: Transport>(
             &ctx,
         ),
     };
+
+    // Second-phase, like `#contentRef` but per block: a Pckt `gallery` decodes to a
+    // `GalleryRef` placeholder; fetch each referenced record and splice in its images.
+    let mut body = body;
+    resolve_gallery_refs(t, &mut body.blocks, &doc_uri.did, pds);
     Ok((meta, body))
+}
+
+/// Replace each [`Block::GalleryRef`] (in `blocks`, recursing into `Quote`/`List` containers)
+/// with a resolved [`Block::ImageGrid`]. Best-effort: a ref that fails to fetch/parse is dropped
+/// rather than aborting the document, so no `GalleryRef` ever reaches a frontend.
+fn resolve_gallery_refs<T: Transport>(t: &T, blocks: &mut Vec<Block>, doc_did: &str, doc_pds: &str) {
+    for block in blocks.iter_mut() {
+        match block {
+            Block::GalleryRef { uri } => {
+                if let Some(images) = fetch_gallery(t, uri, doc_did, doc_pds) {
+                    *block = Block::ImageGrid(images);
+                }
+            }
+            Block::Quote(children) => resolve_gallery_refs(t, children, doc_did, doc_pds),
+            Block::List { items, .. } => {
+                for item in items.iter_mut() {
+                    resolve_gallery_refs(t, item, doc_did, doc_pds);
+                }
+            }
+            _ => {}
+        }
+    }
+    // Drop any placeholder that didn't resolve (left a `GalleryRef`).
+    blocks.retain(|b| !matches!(b, Block::GalleryRef { .. }));
+}
+
+/// Fetch a `blog.pckt.gallery` record and decode its images. Returns `None` (→ the placeholder
+/// is dropped) on any failure or an empty gallery. PDS is reused from the document when the
+/// referenced record is in the same repo, else resolved — mirroring the `#contentRef` branch.
+fn fetch_gallery<T: Transport>(
+    t: &T,
+    uri: &str,
+    doc_did: &str,
+    doc_pds: &str,
+) -> Option<Vec<Image>> {
+    let at = AtUri::parse(uri)?;
+    let pds = if at.did == doc_did {
+        doc_pds.to_string()
+    } else {
+        resolve_pds(t, &at.did).ok()?
+    };
+    let url = xrpc::get_record(&pds, &at.did, &at.collection, &at.rkey);
+    let record = parse_get(&get(t, &url).ok()?).ok()?;
+    let images = gallery_images(&record.value, &at.did);
+    (!images.is_empty()).then_some(images)
 }
 
 /// Fetch an image/asset blob by CID.

@@ -11,6 +11,7 @@
 //! | `blog.pckt.content`                | `items: [blog.pckt.block.*]`            | [`Pckt`]      |
 //! | `app.offprint.content`             | `items: [app.offprint.block.*]` + facets | [`Offprint`] |
 //! | `org.wordpress.html`               | `{ html }` (rendered HTML)              | [`Wordpress`] |
+//! | `at.unthread.content`              | `{ content }` — a Markdown string       | [`Unthread`]  |
 //! | `*#contentRef`                     | reference to another record (GreenGale) | [`content_ref`] (two-phase) |
 //! | *(unknown / absent)*               | fall back to `textContent`              | [`Plaintext`] |
 //!
@@ -30,12 +31,14 @@ mod leaflet;
 mod markdown;
 mod offprint;
 mod pckt;
+mod unthread;
 
 pub use html::Wordpress;
 pub use leaflet::Leaflet;
 pub use markdown::Markdown;
 pub use offprint::Offprint;
 pub use pckt::Pckt;
+pub use unthread::Unthread;
 
 /// Context a decoder needs beyond the `content` value itself.
 pub struct DecodeCtx<'a> {
@@ -74,6 +77,7 @@ impl Registry {
                 Box::new(Pckt),
                 Box::new(Offprint),
                 Box::new(Wordpress),
+                Box::new(Unthread),
             ],
         }
     }
@@ -139,6 +143,31 @@ mod tests {
     fn plaintext_fallback_splits_paragraphs() {
         let doc = Registry::with_defaults().decode(None, Some("hello world\n\nsecond para"), &CTX);
         assert_eq!(doc.blocks.len(), 2);
+    }
+
+    #[test]
+    fn unknown_content_type_falls_back_to_textcontent() {
+        // A `$type` no decoder claims must defer to the typeset `textContent`, not error.
+        let content = serde_json::json!({ "$type": "com.example.nope", "whatever": 1 });
+        let doc = Registry::with_defaults().decode(Some(&content), Some("a\n\nb"), &CTX);
+        assert_eq!(doc.blocks.len(), 2);
+        assert!(doc.blocks.iter().all(|b| matches!(b, Block::Paragraph(_))));
+    }
+
+    #[test]
+    fn unthread_content_decodes_as_markdown() {
+        let content = serde_json::json!({
+            "$type": "at.unthread.content",
+            "content": "plain then *emphasis*"
+        });
+        let doc = Registry::with_defaults().decode(Some(&content), Some("plain then emphasis"), &CTX);
+        assert_eq!(
+            doc.blocks,
+            vec![Block::Paragraph(vec![
+                Inline::Text("plain then ".into()),
+                Inline::Emphasis(vec![Inline::Text("emphasis".into())]),
+            ])]
+        );
     }
 
     #[test]

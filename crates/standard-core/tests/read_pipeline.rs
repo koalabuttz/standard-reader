@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use standard_core::atp::{AtUri, Transport, xrpc};
 use standard_core::decode::Registry;
-use standard_core::model::Block;
+use standard_core::model::{Block, Inline};
 use standard_core::read;
 
 const DAVID_DID: &str = "did:plc:xn3l7ogsxym5ixxugidum5dw";
@@ -172,21 +172,24 @@ fn full_cross_repo_subscription_flow() {
 }
 
 #[test]
-fn unhandled_content_type_falls_back_to_plaintext() {
+fn unthread_content_decodes_as_markdown() {
     let t = mock();
     let registry = Registry::with_defaults();
-    // 3mj5rpb2gnc23 is `at.unthread.content` — no decoder, so it must fall back to
-    // typeset textContent rather than failing.
+    // 3mj5rpb2gnc23 is `at.unthread.content` — a Markdown string in `content`. It must decode
+    // through the Markdown pipeline (formatted), not the `*`-stripped textContent fallback.
     let uri = AtUri::parse(&format!(
         "at://{HALF_DID}/site.standard.document/3mj5rpb2gnc23"
     ))
     .unwrap();
     let (_, body) = read::get_document(&t, &registry, &uri, HALF_PDS).unwrap();
     assert!(!body.blocks.is_empty());
-    assert!(
-        body.blocks.iter().all(|b| matches!(b, Block::Paragraph(_))),
-        "fallback yields only paragraphs"
-    );
+    // The record's body opens with `*…*`; decoding yields an Emphasis inline (the flat
+    // textContent fallback would carry no inline formatting at all).
+    let has_emphasis = body.blocks.iter().any(|b| {
+        matches!(b, Block::Paragraph(inlines)
+            if inlines.iter().any(|i| matches!(i, Inline::Emphasis(_))))
+    });
+    assert!(has_emphasis, "unthread markdown should produce formatted inlines");
 }
 
 #[test]

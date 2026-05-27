@@ -45,6 +45,7 @@ Shapes below were validated against **live records** (the published survey had s
 | `blog.pckt.content`                      | `items: [blog.pckt.block.*]`                     | `Pckt`       |
 | `app.offprint.content`                   | `items: [app.offprint.block.*]` + byte-range facets | `Offprint` |
 | `org.wordpress.html`                     | `{ html }` — rendered HTML (`tl` walker)         | `Wordpress`  |
+| `at.unthread.content`                    | `{ content }` — a Markdown string (Unthread)     | `Unthread` (reuses `from_markdown`) |
 | `*#contentRef`                           | **reference** to another record (GreenGale)      | `content_ref` → two-phase |
 | *(unknown / absent)*                     | typeset `textContent`                            | `Plaintext`  |
 
@@ -87,4 +88,4 @@ cargo run -p standard-reader   # runs the `sr` binary
 
 ## Status & roadmap
 
-See **ROADMAP.md**. The core engine is real and tested (RichDoc model, decoder `Registry` + `Plaintext` fallback, `AtUri` + `Transport` trait + XRPC builders, `Store` trait, inverted-index search). **All five content decoders are implemented** — Markdown/markpub, Leaflet, Pckt, Offprint, WordPress HTML — plus the shared byte-range facet engine and the GreenGale `content_ref` two-phase seam, all validated against live-record fixtures (`cargo test -p standard-core`). The entire `standard-tui` frontend (including the `content_ref` fetch-then-decode wiring and blob-image fetching) is still a stub.
+See **ROADMAP.md** (authoritative). The core engine is real and tested (RichDoc model, decoder `Registry` + `Plaintext` fallback, `AtUri` + `Transport` trait + XRPC builders, `Store` trait, inverted-index search). **All six content decoders are implemented** — Markdown/markpub, Leaflet, Pckt, Offprint, WordPress HTML, Unthread — plus the shared byte-range facet engine and the GreenGale `content_ref` two-phase seam, all validated against live-record fixtures (`cargo test -p standard-core`). The `standard-tui` frontend is built too: the `ratatui` reader (sidebar + block-flow reader with inline/cover images, search, palette), the `reqwest`/`redb` worker with `content_ref` fetch-then-decode and blob images, and OAuth sign-in with follow-list ↔ atproto subscription sync.

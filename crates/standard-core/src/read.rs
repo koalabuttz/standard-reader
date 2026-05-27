@@ -198,18 +198,45 @@ fn parse_subscription(value: &Value, uri: &str) -> Option<Subscription> {
 
 // --- Identity resolution ---------------------------------------------------------
 
-/// Resolve a handle to a DID via the HTTPS well-known method
-/// (`https://<handle>/.well-known/atproto-did`). DNS-TXT fallback is deferred.
+/// Resolve a handle to a DID. Tries both atproto methods: the HTTPS well-known file
+/// (`https://<handle>/.well-known/atproto-did`), then the `_atproto.<handle>` DNS TXT record
+/// via DNS-over-HTTPS. Handles on a custom domain commonly use only one or the other (e.g.
+/// `pfrazee.com` serves no well-known file — that path redirects — and publishes via DNS).
 pub fn resolve_did<T: Transport>(t: &T, handle: &str) -> Result<String, ReadError> {
-    let bytes = get(t, &format!("https://{handle}/.well-known/atproto-did"))?;
-    let did = String::from_utf8_lossy(&bytes).trim().to_string();
-    if did.starts_with("did:") {
-        Ok(did)
-    } else {
-        Err(ReadError::Resolve(format!(
-            "no atproto-did for handle {handle}"
-        )))
+    // 1. HTTPS well-known. A non-2xx (or a redirect to a non-DID page) just falls through.
+    if let Ok(bytes) = get(t, &format!("https://{handle}/.well-known/atproto-did")) {
+        let did = String::from_utf8_lossy(&bytes).trim().to_string();
+        if did.starts_with("did:") {
+            return Ok(did);
+        }
     }
+    // 2. DNS TXT, queried over HTTPS so the core needs no DNS stack (stays pure-HTTP + sync).
+    if let Some(did) = resolve_did_via_dns(t, handle)? {
+        return Ok(did);
+    }
+    Err(ReadError::Resolve(format!(
+        "could not resolve handle {handle} (no well-known file and no _atproto DNS record)"
+    )))
+}
+
+/// Look up the `_atproto.<handle>` TXT record through Google's DNS-over-HTTPS JSON endpoint and
+/// extract the `did=` value. Returns `None` if the query fails or no `did=` record is present.
+fn resolve_did_via_dns<T: Transport>(t: &T, handle: &str) -> Result<Option<String>, ReadError> {
+    let url = format!("https://dns.google/resolve?name=_atproto.{handle}&type=TXT");
+    let Ok(bytes) = get(t, &url) else {
+        return Ok(None);
+    };
+    let doc = parse_json(&bytes)?;
+    // `{ "Answer": [ { "data": "did=did:plc:…" }, … ] }` (data is sometimes quote-wrapped).
+    let did = doc
+        .get("Answer")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|a| a.get("data").and_then(Value::as_str))
+        .find_map(|data| data.trim_matches('"').strip_prefix("did=").map(str::to_string))
+        .filter(|d| d.starts_with("did:"));
+    Ok(did)
 }
 
 /// Resolve a DID to its PDS endpoint (`did:plc` via plc.directory, `did:web` via its
@@ -427,5 +454,51 @@ mod tests {
         let (records, cursor) = parse_list(bytes).unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(cursor.as_deref(), Some("next123"));
+    }
+
+    /// A tiny canned-response `Transport`: a URL not in the map "404"s (an `Err`).
+    struct MockTransport(std::collections::HashMap<String, Vec<u8>>);
+
+    impl crate::atp::Transport for MockTransport {
+        type Error = std::io::Error;
+        fn get(&self, url: &str) -> Result<Vec<u8>, Self::Error> {
+            self.0
+                .get(url)
+                .cloned()
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, url.to_string()))
+        }
+        fn post(&self, _: &str, _: &str, _: &[u8]) -> Result<Vec<u8>, Self::Error> {
+            Err(std::io::Error::other("no post in mock"))
+        }
+    }
+
+    #[test]
+    fn resolve_did_falls_back_to_dns_when_well_known_is_missing() {
+        // Only the DNS-over-HTTPS route answers; the well-known fetch 404s (like pfrazee.com).
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            "https://dns.google/resolve?name=_atproto.pfrazee.com&type=TXT".to_string(),
+            br#"{"Answer":[{"name":"_atproto.pfrazee.com.","data":"did=did:plc:ragtjsm2j2vknwkz3zp4oxrd"}]}"#.to_vec(),
+        );
+        let did = resolve_did(&MockTransport(routes), "pfrazee.com").unwrap();
+        assert_eq!(did, "did:plc:ragtjsm2j2vknwkz3zp4oxrd");
+    }
+
+    #[test]
+    fn resolve_did_prefers_well_known_and_skips_dns() {
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            "https://alice.test/.well-known/atproto-did".to_string(),
+            b"did:plc:fromwellknown\n".to_vec(),
+        );
+        // No DNS route registered → if it reached DNS it would 404; it must not.
+        let did = resolve_did(&MockTransport(routes), "alice.test").unwrap();
+        assert_eq!(did, "did:plc:fromwellknown");
+    }
+
+    #[test]
+    fn resolve_did_errors_when_neither_method_resolves() {
+        let empty = MockTransport(std::collections::HashMap::new());
+        assert!(resolve_did(&empty, "nobody.test").is_err());
     }
 }

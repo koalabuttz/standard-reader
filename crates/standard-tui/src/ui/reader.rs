@@ -320,61 +320,57 @@ fn image_display_size(app: &App, key: &str, avail_w: u16, vh: u16) -> (u16, u16)
     )
 }
 
-/// Column count for an image grid: more columns on wider panes, never more than images.
-fn grid_cols(n: usize, width: u16) -> u16 {
-    let by_width = if width >= 90 {
-        3
-    } else if width >= 40 {
-        2
-    } else {
-        1
-    };
-    (by_width.min(n).max(1)) as u16
+/// Column count for an image grid, chosen to keep rows balanced: among 1..=max (max set by
+/// pane width), pick the count whose last row is fullest, tie-breaking toward more columns.
+/// e.g. 3→3-up, 4→2+2 (not 3+1), 5→3+2, 6→3+3.
+fn grid_cols(n: usize, width: u16) -> usize {
+    let max = if width >= 90 { 3 } else if width >= 40 { 2 } else { 1 }.min(n).max(1);
+    (1..=max)
+        .max_by_key(|&cols| {
+            let last_fill = if n.is_multiple_of(cols) { cols } else { n % cols };
+            (last_fill, cols) // higher fill wins; ties → more columns
+        })
+        .unwrap_or(1)
 }
 
-/// Lay images out in a grid: pick columns for the width, size each cell to its column,
-/// centre it, and stack rows. Returns the positioned cells and the grid's total height.
+/// Lay images out in a balanced grid: size each cell to its column, centre each *row*
+/// (so a short last row sits in the middle), and stack rows. Returns positioned cells and
+/// the grid's total height.
 fn grid_layout(app: &App, images: &[Image], width: u16, vh: u16) -> (Vec<GridCell>, u16) {
     const GAP_X: u16 = 1;
     const GAP_Y: u16 = 1;
     if images.is_empty() {
         return (Vec::new(), 0);
     }
-    let cols = grid_cols(images.len(), width);
-    let cell_w = (width.saturating_sub((cols - 1) * GAP_X) / cols).max(1);
+    let n = images.len();
+    let cols = grid_cols(n, width);
+    let cell_w = (width.saturating_sub((cols as u16 - 1) * GAP_X) / cols as u16).max(1);
 
-    let mut cells = Vec::with_capacity(images.len());
-    let mut row_heights: Vec<u16> = Vec::new();
-    for (i, img) in images.iter().enumerate() {
-        let key = image_key(&img.source);
-        let (w, h) = image_display_size(app, &key, cell_w, vh);
-        let col = (i % cols as usize) as u16;
-        let row = i / cols as usize;
-        if row >= row_heights.len() {
-            row_heights.push(0);
+    // Size every image to the column width first.
+    let sized: Vec<(String, u16, u16)> = images
+        .iter()
+        .map(|img| {
+            let key = image_key(&img.source);
+            let (w, h) = image_display_size(app, &key, cell_w, vh);
+            (key, w, h)
+        })
+        .collect();
+
+    let mut cells = Vec::with_capacity(n);
+    let mut row_top = 0u16;
+    for row in sized.chunks(cols) {
+        let in_row = row.len() as u16;
+        let row_width = in_row * cell_w + in_row.saturating_sub(1) * GAP_X;
+        let row_off = width.saturating_sub(row_width) / 2; // centre the row in the pane
+        let mut row_h = 0u16;
+        for (k, (key, w, h)) in row.iter().enumerate() {
+            let dx = row_off + k as u16 * (cell_w + GAP_X) + cell_w.saturating_sub(*w) / 2;
+            cells.push(GridCell { key: key.clone(), dx, dy: row_top, w: *w, h: *h });
+            row_h = row_h.max(*h);
         }
-        row_heights[row] = row_heights[row].max(h);
-        let dx = col * (cell_w + GAP_X) + cell_w.saturating_sub(w) / 2; // centre in the column
-        cells.push(GridCell {
-            key,
-            dx,
-            dy: 0,
-            w,
-            h,
-        });
+        row_top += row_h + GAP_Y;
     }
-
-    // Row y-offsets, then assign each cell its row's offset.
-    let mut row_y = vec![0u16; row_heights.len()];
-    let mut acc = 0u16;
-    for (r, h) in row_heights.iter().enumerate() {
-        row_y[r] = acc;
-        acc += h + GAP_Y;
-    }
-    for (i, cell) in cells.iter_mut().enumerate() {
-        cell.dy = row_y[i / cols as usize];
-    }
-    (cells, acc.saturating_sub(GAP_Y))
+    (cells, row_top.saturating_sub(GAP_Y))
 }
 
 fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segment], scroll: u16) {
@@ -501,6 +497,19 @@ mod tests {
     use ratatui_image::picker::Picker;
     use standard_core::model::{Block as DocBlock, Image, ImageSource, Inline, RichDoc};
     use std::sync::mpsc::channel;
+
+    #[test]
+    fn grid_columns_balance_rows() {
+        // Wide pane (max 3 cols): rows stay as even as possible, 3-up kept where it fits.
+        assert_eq!(grid_cols(1, 100), 1);
+        assert_eq!(grid_cols(2, 100), 2);
+        assert_eq!(grid_cols(3, 100), 3);
+        assert_eq!(grid_cols(4, 100), 2); // 2+2, not 3+1
+        assert_eq!(grid_cols(5, 100), 3); // 3+2
+        assert_eq!(grid_cols(6, 100), 3); // 3+3
+        // Narrow pane caps at 1 column.
+        assert_eq!(grid_cols(4, 30), 1);
+    }
 
     fn app_with(doc: RichDoc) -> App {
         let (tx, _rx) = channel::<ToWorker>();

@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use super::image::url_image;
 use super::{ContentDecoder, DecodeCtx};
-use crate::model::{Block, Inline, RichDoc};
+use crate::model::{Block, Image, Inline, RichDoc};
 
 pub struct Markdown;
 
@@ -147,7 +147,7 @@ impl Builder {
             return;
         };
         match frame {
-            Frame::Paragraph(content) => self.push_block(Block::Paragraph(content)),
+            Frame::Paragraph(content) => self.push_block(paragraph_block(content)),
             Frame::Heading { level, content } => self.push_block(Block::Heading { level, content }),
             Frame::Quote(blocks) => self.push_block(Block::Quote(blocks)),
             Frame::Code { lang, text } => {
@@ -210,6 +210,33 @@ impl Builder {
             Some(Frame::Root(blocks)) => blocks,
             _ => Vec::new(),
         }
+    }
+}
+
+/// Build a paragraph block — but promote an **image-only** paragraph (Markdown `![](…)`, which
+/// `pulldown-cmark` emits as an inline image inside a paragraph) to a block-level image so the
+/// frontend fetches and renders it. One image → [`Block::Image`]; several on adjacent lines →
+/// [`Block::ImageGrid`]. Anything with real text stays a paragraph (the inline image degrades
+/// to its alt text — true intra-paragraph image rendering is out of scope).
+fn paragraph_block(content: Vec<Inline>) -> Block {
+    let is_filler = |i: &Inline| {
+        matches!(i, Inline::LineBreak) || matches!(i, Inline::Text(t) if t.trim().is_empty())
+    };
+    let images: Vec<Image> = content
+        .iter()
+        .filter_map(|i| match i {
+            Inline::Image(img) => Some(img.clone()),
+            _ => None,
+        })
+        .collect();
+    let only_images = !images.is_empty()
+        && content
+            .iter()
+            .all(|i| matches!(i, Inline::Image(_)) || is_filler(i));
+    match (only_images, images.len()) {
+        (false, _) => Block::Paragraph(content),
+        (true, 1) => Block::Image(images.into_iter().next().unwrap()),
+        (true, _) => Block::ImageGrid(images),
     }
 }
 
@@ -291,13 +318,33 @@ mod tests {
                 text: "fn x() {}".into()
             }
         );
+        // An image-only paragraph is promoted to a block image (so the frontend renders it).
         assert_eq!(
             blocks[3],
-            Block::Paragraph(vec![Inline::Image(crate::model::Image {
+            Block::Image(crate::model::Image {
                 alt: "cap".into(),
                 source: crate::model::ImageSource::Url("https://i.test/a.png".into()),
-            })])
+            })
         );
+    }
+
+    #[test]
+    fn image_only_paragraphs_become_block_images() {
+        // Standalone image → Block::Image.
+        assert!(matches!(
+            decode_str("![a](https://i.test/a.png)").as_slice(),
+            [Block::Image(_)]
+        ));
+        // Two images on adjacent lines (one paragraph) → an ImageGrid.
+        assert!(matches!(
+            decode_str("![a](https://i.test/a.png)\n![b](https://i.test/b.png)").as_slice(),
+            [Block::ImageGrid(imgs)] if imgs.len() == 2
+        ));
+        // An image with real text stays a paragraph (degrades to alt text inline).
+        assert!(matches!(
+            decode_str("see ![a](https://i.test/a.png) here").as_slice(),
+            [Block::Paragraph(_)]
+        ));
     }
 
     #[test]

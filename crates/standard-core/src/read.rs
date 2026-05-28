@@ -234,7 +234,11 @@ fn resolve_did_via_dns<T: Transport>(t: &T, handle: &str) -> Result<Option<Strin
         .into_iter()
         .flatten()
         .filter_map(|a| a.get("data").and_then(Value::as_str))
-        .find_map(|data| data.trim_matches('"').strip_prefix("did=").map(str::to_string))
+        .find_map(|data| {
+            data.trim_matches('"')
+                .strip_prefix("did=")
+                .map(str::to_string)
+        })
         .filter(|d| d.starts_with("did:"));
     Ok(did)
 }
@@ -281,19 +285,43 @@ pub fn resolve_identity<T: Transport>(t: &T, handle_or_did: &str) -> Result<Iden
 
 // --- Orchestration ---------------------------------------------------------------
 
+/// Follow `listRecords` cursors to fetch **every** record of a collection (newest-first per the
+/// PDS). Bounded against a misbehaving PDS: the walk ends as soon as a page returns no cursor *or*
+/// no records, so it can never loop forever.
+fn paginate<T: Transport>(
+    t: &T,
+    pds: &str,
+    did: &str,
+    collection: &str,
+    page_limit: u32,
+) -> Result<Vec<Record>, ReadError> {
+    let mut out = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let url = xrpc::list_records(pds, did, collection, page_limit, cursor.as_deref());
+        let (records, next) = parse_list(&get(t, &url)?)?;
+        let got = records.len();
+        out.extend(records);
+        match next {
+            Some(c) if got > 0 => cursor = Some(c),
+            _ => break,
+        }
+    }
+    Ok(out)
+}
+
 /// A reader's own subscriptions (each points at a publication AT-URI, often cross-repo).
 pub fn list_subscriptions<T: Transport>(
     t: &T,
     reader: &Identity,
 ) -> Result<Vec<Subscription>, ReadError> {
-    let url = xrpc::list_records(
+    let records = paginate(
+        t,
         &reader.pds,
         &reader.did,
         "site.standard.graph.subscription",
         100,
-        None,
-    );
-    let (records, _) = parse_list(&get(t, &url)?)?;
+    )?;
     Ok(records
         .iter()
         .filter_map(|r| parse_subscription(&r.value, &r.uri))
@@ -305,8 +333,7 @@ pub fn list_publications<T: Transport>(
     t: &T,
     repo: &Identity,
 ) -> Result<Vec<Publication>, ReadError> {
-    let url = xrpc::list_records(&repo.pds, &repo.did, "site.standard.publication", 100, None);
-    let (records, _) = parse_list(&get(t, &url)?)?;
+    let records = paginate(t, &repo.pds, &repo.did, "site.standard.publication", 100)?;
     Ok(records
         .iter()
         .filter_map(|r| parse_publication(&r.value, &r.uri))
@@ -345,6 +372,20 @@ pub fn list_documents<T: Transport>(
         .filter_map(|r| parse_document(&r.value, &r.uri))
         .collect();
     Ok((docs, next))
+}
+
+/// **Every** document of a publication's repo (metadata only), newest-first — paginated to
+/// completion. Used for the initial backfill so a feed isn't capped at its newest page;
+/// [`list_documents`] fetches a single page for the cheap incremental refresh walk.
+pub fn list_all_documents<T: Transport>(
+    t: &T,
+    repo: &Identity,
+) -> Result<Vec<Document>, ReadError> {
+    let records = paginate(t, &repo.pds, &repo.did, "site.standard.document", 50)?;
+    Ok(records
+        .iter()
+        .filter_map(|r| parse_document(&r.value, &r.uri))
+        .collect())
 }
 
 /// Fetch one document and decode its body. Honors the `#contentRef` seam: when the
@@ -400,7 +441,12 @@ pub fn get_document<T: Transport>(
 /// Replace each [`Block::GalleryRef`] (in `blocks`, recursing into `Quote`/`List` containers)
 /// with a resolved [`Block::ImageGrid`]. Best-effort: a ref that fails to fetch/parse is dropped
 /// rather than aborting the document, so no `GalleryRef` ever reaches a frontend.
-fn resolve_gallery_refs<T: Transport>(t: &T, blocks: &mut Vec<Block>, doc_did: &str, doc_pds: &str) {
+fn resolve_gallery_refs<T: Transport>(
+    t: &T,
+    blocks: &mut Vec<Block>,
+    doc_did: &str,
+    doc_pds: &str,
+) {
     for block in blocks.iter_mut() {
         match block {
             Block::GalleryRef { uri } => {
@@ -550,5 +596,63 @@ mod tests {
     fn resolve_did_errors_when_neither_method_resolves() {
         let empty = MockTransport(std::collections::HashMap::new());
         assert!(resolve_did(&empty, "nobody.test").is_err());
+    }
+
+    fn doc_record(rkey: &str, title: &str) -> String {
+        format!(
+            r#"{{"uri":"at://did:plc:abc/site.standard.document/{rkey}","value":{{"title":"{title}","site":"at://did:plc:abc/site.standard.publication/p","publishedAt":"2026-01-01T00:00:00Z"}}}}"#
+        )
+    }
+
+    #[test]
+    fn list_all_documents_pages_through_the_cursor() {
+        let repo = Identity {
+            did: "did:plc:abc".into(),
+            pds: "https://pds.test".into(),
+        };
+        let page1 = "https://pds.test/xrpc/com.atproto.repo.listRecords?repo=did:plc:abc&collection=site.standard.document&limit=50";
+        let page2 = format!("{page1}&cursor=pg2");
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            page1.to_string(),
+            format!(
+                r#"{{"records":[{}],"cursor":"pg2"}}"#,
+                doc_record("1", "One")
+            )
+            .into_bytes(),
+        );
+        // Last page: records but no cursor → the walk ends here.
+        routes.insert(
+            page2,
+            format!(r#"{{"records":[{}]}}"#, doc_record("2", "Two")).into_bytes(),
+        );
+        let docs = list_all_documents(&MockTransport(routes), &repo).unwrap();
+        assert_eq!(docs.len(), 2);
+        assert_eq!(docs[0].title, "One");
+        assert_eq!(docs[1].title, "Two");
+    }
+
+    #[test]
+    fn paginate_stops_on_an_empty_page_even_with_a_cursor() {
+        let repo = Identity {
+            did: "did:plc:abc".into(),
+            pds: "https://pds.test".into(),
+        };
+        let page1 = "https://pds.test/xrpc/com.atproto.repo.listRecords?repo=did:plc:abc&collection=site.standard.document&limit=50";
+        let page2 = format!("{page1}&cursor=pg2");
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            page1.to_string(),
+            format!(
+                r#"{{"records":[{}],"cursor":"pg2"}}"#,
+                doc_record("1", "One")
+            )
+            .into_bytes(),
+        );
+        // Empty page that still advertises a cursor: the walk must stop here and never request
+        // "pg3" (which isn't routed, so a continued walk would error and fail this test).
+        routes.insert(page2, br#"{"records":[],"cursor":"pg3"}"#.to_vec());
+        let docs = list_all_documents(&MockTransport(routes), &repo).unwrap();
+        assert_eq!(docs.len(), 1);
     }
 }

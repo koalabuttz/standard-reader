@@ -5,6 +5,8 @@
 //! OAuth lands, attach the auth header. `reqwest::Error` already satisfies the trait's
 //! `Error: Error + Send + Sync + 'static` bound, so it is the associated error directly.
 
+use std::time::Duration;
+
 use standard_core::atp::Transport;
 
 pub struct ReqwestTransport {
@@ -15,6 +17,9 @@ impl ReqwestTransport {
     pub fn new() -> Self {
         let client = reqwest::blocking::Client::builder()
             .user_agent(concat!("standard-reader/", env!("CARGO_PKG_VERSION")))
+            // Bound every fetch so a hung PDS can't freeze the (single-threaded) worker forever.
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
             .build()
             .expect("failed to build HTTP client");
         Self { client }

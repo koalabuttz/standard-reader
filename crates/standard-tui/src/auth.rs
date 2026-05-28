@@ -30,9 +30,7 @@ use atrium_api::types::TryIntoUnknown;
 use atrium_api::types::string::{AtIdentifier, Datetime, Did, Nsid, RecordKey};
 use atrium_common::store::Store;
 use atrium_identity::did::{CommonDidResolver, CommonDidResolverConfig, DEFAULT_PLC_DIRECTORY_URL};
-use atrium_identity::handle::{
-    AtprotoHandleResolver, AtprotoHandleResolverConfig, DnsTxtResolver,
-};
+use atrium_identity::handle::{AtprotoHandleResolver, AtprotoHandleResolverConfig, DnsTxtResolver};
 use atrium_oauth::store::session::{Session, SessionStore};
 use atrium_oauth::store::state::MemoryStateStore;
 use atrium_oauth::{
@@ -147,27 +145,40 @@ impl Auth {
         // ChromeOS/Crostini the browser runs outside the container and the forwarded callback
         // arrives on the container's network interface — a `127.0.0.1`-only listener wouldn't
         // accept it. (`0.0.0.0` still accepts the plain-loopback case on a normal desktop.)
-        progress(format!("binding callback server on 0.0.0.0:{CALLBACK_PORT}…"));
+        progress(format!(
+            "binding callback server on 0.0.0.0:{CALLBACK_PORT}…"
+        ));
         let listener = TcpListener::bind(("0.0.0.0", CALLBACK_PORT))?;
 
-        progress(format!("requesting authorization for {ident} (resolving identity + PAR)…"));
+        progress(format!(
+            "requesting authorization for {ident} (resolving identity + PAR)…"
+        ));
         let url = self
             .client
-            .authorize(ident, AuthorizeOptions {
-                scopes: vec![
-                    Scope::Known(KnownScope::Atproto),
-                    Scope::Known(KnownScope::TransitionGeneric),
-                ],
-                ..Default::default()
-            })
+            .authorize(
+                ident,
+                AuthorizeOptions {
+                    scopes: vec![
+                        Scope::Known(KnownScope::Atproto),
+                        Scope::Known(KnownScope::TransitionGeneric),
+                    ],
+                    ..Default::default()
+                },
+            )
             .await?;
 
-        progress(format!("authorize in your browser — if it didn't open, visit: {url}"));
+        progress(format!(
+            "authorize in your browser — if it didn't open, visit: {url}"
+        ));
         // Detached so we don't block the runtime waiting on the opener process (some desktops,
         // notably Crostini, don't return promptly). If it fails, the URL was already surfaced.
         match open::that_detached(&url) {
-            Ok(_) => progress(format!("browser launched; waiting for the redirect to :{CALLBACK_PORT}…")),
-            Err(e) => progress(format!("couldn't launch a browser ({e}); open the URL above manually…")),
+            Ok(_) => progress(format!(
+                "browser launched; waiting for the redirect to :{CALLBACK_PORT}…"
+            )),
+            Err(e) => progress(format!(
+                "couldn't launch a browser ({e}); open the URL above manually…"
+            )),
         }
 
         // Blocking accept on a worker-pool thread so it doesn't stall the runtime.
@@ -188,20 +199,21 @@ impl Auth {
         Ok(account)
     }
 
-    /// Validate the persisted session (refreshing tokens if needed). Returns the account if it
-    /// still restores, else clears the stale files and reports signed-out.
+    /// Validate the persisted session (atrium refreshes tokens if needed). `Ok(None)` means there
+    /// is no stored session at all; `Ok(Some)` means it restored.
+    ///
+    /// A failed restore is **propagated, not swallowed** — and the session files are left intact.
+    /// At this layer a transient network error (PDS/plc unreachable) is indistinguishable from a
+    /// genuinely revoked token, and the old behaviour (delete the files on any error) silently
+    /// signed the user out over a momentary blip. Keeping the files lets the next launch retry;
+    /// [`Self::login`] overwrites and [`Self::logout`] clears when sign-out is actually intended.
     pub async fn restore(&self) -> AuthResult<Option<Account>> {
         let Some(account) = self.current_account() else {
             return Ok(None);
         };
         let did = Did::new(account.did.clone())?;
-        match self.client.restore(&did).await {
-            Ok(_) => Ok(Some(account)),
-            Err(_) => {
-                let _ = self.clear_files();
-                Ok(None)
-            }
-        }
+        self.client.restore(&did).await?;
+        Ok(Some(account))
     }
 
     /// Revoke the session upstream (best-effort) and remove the local session/account files.
@@ -215,7 +227,11 @@ impl Auth {
     }
 
     /// Create a `site.standard.graph.subscription` record in the user's repo; returns its rkey.
-    pub async fn create_subscription(&self, did: &str, publication_uri: &str) -> AuthResult<String> {
+    pub async fn create_subscription(
+        &self,
+        did: &str,
+        publication_uri: &str,
+    ) -> AuthResult<String> {
         let did = Did::new(did.to_string())?;
         let agent = Agent::new(self.client.restore(&did).await?);
         let record = SubscriptionRecord {
@@ -378,6 +394,9 @@ impl RustlsHttpClient {
     fn new() -> AuthResult<Self> {
         let client = reqwest::Client::builder()
             .user_agent(concat!("standard-reader/", env!("CARGO_PKG_VERSION")))
+            // Bound auth/identity requests so a hung host can't stall sign-in or restore forever.
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
             .build()?;
         Ok(Self { client })
     }
@@ -393,7 +412,9 @@ impl HttpClient for RustlsHttpClient {
         for (k, v) in response.headers() {
             builder = builder.header(k, v);
         }
-        builder.body(response.bytes().await?.to_vec()).map_err(Into::into)
+        builder
+            .body(response.bytes().await?.to_vec())
+            .map_err(Into::into)
     }
 }
 

@@ -85,6 +85,22 @@ fn mock() -> MockTransport {
         ),
         fixture("xrpc/list_subscriptions.json"),
     );
+    // The captured first page carries a cursor; `list_subscriptions` paginates, so register the
+    // next page (empty → ends the walk). Read the cursor from the fixture to stay in sync with it.
+    let subs_first: Value =
+        serde_json::from_slice(&fixture("xrpc/list_subscriptions.json")).unwrap();
+    if let Some(cursor) = subs_first["cursor"].as_str() {
+        r.insert(
+            xrpc::list_records(
+                DAVID_PDS,
+                DAVID_DID,
+                "site.standard.graph.subscription",
+                100,
+                Some(cursor),
+            ),
+            br#"{"records":[]}"#.to_vec(),
+        );
+    }
 
     // the subscribed "half baked" publication + its documents
     r.insert(
@@ -134,7 +150,12 @@ fn mock() -> MockTransport {
     // David's Pckt doc (contains a gallery block) + the referenced gallery record, for the
     // per-block two-phase resolution.
     r.insert(
-        xrpc::get_record(DAVID_PDS, DAVID_DID, "site.standard.document", "3mmrd52hpdakk"),
+        xrpc::get_record(
+            DAVID_PDS,
+            DAVID_DID,
+            "site.standard.document",
+            "3mmrd52hpdakk",
+        ),
         fixture("pckt.json"),
     );
     r.insert(
@@ -200,7 +221,10 @@ fn unthread_content_decodes_as_markdown() {
         matches!(b, Block::Paragraph(inlines)
             if inlines.iter().any(|i| matches!(i, Inline::Emphasis(_))))
     });
-    assert!(has_emphasis, "unthread markdown should produce formatted inlines");
+    assert!(
+        has_emphasis,
+        "unthread markdown should produce formatted inlines"
+    );
 }
 
 #[test]
@@ -226,11 +250,15 @@ fn pckt_gallery_ref_resolves_to_image_grid() {
         .expect("the gallery should resolve to a Block::ImageGrid");
     assert_eq!(grid.len(), 2, "the fixture gallery has two images");
     assert!(
-        grid.iter().all(|i| matches!(&i.source, ImageSource::Blob { .. })),
+        grid.iter()
+            .all(|i| matches!(&i.source, ImageSource::Blob { .. })),
         "gallery images are atproto blobs"
     );
     assert!(
-        !body.blocks.iter().any(|b| matches!(b, Block::GalleryRef { .. })),
+        !body
+            .blocks
+            .iter()
+            .any(|b| matches!(b, Block::GalleryRef { .. })),
         "no unresolved GalleryRef should remain"
     );
 }

@@ -42,7 +42,8 @@ pub trait Store {
     fn put_blob(&mut self, cid: &str, bytes: &[u8]) -> Result<(), Self::Error>;
     fn blob(&self, cid: &str) -> Result<Option<Vec<u8>>, Self::Error>;
 
-    /// `listRecords` cursor for incremental sync of a publication.
+    /// Incremental-sync high-water mark for a publication — the newest document URI seen, so a
+    /// refresh can stop once it walks back to already-cached records. Opaque to the store.
     fn sync_cursor(&self, publication_uri: &str) -> Result<Option<String>, Self::Error>;
     fn set_sync_cursor(&mut self, publication_uri: &str, cursor: &str) -> Result<(), Self::Error>;
 }

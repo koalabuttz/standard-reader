@@ -30,7 +30,10 @@ pub enum ToWorker {
     Refresh(String),
     SetRead(String, bool),
     Unfollow(String),
-    LoadImage { key: String, source: ImageSource },
+    LoadImage {
+        key: String,
+        source: ImageSource,
+    },
     SetShowImages(bool),
     /// Sign in via OAuth using a handle or DID.
     Login(String),
@@ -100,7 +103,11 @@ fn run(
         &log_path,
         &format!(
             "worker started; auth {}",
-            if auth.is_some() { "enabled" } else { "disabled" }
+            if auth.is_some() {
+                "enabled"
+            } else {
+                "disabled"
+            }
         ),
     );
     let mut ctx = Ctx {
@@ -140,7 +147,9 @@ fn run(
                     .or_else(|| panic.downcast_ref::<String>().cloned())
                     .unwrap_or_else(|| "unknown panic".into());
                 append_log(&ctx.log_path, &format!("PANIC: {what}"));
-                let _ = ctx.tx.send(FromWorker::Error(format!("internal error: {what}")));
+                let _ = ctx
+                    .tx
+                    .send(FromWorker::Error(format!("internal error: {what}")));
             }
         }
     }
@@ -156,7 +165,9 @@ fn build_auth(config_dir: &std::path::Path, tx: &Sender<FromWorker>) -> Option<A
     {
         Ok(rt) => rt,
         Err(e) => {
-            let _ = tx.send(FromWorker::Error(format!("auth disabled (no runtime): {e}")));
+            let _ = tx.send(FromWorker::Error(format!(
+                "auth disabled (no runtime): {e}"
+            )));
             return None;
         }
     };
@@ -201,7 +212,11 @@ fn append_log(path: &std::path::Path, msg: &str) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         let _ = writeln!(f, "[{ts}] {msg}");
     }
 }
@@ -269,10 +284,14 @@ impl Ctx {
                 added += 1;
             }
         }
-        // Cache the repo's documents so the new feed is readable immediately/offline.
-        let (repo_docs, _) = read::list_documents(&self.transport, &identity, None)?;
+        // Cache the repo's full document history so the new feed is readable immediately/offline.
+        let repo_docs = read::list_all_documents(&self.transport, &identity)?;
         for doc in &repo_docs {
             self.store.upsert_document(doc, None)?;
+        }
+        // Seed each followed publication's incremental high-water mark.
+        for publication in &publications {
+            self.record_watermark(&publication.uri, &repo_docs)?;
         }
         self.send(FromWorker::Status(if added == 0 {
             format!("already following {target}")
@@ -294,23 +313,80 @@ impl Ctx {
         self.refresh_docs(pub_uri)
     }
 
-    /// Re-fetch a publication's documents from the network and cache them.
+    /// Re-fetch a publication's documents and cache them. First time (nothing cached yet) → a full
+    /// **backfill** so older posts aren't unreachable; afterwards → a cheap **incremental** walk
+    /// that stops once it reaches documents already in the cache, so a refresh only pulls what's
+    /// new. Either way the feed is then served from the cache (newest-first).
     fn refresh_docs(&mut self, pub_uri: &str) -> Done {
         let uri = AtUri::parse(pub_uri).ok_or("malformed publication AT-URI")?;
         let (_, repo) = read::get_publication(&self.transport, &uri)?;
-        let (repo_docs, _) = read::list_documents(&self.transport, &repo, None)?;
-        for doc in &repo_docs {
-            self.store.upsert_document(doc, None)?;
+
+        if self.store.documents_for(pub_uri)?.is_empty() {
+            let all = read::list_all_documents(&self.transport, &repo)?;
+            for doc in &all {
+                self.store.upsert_document(doc, None)?;
+            }
+            self.record_watermark(pub_uri, &all)?;
+        } else {
+            self.fetch_new_documents(&repo, pub_uri)?;
         }
-        // A repo can host several publications; this feed is the docs whose `site` matches.
-        let docs = repo_docs
-            .into_iter()
-            .filter(|d| d.publication == pub_uri)
-            .collect();
+
+        // A repo can host several publications; serve the cache filtered to this feed.
+        let docs = self.store.documents_for(pub_uri)?;
         self.send(FromWorker::Docs {
             publication: pub_uri.to_string(),
             docs,
         });
+        Ok(())
+    }
+
+    /// Walk the repo's documents newest-first via `listRecords`, caching new ones and stopping as
+    /// soon as a page introduces nothing new (everything already cached) or reaches this
+    /// publication's stored high-water mark — the incremental refresh. Updates that mark to the
+    /// newest document seen for the publication.
+    fn fetch_new_documents(&mut self, repo: &read::Identity, pub_uri: &str) -> Done {
+        let watermark = self.store.sync_cursor(pub_uri)?;
+        let mut cursor: Option<String> = None;
+        let mut newest_for_pub: Option<String> = None;
+        loop {
+            let (docs, next) = read::list_documents(&self.transport, repo, cursor.as_deref())?;
+            if docs.is_empty() {
+                break;
+            }
+            let mut page_had_new = false;
+            let mut reached_mark = false;
+            for doc in &docs {
+                if newest_for_pub.is_none() && doc.publication == pub_uri {
+                    newest_for_pub = Some(doc.uri.clone());
+                }
+                if watermark.as_deref() == Some(doc.uri.as_str()) {
+                    reached_mark = true;
+                    break;
+                }
+                // Cache-probe stop (robust for multi-publication repos): a doc already stored means
+                // we've caught up on this page.
+                if self.store.document(&doc.uri)?.is_none() {
+                    self.store.upsert_document(doc, None)?;
+                    page_had_new = true;
+                }
+            }
+            if reached_mark || !page_had_new || next.is_none() {
+                break;
+            }
+            cursor = next;
+        }
+        if let Some(newest) = newest_for_pub {
+            self.store.set_sync_cursor(pub_uri, &newest)?;
+        }
+        Ok(())
+    }
+
+    /// Record the newest document URI for `pub_uri` (from a newest-first list) as its incremental
+    /// sync high-water mark, so a later refresh can stop once it reaches it.
+    fn record_watermark(&mut self, pub_uri: &str, docs: &[Document]) -> Done {
+        if let Some(doc) = docs.iter().find(|d| d.publication == pub_uri) {
+            self.store.set_sync_cursor(pub_uri, &doc.uri)?;
+        }
         Ok(())
     }
 
@@ -464,7 +540,10 @@ impl Ctx {
                 append_log(&self.log_path, &format!("login: ok, did={}", account.did));
                 self.account = Some(account.clone());
                 self.send(FromWorker::Account(Some(account.clone())));
-                self.send(FromWorker::Status(format!("logged in as @{}", account.handle)));
+                self.send(FromWorker::Status(format!(
+                    "logged in as @{}",
+                    account.handle
+                )));
                 self.sync_subscriptions(&account)?;
             }
             Err(e) => {
@@ -503,7 +582,9 @@ impl Ctx {
         for (pub_uri, rkey) in &diff.remote_only {
             if let Err(e) = self.cache_publication(pub_uri) {
                 // Best-effort: a since-deleted publication shouldn't abort the whole sync.
-                self.send(FromWorker::Status(format!("couldn't import {pub_uri}: {e}")));
+                self.send(FromWorker::Status(format!(
+                    "couldn't import {pub_uri}: {e}"
+                )));
             }
             self.store.follow(pub_uri)?;
             self.store.set_follow_rkey(pub_uri, rkey)?;
@@ -559,9 +640,7 @@ impl Ctx {
     fn follow(&mut self, pub_uri: &str) -> Done {
         let newly = !self.store.is_followed(pub_uri)?;
         self.store.follow(pub_uri)?;
-        if newly
-            && let Some(did) = self.account.as_ref().map(|a| a.did.clone())
-        {
+        if newly && let Some(did) = self.account.as_ref().map(|a| a.did.clone()) {
             match self.create_subscription(&did, pub_uri) {
                 Ok(rkey) => self.store.set_follow_rkey(pub_uri, &rkey)?,
                 Err(e) => self.send(FromWorker::Status(format!(
@@ -602,10 +681,11 @@ impl Ctx {
         let uri = AtUri::parse(pub_uri).ok_or("malformed publication AT-URI")?;
         let (publication, repo) = read::get_publication(&self.transport, &uri)?;
         self.store.upsert_publication(&publication)?;
-        let (repo_docs, _) = read::list_documents(&self.transport, &repo, None)?;
+        let repo_docs = read::list_all_documents(&self.transport, &repo)?;
         for doc in &repo_docs {
             self.store.upsert_document(doc, None)?;
         }
+        self.record_watermark(pub_uri, &repo_docs)?;
         Ok(())
     }
 }
@@ -746,7 +826,8 @@ mod tests {
             Some("https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:abc/bafcid@jpeg")
         );
         // A getBlob URL (percent-encoded did) → did/cid extracted, CDN URL built.
-        let url = "https://yapfest.club/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Axyz&cid=bafblob";
+        let url =
+            "https://yapfest.club/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Axyz&cid=bafblob";
         assert_eq!(
             super::cdn_image_url(&ImageSource::Url(url.into())).as_deref(),
             Some("https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:xyz/bafblob@jpeg")
@@ -769,10 +850,7 @@ mod tests {
 
     #[test]
     fn diff_partitions_remote_only_in_both_and_local_only() {
-        let local = vec![
-            "at://p/both".to_string(),
-            "at://p/localonly".to_string(),
-        ];
+        let local = vec!["at://p/both".to_string(), "at://p/localonly".to_string()];
         let remote = HashMap::from([
             ("at://p/both".to_string(), "rk_both".to_string()),
             ("at://p/remoteonly".to_string(), "rk_remote".to_string()),

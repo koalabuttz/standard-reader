@@ -21,9 +21,12 @@ impl ContentDecoder for Pckt {
     }
 
     fn decode(&self, content: &Value, ctx: &DecodeCtx) -> Option<RichDoc> {
-        // Large content (>20 KB) is stored in an external blob with empty/absent
-        // `items`. That needs a blob fetch we can't do here, so defer to the
-        // `textContent` fallback by returning None.
+        // Large content (Pckt externalizes it past ~20 KB) lives in a separate blob with
+        // empty/absent `items`. The fetch can't happen here (decoders are pure), so
+        // `read::get_document` fetches the blob and splices the array into `items` *before*
+        // decoding (see [`external_content_cid`]); by the time we run, `items` is populated.
+        // If it's still empty (no blob, or the fetch failed), defer to the `textContent`
+        // fallback by returning None.
         let items = content.get("items").and_then(Value::as_array)?;
         if items.is_empty() {
             return None;
@@ -32,6 +35,26 @@ impl ContentDecoder for Pckt {
             blocks: blocks(items, ctx),
         })
     }
+}
+
+/// The CID of Pckt's **external content blob**, when the block list is externalized. Large
+/// `blog.pckt.content` records leave `items` empty/absent and store the `[blog.pckt.block.*]`
+/// JSON array in a `text/plain` blob (`content.blob`). Returns the blob CID for that case, else
+/// `None` (the inline `items` case). The fetch + splice happens in `read::get_document` — the
+/// same two-phase pattern as `#contentRef` and `gallery`, keeping the decoder pure.
+pub(crate) fn external_content_cid(content: &Value) -> Option<&str> {
+    if content.get("$type").and_then(Value::as_str) != Some("blog.pckt.content") {
+        return None;
+    }
+    // Only when there's nothing inline to decode (absent or empty `items`).
+    let inline = content
+        .get("items")
+        .and_then(Value::as_array)
+        .is_some_and(|i| !i.is_empty());
+    if inline {
+        return None;
+    }
+    content.get("blob")?.get("ref")?.get("$link")?.as_str()
 }
 
 fn blocks(items: &[Value], ctx: &DecodeCtx) -> Vec<Block> {
@@ -214,6 +237,29 @@ mod tests {
                 uri: "at://did:plc:abc/blog.pckt.gallery/3rk".into()
             }]
         );
+    }
+
+    #[test]
+    fn external_content_cid_detects_the_blob_shape() {
+        // Large-document shape: empty `items`, the block array in a text/plain blob.
+        let externalized = serde_json::json!({
+            "$type": "blog.pckt.content",
+            "items": [],
+            "blob": { "$type": "blob", "ref": { "$link": "bafblockarray" }, "mimeType": "text/plain", "size": 114000 },
+            "references": []
+        });
+        assert_eq!(external_content_cid(&externalized), Some("bafblockarray"));
+
+        // Inline `items` → nothing to fetch.
+        let inline = serde_json::json!({
+            "$type": "blog.pckt.content",
+            "items": [{ "$type": "blog.pckt.block.text", "plaintext": "hi" }]
+        });
+        assert_eq!(external_content_cid(&inline), None);
+
+        // A different publisher's content is never Pckt's blob.
+        let other = serde_json::json!({ "$type": "pub.leaflet.content", "blob": { "ref": { "$link": "x" } } });
+        assert_eq!(external_content_cid(&other), None);
     }
 
     #[test]

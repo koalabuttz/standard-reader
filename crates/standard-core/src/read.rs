@@ -17,7 +17,7 @@ use serde_json::Value;
 
 use crate::atp::{AtUri, Transport, xrpc};
 use crate::decode::image::blob_image;
-use crate::decode::{DecodeCtx, Registry, content_ref, gallery_images};
+use crate::decode::{DecodeCtx, Registry, content_ref, external_content_cid, gallery_images};
 use crate::model::{Block, Document, Image, Publication, RichDoc, Subscription};
 
 /// A resolved repo: its DID and the PDS that hosts it.
@@ -452,7 +452,25 @@ pub fn get_document<T: Transport>(
     let ctx = DecodeCtx {
         repo_did: &doc_uri.did,
     };
-    let content = record.value.get("content");
+    let raw_content = record.value.get("content");
+
+    // Pckt large-document shape: the `[blog.pckt.block.*]` array is externalized to a
+    // `text/plain` blob with empty `items`. Fetch it and splice the array into `items` so the
+    // normal decode path runs (the decoder is pure). On failure we fall through with the empty
+    // content, which degrades to the `textContent` fallback — same as before.
+    let spliced: Option<Value> = match raw_content.and_then(external_content_cid) {
+        Some(cid) => {
+            let blob_url = xrpc::get_blob(pds, &doc_uri.did, cid);
+            let items = parse_json(&get(t, &blob_url)?)?;
+            let mut c = raw_content.cloned().unwrap_or(Value::Null);
+            if let Some(obj) = c.as_object_mut() {
+                obj.insert("items".to_string(), items);
+            }
+            Some(c)
+        }
+        None => None,
+    };
+    let content = spliced.as_ref().or(raw_content);
 
     let body = match content.and_then(content_ref) {
         // Two-phase: the content points at another record; fetch and decode that.

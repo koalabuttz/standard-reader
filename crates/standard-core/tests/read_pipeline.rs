@@ -264,6 +264,73 @@ fn pckt_gallery_ref_resolves_to_image_grid() {
 }
 
 #[test]
+fn pckt_externalized_content_blob_is_fetched_and_decoded() {
+    // Pckt's large-document shape (the "bee" script, ~114 KB): `items` is empty and the real
+    // `[blog.pckt.block.*]` array lives in a text/plain blob. get_document must fetch that blob,
+    // splice the array in, and decode it — NOT fall back to flat `textContent` (whose `\n`s
+    // render as one run-on block).
+    let did = "did:plc:beepub";
+    let pds = "https://margin.cafe";
+    let rkey = "3mbnc7czrc2gr";
+    let cid = "bafblockarray";
+
+    let doc_record = serde_json::json!({
+        "uri": format!("at://{did}/site.standard.document/{rkey}"),
+        "value": {
+            "$type": "site.standard.document",
+            "title": "bee",
+            "site": format!("at://{did}/site.standard.publication/3pub"),
+            "publishedAt": "2026-01-05T01:33:08Z",
+            // The fallback the bug exposed — present, but must NOT be used now.
+            "textContent": "bee\nline two\nline three",
+            "content": {
+                "$type": "blog.pckt.content",
+                "items": [],
+                "blob": { "$type": "blob", "ref": { "$link": cid }, "mimeType": "text/plain", "size": 114000 },
+                "references": []
+            }
+        }
+    });
+    // What the content blob holds: the externalized block array.
+    let block_array = serde_json::json!([
+        { "$type": "blog.pckt.block.text", "plaintext": "bee" },
+        { "$type": "blog.pckt.block.text", "plaintext": "line two" },
+        { "$type": "blog.pckt.block.text", "plaintext": "line three" }
+    ]);
+
+    let mut routes: HashMap<String, Vec<u8>> = HashMap::new();
+    routes.insert(
+        xrpc::get_record(pds, did, "site.standard.document", rkey),
+        serde_json::to_vec(&doc_record).unwrap(),
+    );
+    routes.insert(
+        xrpc::get_blob(pds, did, cid),
+        serde_json::to_vec(&block_array).unwrap(),
+    );
+    let t = MockTransport { responses: routes };
+
+    let registry = Registry::with_defaults();
+    let uri = AtUri::parse(&format!("at://{did}/site.standard.document/{rkey}")).unwrap();
+    let (meta, body) = read::get_document(&t, &registry, &uri, pds).unwrap();
+
+    assert_eq!(meta.title, "bee");
+    let paras: Vec<&Block> = body
+        .blocks
+        .iter()
+        .filter(|b| matches!(b, Block::Paragraph(_)))
+        .collect();
+    assert_eq!(
+        paras.len(),
+        3,
+        "each externalized text block becomes its own paragraph (not one run-on plaintext block)"
+    );
+    assert!(
+        matches!(&body.blocks[0], Block::Paragraph(c) if c == &[Inline::Text("bee".into())]),
+        "first block is the decoded first line, proving the blob was fetched + decoded"
+    );
+}
+
+#[test]
 fn greengale_two_phase_contentref_fetches_referenced_record() {
     let t = mock();
     let registry = Registry::with_defaults();

@@ -45,7 +45,9 @@ pub use unthread::Unthread;
 
 // Resolving a Pckt `gallery` block's referenced record into images is decoder-specific but
 // driven from the read layer (which does the fetch); expose just that helper, not the module.
-pub(crate) use pckt::gallery_images;
+// Likewise `external_content_cid`: Pckt externalizes large block lists to a blob the read
+// layer fetches before decode.
+pub(crate) use pckt::{external_content_cid, gallery_images};
 
 /// Context a decoder needs beyond the `content` value itself.
 pub struct DecodeCtx<'a> {
@@ -123,7 +125,8 @@ pub fn content_ref(content: &Value) -> Option<AtUri> {
     AtUri::parse(content.get("uri")?.as_str()?)
 }
 
-/// Fallback: split flat `textContent` into paragraphs on blank lines. Always works.
+/// Fallback: split flat `textContent` into paragraphs on blank lines, keeping single
+/// newlines *within* a paragraph as hard line breaks. Always works.
 pub struct Plaintext;
 
 impl Plaintext {
@@ -132,10 +135,25 @@ impl Plaintext {
             .split("\n\n")
             .map(str::trim)
             .filter(|p| !p.is_empty())
-            .map(|p| Block::Paragraph(vec![Inline::Text(p.to_string())]))
+            .map(|p| Block::Paragraph(with_line_breaks(p)))
             .collect();
         RichDoc { blocks }
     }
+}
+
+/// Inline content for one fallback paragraph: single `\n`s become [`Inline::LineBreak`] so a
+/// `textContent` that separates lines with one newline (e.g. the bee-script Pckt doc, when it
+/// degrades to the fallback) renders as separate lines instead of one run-on block — the reader
+/// only breaks on `LineBreak`, never on a raw `\n` inside a `Text` span.
+fn with_line_breaks(paragraph: &str) -> Vec<Inline> {
+    let mut inlines = Vec::new();
+    for (i, line) in paragraph.split('\n').enumerate() {
+        if i > 0 {
+            inlines.push(Inline::LineBreak);
+        }
+        inlines.push(Inline::Text(line.to_string()));
+    }
+    inlines
 }
 
 #[cfg(test)]
@@ -150,6 +168,23 @@ mod tests {
     fn plaintext_fallback_splits_paragraphs() {
         let doc = Registry::with_defaults().decode(None, Some("hello world\n\nsecond para"), &CTX);
         assert_eq!(doc.blocks.len(), 2);
+    }
+
+    #[test]
+    fn plaintext_fallback_keeps_single_newlines_as_line_breaks() {
+        // Single-`\n` lines (the bee-script shape) stay one paragraph but become separate
+        // rendered lines via LineBreak — not one run-on Text span.
+        let doc = Plaintext.from_text("line one\nline two\nline three");
+        assert_eq!(
+            doc.blocks,
+            vec![Block::Paragraph(vec![
+                Inline::Text("line one".into()),
+                Inline::LineBreak,
+                Inline::Text("line two".into()),
+                Inline::LineBreak,
+                Inline::Text("line three".into()),
+            ])]
+        );
     }
 
     #[test]

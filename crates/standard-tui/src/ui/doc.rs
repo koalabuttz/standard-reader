@@ -5,8 +5,15 @@
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use standard_core::model::{Block, Inline};
+
+/// Display width (terminal columns) of a string — counts wide glyphs (CJK, many emoji) as 2,
+/// so table layout lines up instead of measuring by `char` count.
+fn disp_width(s: &str) -> usize {
+    UnicodeWidthStr::width(s)
+}
 
 use super::theme::Theme;
 
@@ -76,12 +83,22 @@ fn block_lines(block: &Block, theme: &Theme, out: &mut Vec<Line<'static>>) {
             }
         }
         Block::Code { lang, text } => {
-            let label = lang.clone().unwrap_or_default();
-            out.push(Line::styled(format!("```{label}"), theme.dim_style()));
+            // A left-framed block: a `╭─ lang` header, a border gutter down each code line over
+            // the code background, and a `╰─` footer. Left-only framing needs no terminal width
+            // and survives wrapping cleanly (no right edge to misalign) — like the quote bar.
+            let gutter = Style::default().fg(theme.border);
+            let header = match lang {
+                Some(l) if !l.is_empty() => format!("╭─ {l}"),
+                _ => "╭─".to_string(),
+            };
+            out.push(Line::styled(header, gutter));
             for l in text.lines() {
-                out.push(Line::styled(l.to_string(), theme.code_block()));
+                out.push(Line::from(vec![
+                    Span::styled("│ ", gutter),
+                    Span::styled(l.to_string(), theme.code_block()),
+                ]));
             }
-            out.push(Line::styled("```", theme.dim_style()));
+            out.push(Line::styled("╰─", gutter));
         }
         Block::Image(img) => {
             let label = if img.alt.is_empty() {
@@ -168,7 +185,7 @@ fn table_lines(
     let mut widths = vec![1usize; ncols];
     for row in &grid {
         for (i, cell) in row.iter().enumerate() {
-            widths[i] = widths[i].max(cell.chars().count().min(MAX_COL));
+            widths[i] = widths[i].max(disp_width(cell).min(MAX_COL));
         }
     }
 
@@ -207,8 +224,11 @@ fn row_line(
     for (i, w) in widths.iter().enumerate() {
         spans.push(Span::styled("│ ", border));
         let text = cells.get(i).map(String::as_str).unwrap_or("");
+        let cell = truncate(text, *w);
+        // Pad by *display* width: Rust's `{:<w$}` counts chars, so a wide glyph would under-pad.
+        let pad = w.saturating_sub(disp_width(&cell));
         spans.push(Span::styled(
-            format!("{:<width$}", truncate(text, *w), width = w),
+            format!("{cell}{}", " ".repeat(pad)),
             cell_style,
         ));
         spans.push(Span::raw(" "));
@@ -218,14 +238,25 @@ fn row_line(
 }
 
 fn truncate(s: &str, width: usize) -> String {
-    if s.chars().count() <= width {
-        s.to_string()
-    } else if width == 0 {
-        String::new()
-    } else {
-        let kept: String = s.chars().take(width - 1).collect();
-        format!("{kept}…")
+    if disp_width(s) <= width {
+        return s.to_string();
     }
+    if width == 0 {
+        return String::new();
+    }
+    // Keep whole chars whose cumulative display width leaves a column for the `…` (width 1).
+    let mut kept = String::new();
+    let mut used = 0usize;
+    for ch in s.chars() {
+        let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used + cw > width - 1 {
+            break;
+        }
+        kept.push(ch);
+        used += cw;
+    }
+    kept.push('…');
+    kept
 }
 
 /// Flatten inline content to plain text (for table cells).
@@ -374,5 +405,48 @@ mod tests {
         // box-drawing borders + the header/cell text are present
         assert!(out.contains('┌') && out.contains('┼') && out.contains('└'));
         assert!(out.contains("Name") && out.contains("Qty") && out.contains("apples"));
+    }
+
+    #[test]
+    fn code_block_has_gutter_and_lang_header() {
+        let theme = Theme::modern_dark();
+        let doc = RichDoc {
+            blocks: vec![Block::Code {
+                lang: Some("rust".into()),
+                text: "let x = 1;\nx + 1".into(),
+            }],
+        };
+        let out = flat(&blocks_to_text(&doc.blocks, &theme));
+        assert!(out.contains("╭─ rust"), "lang header: {out}");
+        assert!(
+            out.contains("│ let x = 1;") && out.contains("│ x + 1"),
+            "gutter: {out}"
+        );
+        assert!(out.contains("╰─"), "footer: {out}");
+    }
+
+    #[test]
+    fn table_columns_align_with_wide_glyphs() {
+        let theme = Theme::modern_dark();
+        // A CJK header cell ("名前" is 4 display cols across 2 chars) — a char-count layout would
+        // under-pad it and misalign the column borders.
+        let doc = RichDoc {
+            blocks: vec![Block::Table {
+                head: vec![
+                    vec![Inline::Text("名前".into())],
+                    vec![Inline::Text("Qty".into())],
+                ],
+                rows: vec![vec![
+                    vec![Inline::Text("apples".into())],
+                    vec![Inline::Text("3".into())],
+                ]],
+            }],
+        };
+        let rendered = flat(&blocks_to_text(&doc.blocks, &theme));
+        let header = rendered.lines().find(|l| l.contains("名前")).unwrap();
+        let body = rendered.lines().find(|l| l.contains("apples")).unwrap();
+        // Aligned columns ⇒ equal display width and a closing border in the same column.
+        assert_eq!(disp_width(header), disp_width(body));
+        assert!(header.ends_with('│') && body.ends_with('│'));
     }
 }

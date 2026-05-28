@@ -2823,6 +2823,7 @@ dependencies = [
  "serde_json",
  "standard-core",
  "tokio",
+ "unicode-width",
 ]
 
 [[package]]

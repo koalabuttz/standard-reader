@@ -134,9 +134,7 @@ fn block_lines(block: &Block, theme: &Theme, out: &mut Vec<Line<'static>>) {
             Style::default().fg(theme.border),
         )),
         // Resolved to an ImageGrid in `read::get_document`; only reached if that fetch failed.
-        Block::GalleryRef { .. } => {
-            out.push(Line::styled("🖼  (gallery)", theme.dim_style()))
-        }
+        Block::GalleryRef { .. } => out.push(Line::styled("🖼  (gallery)", theme.dim_style())),
     }
 }
 

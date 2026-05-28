@@ -203,7 +203,15 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
     if app.show_images
         && let Some(src) = &app.reading_cover
     {
-        push_image(&mut segs, &mut y, image_key(src), "cover".into(), 0, false, true);
+        push_image(
+            &mut segs,
+            &mut y,
+            image_key(src),
+            "cover".into(),
+            0,
+            false,
+            true,
+        );
     }
 
     if let Some(body) = &app.reading {
@@ -212,7 +220,15 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
             match block {
                 DocBlock::Image(img) if app.show_images => {
                     flush_text(&mut run, theme, width, &mut segs, &mut y);
-                    push_image(&mut segs, &mut y, image_key(&img.source), img.alt.clone(), 0, false, true);
+                    push_image(
+                        &mut segs,
+                        &mut y,
+                        image_key(&img.source),
+                        img.alt.clone(),
+                        0,
+                        false,
+                        true,
+                    );
                 }
                 // A quote/list with image(s) nested in it: render the de-imaged container as text
                 // (its bar/markers via doc.rs), then the images framed in place — so a photo
@@ -357,9 +373,9 @@ fn strip_block(block: DocBlock, images: &mut Vec<Image>) -> DocBlock {
 /// Whether a de-imaged container still has text worth rendering (else only its images remain).
 fn container_has_text(block: &DocBlock) -> bool {
     match block {
-        DocBlock::Paragraph(c) | DocBlock::Heading { content: c, .. } => {
-            c.iter().any(|i| !matches!(i, Inline::Text(t) if t.trim().is_empty()))
-        }
+        DocBlock::Paragraph(c) | DocBlock::Heading { content: c, .. } => c
+            .iter()
+            .any(|i| !matches!(i, Inline::Text(t) if t.trim().is_empty())),
         DocBlock::Quote(blocks) => blocks.iter().any(container_has_text),
         DocBlock::List { items, .. } => items.iter().flatten().any(container_has_text),
         _ => true,
@@ -500,12 +516,18 @@ fn grid_layout(app: &App, images: &[Image], width: u16, vh: u16) -> (Vec<GridCel
     for row in sized.chunks(cols) {
         // Pack the row's images edge-to-edge (one-column gutter) and centre the whole row,
         // so height-capped images sit side by side instead of floating in wide cells.
-        let row_width: u16 =
-            row.iter().map(|(_, w, _)| *w).sum::<u16>() + (row.len() as u16).saturating_sub(1) * GAP_X;
+        let row_width: u16 = row.iter().map(|(_, w, _)| *w).sum::<u16>()
+            + (row.len() as u16).saturating_sub(1) * GAP_X;
         let mut x = width.saturating_sub(row_width) / 2;
         let mut row_h = 0u16;
         for (key, w, h) in row {
-            cells.push(GridCell { key: key.clone(), dx: x, dy: row_top, w: *w, h: *h });
+            cells.push(GridCell {
+                key: key.clone(),
+                dx: x,
+                dy: row_top,
+                w: *w,
+                h: *h,
+            });
             x += w + GAP_X;
             row_h = row_h.max(*h);
         }
@@ -566,7 +588,10 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                     };
                     let y =
                         (top as i32 - scroll as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                    f.render_widget(SlicedImage::new(sliced, SignedPosition::from((x, y))), inner);
+                    f.render_widget(
+                        SlicedImage::new(sliced, SignedPosition::from((x, y))),
+                        inner,
+                    );
                     continue;
                 }
                 let label = if app.images.contains_key(key) {

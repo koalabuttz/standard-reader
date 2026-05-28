@@ -167,7 +167,8 @@ mod tests {
             "$type": "at.unthread.content",
             "content": "plain then *emphasis*"
         });
-        let doc = Registry::with_defaults().decode(Some(&content), Some("plain then emphasis"), &CTX);
+        let doc =
+            Registry::with_defaults().decode(Some(&content), Some("plain then emphasis"), &CTX);
         assert_eq!(
             doc.blocks,
             vec![Block::Paragraph(vec![

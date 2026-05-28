@@ -466,8 +466,11 @@ impl App {
     fn sync_prompt_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('s') => {
-                let uris: Vec<String> =
-                    self.sync_prompt.iter().map(|(uri, _)| uri.clone()).collect();
+                let uris: Vec<String> = self
+                    .sync_prompt
+                    .iter()
+                    .map(|(uri, _)| uri.clone())
+                    .collect();
                 self.send(ToWorker::SubscribeLocal(uris));
                 self.dismiss_sync_prompt();
             }

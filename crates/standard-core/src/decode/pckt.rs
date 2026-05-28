@@ -83,7 +83,9 @@ fn block(item: &Value, ctx: &DecodeCtx) -> Vec<Block> {
         "gallery" => item
             .get("ref")
             .and_then(Value::as_str)
-            .map(|uri| Block::GalleryRef { uri: uri.to_string() })
+            .map(|uri| Block::GalleryRef {
+                uri: uri.to_string(),
+            })
             .into_iter()
             .collect(),
         // Other unmodeled containers degrade by flattening their nested `content`.

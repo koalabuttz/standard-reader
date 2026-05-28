@@ -63,7 +63,8 @@ fn draw_sidebar(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
         Some(a) => format!(" @{} ", a.handle),
         None => " not logged in · L ".into(),
     };
-    let block = panel(theme, "Feeds", focused).title_bottom(Span::styled(account, theme.dim_style()));
+    let block =
+        panel(theme, "Feeds", focused).title_bottom(Span::styled(account, theme.dim_style()));
     if app.feeds.is_empty() {
         let hint = Paragraph::new("No feeds yet.\n\nPress a to add a blog\nby handle.")
             .style(theme.dim_style())
@@ -141,7 +142,9 @@ fn draw_footer(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     };
     let hints: String = match app.mode {
         Mode::Browse => {
-            format!("a add · ⇥ focus · enter open · o browser · / search · {login_hint} · : palette · ? help")
+            format!(
+                "a add · ⇥ focus · enter open · o browser · / search · {login_hint} · : palette · ? help"
+            )
         }
         Mode::DocList => "↑↓ select · enter read · o browser · esc back · / search".into(),
         Mode::Search | Mode::AddFeed | Mode::SignIn => "type · enter submit · esc cancel".into(),
@@ -289,7 +292,9 @@ fn draw_sync_prompt(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
         Span::styled(" later", theme.body()),
     ]));
     f.render_widget(
-        Paragraph::new(lines).block(block).wrap(Wrap { trim: false }),
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
         popup,
     );
 }

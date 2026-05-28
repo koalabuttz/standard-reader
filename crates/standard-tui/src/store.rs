@@ -563,11 +563,18 @@ mod tests {
         let mut follows = store.follows().unwrap();
         follows.sort();
         assert_eq!(follows, ["at://d/p/1", "at://d/p/2"]);
-        assert_eq!(store.follow_rkey("at://d/p/1").unwrap(), None, "rkey unknown post-migrate");
+        assert_eq!(
+            store.follow_rkey("at://d/p/1").unwrap(),
+            None,
+            "rkey unknown post-migrate"
+        );
 
         // The table is now the new type — rkeys can be recorded.
         store.set_follow_rkey("at://d/p/1", "3kabc").unwrap();
-        assert_eq!(store.follow_rkey("at://d/p/1").unwrap().as_deref(), Some("3kabc"));
+        assert_eq!(
+            store.follow_rkey("at://d/p/1").unwrap().as_deref(),
+            Some("3kabc")
+        );
     }
 
     #[test]
@@ -579,11 +586,17 @@ mod tests {
 
         // Pushing/importing records the rkey…
         s.set_follow_rkey("at://d/p/1", "3kabc").unwrap();
-        assert_eq!(s.follow_rkey("at://d/p/1").unwrap().as_deref(), Some("3kabc"));
+        assert_eq!(
+            s.follow_rkey("at://d/p/1").unwrap().as_deref(),
+            Some("3kabc")
+        );
 
         // …and a redundant follow() must not clobber it.
         s.follow("at://d/p/1").unwrap();
-        assert_eq!(s.follow_rkey("at://d/p/1").unwrap().as_deref(), Some("3kabc"));
+        assert_eq!(
+            s.follow_rkey("at://d/p/1").unwrap().as_deref(),
+            Some("3kabc")
+        );
 
         // Unfollow drops both membership and rkey.
         s.unfollow("at://d/p/1").unwrap();

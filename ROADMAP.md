@@ -41,7 +41,8 @@ Sequenced so each step is runnable on top of the last:
 
 - [ ] Author `basicTheme` toggle (uniform vs. author's styling) — both render the same `RichDoc`, the mode only changes theming.
 - [x] Search UI over the `textContent` index (in the shell; `/` searches the redb inverted index).
-- [ ] Background sync (incremental via `listRecords` cursors). Mark-read exists (on open + `m`); unread badges in the list are still TODO.
+- [x] **Incremental refresh** — a feed backfills its full history on first fetch (`listRecords` paginated to exhaustion, no page cap), then refreshes walk newest-first and stop at already-cached records via the per-publication `sync_cursor` high-water mark. Plus live-path hardening: connect/request timeouts on both HTTP clients, and a transient restore failure no longer wipes the session.
+- [ ] *Automatic* background sync (periodic / on a timer, not just on `r`/open) + unread badges in the list (mark-read exists, on open + `m`).
 - [x] `Block::Table` (Pckt tables → box-drawing grid) and `Block::Callout` (Offprint callouts → a tinted box with the author's colour + emoji badge), both first-class in the model and reader.
 
 ## Later
@@ -54,4 +55,4 @@ Sequenced so each step is runnable on top of the last:
 
 ## Immediate next step
 
-**First-launch layout picker** + alternate layouts (feed-first / three-pane) and theme/accent customization — the one v0.1 item still open. Then v0.2: the author-`basicTheme` toggle, and background sync with unread badges in the list. Deferred polish: moving the one-time image encode off the UI thread (`ThreadProtocol`).
+**First-launch layout picker** + alternate layouts (feed-first / three-pane) and theme/accent customization — the one v0.1 item still open. Then v0.2: the author-`basicTheme` toggle, and *automatic* background sync with unread badges in the list (incremental refresh itself now landed). Deferred polish: moving the one-time image encode off the UI thread (`ThreadProtocol`).

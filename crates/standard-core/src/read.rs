@@ -283,6 +283,53 @@ pub fn resolve_identity<T: Transport>(t: &T, handle_or_did: &str) -> Result<Iden
     Ok(Identity { did, pds })
 }
 
+/// Discover a publication's AT-URI from its **web page**. Every standard.site page advertises
+/// its record with a discovery `<link>`:
+///
+/// ```html
+/// <link rel="site.standard.publication" href="at://did:plc:…/site.standard.publication/…"/>
+/// ```
+///
+/// This is the resolution path for a publisher **URL whose host is not an atproto handle** —
+/// e.g. a `*.leaflet.pub` subdomain, which serves no `.well-known/atproto-did` and has no
+/// `_atproto` DNS record, so [`resolve_did`] can't reach it. From the AT-URI the caller takes
+/// the DID and resolves the repo directly (no aggregator). Returns `None` if the page carries
+/// no such tag (not a standard.site publication).
+pub fn discover_publication_uri<T: Transport>(
+    t: &T,
+    url: &str,
+) -> Result<Option<String>, ReadError> {
+    let html = String::from_utf8_lossy(&get(t, url)?).into_owned();
+    Ok(extract_publication_link(&html))
+}
+
+/// Pull the publication AT-URI out of a page's `<link>` tags: the first `<link>` whose `href`
+/// is an `at://…/site.standard.publication/…` URI. Tolerant of attribute order and quote
+/// style; a targeted scan beats pulling in an HTML parser for one well-formed discovery tag.
+fn extract_publication_link(html: &str) -> Option<String> {
+    const COLLECTION: &str = "site.standard.publication";
+    html.split("<link")
+        .skip(1)
+        .filter_map(|frag| {
+            let tag = &frag[..frag.find('>').unwrap_or(frag.len())];
+            tag_attr(tag, "href")
+        })
+        .find(|href| href.starts_with("at://") && href.contains(COLLECTION))
+        .map(str::to_string)
+}
+
+/// Read a `name="value"` (or `name='value'`) attribute out of a tag's inner text.
+fn tag_attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let key = format!("{name}=");
+    let after = &tag[tag.find(&key)? + key.len()..];
+    let quote = after.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let rest = &after[1..];
+    rest.find(quote).map(|end| &rest[..end])
+}
+
 // --- Orchestration ---------------------------------------------------------------
 
 /// Follow `listRecords` cursors to fetch **every** record of a collection (newest-first per the
@@ -654,5 +701,43 @@ mod tests {
         routes.insert(page2, br#"{"records":[],"cursor":"pg3"}"#.to_vec());
         let docs = list_all_documents(&MockTransport(routes), &repo).unwrap();
         assert_eq!(docs.len(), 1);
+    }
+
+    #[test]
+    fn extracts_publication_uri_from_a_discovery_link() {
+        // The shape Leaflet (and other standard.site publishers) serve in <head>.
+        let html = r#"<head>
+            <link rel="alternate" type="application/rss+xml" href="https://x.leaflet.pub/rss"/>
+            <link rel="alternate" href="at://did:plc:rnpkyqnmsw4ipey6eotbdnnf/site.standard.publication/3lyiajoe55c2b"/>
+            <link rel="site.standard.publication" href="at://did:plc:rnpkyqnmsw4ipey6eotbdnnf/site.standard.publication/3lyiajoe55c2b"/>
+        </head>"#;
+        assert_eq!(
+            extract_publication_link(html).as_deref(),
+            Some("at://did:plc:rnpkyqnmsw4ipey6eotbdnnf/site.standard.publication/3lyiajoe55c2b")
+        );
+    }
+
+    #[test]
+    fn extract_publication_link_ignores_non_publication_links() {
+        // Only RSS/web alternates, no atproto publication link → nothing to discover.
+        let html = r#"<link rel="alternate" type="application/json" href="https://x.leaflet.pub/json"/>
+            <link rel="icon" href="/favicon.ico"/>"#;
+        assert_eq!(extract_publication_link(html), None);
+    }
+
+    #[test]
+    fn discover_publication_uri_fetches_then_extracts() {
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            "https://retrobailey.leaflet.pub/".to_string(),
+            br#"<html><head><link rel="site.standard.publication" href="at://did:plc:rnpkyqnmsw4ipey6eotbdnnf/site.standard.publication/3lyiajoe55c2b"/></head></html>"#.to_vec(),
+        );
+        let got =
+            discover_publication_uri(&MockTransport(routes), "https://retrobailey.leaflet.pub/")
+                .unwrap();
+        assert_eq!(
+            got.as_deref(),
+            Some("at://did:plc:rnpkyqnmsw4ipey6eotbdnnf/site.standard.publication/3lyiajoe55c2b")
+        );
     }
 }

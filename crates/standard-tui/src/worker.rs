@@ -266,10 +266,26 @@ impl Ctx {
     }
 
     /// Resolve a handle/DID/URL to its publications, follow + cache them, fetch their docs.
+    ///
+    /// A **handle/DID** subscribes to the whole repo — every publication it publishes. A
+    /// **publisher URL** names one specific publication (a repo can host several: Bailey's
+    /// DID owns `retrobailey.leaflet.pub` *and* two others), so it follows just that one.
     fn add_feed(&mut self, input: &str) -> Done {
         let target = normalize(input);
-        let identity = read::resolve_identity(&self.transport, &target)?;
-        let publications = read::list_publications(&self.transport, &identity)?;
+        let (identity, publications) = match read::resolve_identity(&self.transport, &target) {
+            Ok(identity) => {
+                let pubs = read::list_publications(&self.transport, &identity)?;
+                (identity, pubs)
+            }
+            // Not an atproto handle. If this is a publisher URL (e.g. a *.leaflet.pub
+            // subdomain — no well-known DID, no _atproto DNS), discover the one publication
+            // the page advertises via its `<link rel="site.standard.publication">` and follow
+            // just that — not every publication in the owner's repo.
+            Err(handle_err) => match self.resolve_via_page(input, &target) {
+                Some((identity, publication)) => (identity, vec![publication]),
+                None => return Err(handle_err.into()),
+            },
+        };
         if publications.is_empty() {
             self.send(FromWorker::Status(format!(
                 "no publications found at {target}"
@@ -299,6 +315,29 @@ impl Ctx {
             format!("followed {added} publication(s) from {target}")
         }));
         self.load_home()
+    }
+
+    /// Resolve a publisher URL to its `(Identity, Publication)` via the page's standard.site
+    /// discovery `<link>`. The fallback when handle resolution fails: a vanity host like
+    /// `retrobailey.leaflet.pub` is no atproto handle, but its page advertises the AT-URI of
+    /// the one publication it serves. `None` if the input isn't a fetchable URL or the page
+    /// advertises no publication.
+    fn resolve_via_page(&self, input: &str, host: &str) -> Option<(read::Identity, Publication)> {
+        if host.starts_with("did:") {
+            return None; // a DID that failed to resolve isn't a web page to scrape
+        }
+        let url = if input.trim_start().starts_with("http") {
+            input.trim().to_string()
+        } else {
+            format!("https://{host}/")
+        };
+        let at_uri = read::discover_publication_uri(&self.transport, &url)
+            .ok()
+            .flatten()?;
+        let uri = AtUri::parse(&at_uri)?;
+        // Fetch just that publication record (resolves its DID → PDS along the way).
+        let (publication, identity) = read::get_publication(&self.transport, &uri).ok()?;
+        Some((identity, publication))
     }
 
     /// A feed's documents: cached first (instant), then a network refresh.

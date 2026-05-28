@@ -226,6 +226,8 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
         ("r", "refresh the selected feed"),
         ("d", "unfollow the selected feed"),
         ("o", "open this post in your browser"),
+        ("n / N", "focus next / prev link in the post"),
+        ("Enter / click", "open the focused / clicked link"),
         ("i", "toggle images (text-only mode)"),
         ("m", "mark the open post read"),
         ("L", "log in / out (atproto)"),

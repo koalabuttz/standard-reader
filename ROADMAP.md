@@ -2,9 +2,9 @@
 
 A lean TUI reader for [standard.site](https://standard.site) (long-form on the AT Protocol). The engine (`standard-core`) is portable by design so it can grow new frontends — a desktop `ratatui` TUI now, a **PS Vita** frontend later — without a rewrite. See `CLAUDE.md` for architecture.
 
-## Status — 2026-05-27: an interactive reader, with images and sign-in
+## Status — 2026-05-28: an interactive reader, with images and sign-in
 
-Workspace builds; the suite is green (78 tests across both crates: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, the redb cache round-trip, and the TUI's renderer/state/`TestBackend` tests, the OAuth loopback parser, and the subscription sync-diff). `sr` launches a **`ratatui` reader** — add a blog by handle (a local follow-list persisted in redb), browse the sidebar → document list → reader, search, command palette, mouse. The reader is a **block-flow** that renders real inline + cover images (`ratatui-image`, iTerm2 graphics where supported), all over a worker thread with an offline cache. Reading needs no auth; **`L` signs in via OAuth** to mirror the follow-list to atproto subscriptions. A first-launch layout picker is next.
+Workspace builds; the suite is green (89 tests across both crates: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, the redb cache round-trip, and the TUI's renderer/state/`TestBackend` tests, the OAuth loopback parser, and the subscription sync-diff). `sr` launches a **`ratatui` reader** — add a blog by handle (a local follow-list persisted in redb), browse the sidebar → document list → reader, search, command palette, mouse. The reader is a **block-flow** that renders real inline + cover images (`ratatui-image`, iTerm2 graphics where supported), all over a worker thread with an offline cache. Reading needs no auth; **`L` signs in via OAuth** to mirror the follow-list to atproto subscriptions. A first-launch layout picker is next.
 
 **Done (real & tested):**
 - [x] Cargo workspace + the portable core/frontend split
@@ -44,6 +44,7 @@ Sequenced so each step is runnable on top of the last:
 - [x] **Incremental refresh** — a feed backfills its full history on first fetch (`listRecords` paginated to exhaustion, no page cap), then refreshes walk newest-first and stop at already-cached records via the per-publication `sync_cursor` high-water mark. Plus live-path hardening: connect/request timeouts on both HTTP clients, and a transient restore failure no longer wipes the session.
 - [ ] *Automatic* background sync (periodic / on a timer, not just on `r`/open) + unread badges in the list (mark-read exists, on open + `m`).
 - [x] `Block::Table` (Pckt tables → box-drawing grid) and `Block::Callout` (Offprint callouts → a tinted box with the author's colour + emoji badge), both first-class in the model and reader.
+- [x] **Reader rendering polish** — interactive in-post hyperlinks (keyboard `n`/`N` to cycle + `Enter`, plus mouse click), code blocks framed with a left gutter + language label, and display-width-correct tables / full-width rules (`unicode-width`). Link rects are read back from a temp-buffer render of each line, so click targets match ratatui's actual word-wrap even when a link wraps across rows.
 
 ## Later
 

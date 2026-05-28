@@ -10,13 +10,16 @@
 
 use image::DynamicImage;
 use ratatui::Frame;
+use ratatui::buffer::{Buffer, Cell};
 use ratatui::layout::{Alignment, Rect, Size};
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Paragraph, Widget, Wrap};
 use ratatui_image::sliced::{SignedPosition, SlicedImage, SlicedProtocol};
 
 use standard_core::model::{Block as DocBlock, Image, Inline};
+
+use crate::app::LinkRect;
 
 /// Hard ceiling on image height (rows), so a tall/portrait image never dominates the pane.
 const MAX_IMAGE_ROWS: u16 = 20;
@@ -123,11 +126,217 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
         return;
     }
 
-    let (segments, total) = build(app, theme, inner.width, inner.height);
+    let (mut segments, total) = build(app, theme, inner.width, inner.height);
+    // Locate the document's links (for click hit-testing) and brighten the focused one.
+    app.link_rects =
+        locate_and_highlight_links(&mut segments, app.focused_link, theme, inner.width);
+    // Bring the focused link into view if a keyboard focus change asked for it.
+    if app.scroll_to_focused {
+        if let Some(fi) = app.focused_link
+            && let Some(r) = app.link_rects.iter().find(|r| r.idx == fi)
+        {
+            if r.row < app.scroll {
+                app.scroll = r.row;
+            } else if r.row >= app.scroll + inner.height {
+                app.scroll = r.row.saturating_sub(inner.height / 2);
+            }
+        }
+        app.scroll_to_focused = false;
+    }
     app.scroll = app.scroll.min(total.saturating_sub(inner.height));
     let scroll = app.scroll;
     ensure_slices(app, &segments);
     render(f, app, theme, inner, &segments, scroll);
+}
+
+/// Find each hyperlink's on-screen rectangle(s) (virtual doc coordinates) by scanning the built
+/// segments for link-styled spans — and restyle the focused link so it stands out. Link order
+/// matches [`crate::app::collect_links`] (document order; tables excluded). A link that wraps
+/// across rows emits one rect per row (all sharing its `idx`), so a click on the wrapped tail
+/// still maps to the link. Positions are taken from a temp-buffer render of each line, so they
+/// reflect ratatui's actual word-wrap (not a char-wrap approximation) — exact for every link,
+/// including ones whose visible text wraps across rows.
+fn locate_and_highlight_links(
+    segments: &mut [Segment],
+    focused: Option<usize>,
+    theme: &Theme,
+    width: u16,
+) -> Vec<LinkRect> {
+    let mut rects = Vec::new();
+    let mut idx = 0usize;
+    for seg in segments.iter_mut() {
+        match seg {
+            Segment::Text { text, top, .. } => {
+                scan_text_links(text, *top, width, 0, theme, focused, &mut idx, &mut rects);
+            }
+            Segment::Callout { text, top, .. } => {
+                // Callout text renders inset by the bar + a pad column, wrapped narrower.
+                let w = width.saturating_sub(3).max(1);
+                scan_text_links(text, *top, w, 2, theme, focused, &mut idx, &mut rects);
+            }
+            _ => {}
+        }
+    }
+    rects
+}
+
+/// Scan one segment's wrapped text for runs of link-styled spans, recording each link's rect and
+/// brightening the focused one. `col_off` shifts columns for inset segments (callouts).
+///
+/// Two passes per logical line:
+/// 1. **Span walk** identifies link occurrences (consecutive link-styled spans) and applies the
+///    focus highlight in-place to the focused one's spans, so the *actual* reader render shows it.
+/// 2. **Cell scan** renders the (now possibly highlight-mutated) line to a temp buffer and reads
+///    the cells back, producing rects at the exact cells the link occupies after ratatui's word-
+///    wrap — including wrap continuations. A multi-row link contributes one rect per row, all
+///    sharing its idx, so a click on any visible part resolves to the link.
+#[allow(clippy::too_many_arguments)]
+fn scan_text_links(
+    text: &mut Text<'static>,
+    seg_top: u16,
+    width: u16,
+    col_off: u16,
+    theme: &Theme,
+    focused: Option<usize>,
+    idx: &mut usize,
+    rects: &mut Vec<LinkRect>,
+) {
+    let w = width.max(1);
+    let mut vrow = seg_top;
+    for line in text.lines.iter_mut() {
+        let line_rows = Paragraph::new(line.clone())
+            .wrap(Wrap { trim: false })
+            .line_count(w) as u16;
+        if line_rows == 0 {
+            continue;
+        }
+
+        // Pass 1: walk spans to apply the focus highlight to the focused occurrence.
+        // The span walk's occurrence count matches the cell scan's in the common case
+        // (each Inline::Link → one contiguous run of link-styled spans → one contiguous
+        // cell run after render). Both walk in document order so their idx agrees.
+        let mut span_occ: usize = 0;
+        let mut i = 0;
+        while i < line.spans.len() {
+            if !is_link_span(&line.spans[i], theme) {
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            while j < line.spans.len() && is_link_span(&line.spans[j], theme) {
+                j += 1;
+            }
+            if focused == Some(*idx + span_occ) {
+                for s in &mut line.spans[i..j] {
+                    s.style = s
+                        .style
+                        .remove_modifier(Modifier::UNDERLINED)
+                        .add_modifier(Modifier::REVERSED | Modifier::BOLD);
+                }
+            }
+            span_occ += 1;
+            i = j;
+        }
+
+        // Pass 2: render this line to a private buffer and scan the resulting cells.
+        // This gives the *true* word-wrap positions of every link glyph, instead of
+        // approximating where they should land.
+        let area = Rect::new(0, 0, w, line_rows);
+        let mut buf = Buffer::empty(area);
+        Paragraph::new(line.clone())
+            .wrap(Wrap { trim: false })
+            .render(area, &mut buf);
+
+        // State machine. `in_run = Some((idx, start_col))` means we're inside a link
+        // occurrence. A run that ends on the trailing edge of a row (link is the last
+        // visible content, ratatui left the rest of the row blank) is held open into
+        // the next row's first cell to merge wrap continuations under one idx. Cells
+        // ratatui never wrote to (trailing whitespace after wrap) are skipped so they
+        // don't break the run.
+        let mut in_run: Option<(usize, u16)> = None;
+        let mut cell_occ: usize = 0;
+        for r in 0..line_rows {
+            // Reconcile state from the previous row.
+            if r > 0 && in_run.is_some() {
+                if is_link_cell(&buf[(0, r)], theme) {
+                    // Wrap continuation: re-anchor at col 0 of this row.
+                    if let Some((occ, _)) = in_run {
+                        in_run = Some((occ, 0));
+                    }
+                } else {
+                    // The run from the previous row didn't continue.
+                    in_run = None;
+                    cell_occ += 1;
+                }
+            }
+
+            // Find the last *touched* cell on this row, so trailing empty cells
+            // (whitespace ratatui left blank after wrap) don't close a run prematurely.
+            let mut row_end = w;
+            while row_end > 0 && is_untouched_cell(&buf[(row_end - 1, r)]) {
+                row_end -= 1;
+            }
+
+            for c in 0..row_end {
+                let is_link = is_link_cell(&buf[(c, r)], theme);
+                if is_link {
+                    if in_run.is_none() {
+                        in_run = Some((*idx + cell_occ, c));
+                    }
+                } else if let Some((occ, start)) = in_run.take() {
+                    rects.push(LinkRect {
+                        idx: occ,
+                        row: vrow + r,
+                        col: start + col_off,
+                        width: c - start,
+                    });
+                    cell_occ += 1;
+                }
+            }
+            if let Some((occ, start)) = in_run {
+                // Row ended mid-run: emit this row's slice (clipped to the last touched
+                // cell) and keep `in_run` alive so the next row can extend the run.
+                rects.push(LinkRect {
+                    idx: occ,
+                    row: vrow + r,
+                    col: start + col_off,
+                    width: row_end - start,
+                });
+            }
+        }
+        if in_run.is_some() {
+            cell_occ += 1;
+        }
+
+        // Advance the outer counter by the larger of the two walks — so an empty/invisible
+        // link (counted by span walk but not by cell scan, or vice versa) doesn't desync
+        // downstream lines' link indices.
+        *idx += span_occ.max(cell_occ);
+        vrow += line_rows;
+    }
+}
+
+/// A link-styled span: the reader's link colour (accent) plus underline (normal) or reverse
+/// (already focused). Distinct from headings (bold, no underline) and inline code (accent2).
+fn is_link_span(span: &Span, theme: &Theme) -> bool {
+    span.style.fg == Some(theme.accent)
+        && (span.style.add_modifier.contains(Modifier::UNDERLINED)
+            || span.style.add_modifier.contains(Modifier::REVERSED))
+}
+
+/// Same idea as `is_link_span`, but for a rendered buffer cell.
+fn is_link_cell(cell: &Cell, theme: &Theme) -> bool {
+    cell.fg == theme.accent
+        && (cell.modifier.contains(Modifier::UNDERLINED)
+            || cell.modifier.contains(Modifier::REVERSED))
+}
+
+/// A cell ratatui's paragraph render never wrote to — the trailing whitespace at the right
+/// edge of a wrapped row. Distinguishes "link was the last visible content on this row, the
+/// rest is blank" (where the run should be held open across the row boundary) from "link
+/// ended at a real non-link span" (where it's actually over).
+fn is_untouched_cell(cell: &Cell) -> bool {
+    cell.fg == Color::Reset && cell.bg == Color::Reset && cell.modifier.is_empty()
 }
 
 /// Build (encode) the row-sliced protocol for each image at its current display size, once
@@ -298,6 +507,24 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
                         });
                         y += height;
                     }
+                }
+                DocBlock::Rule => {
+                    // A full-width divider (doc.rs renders a short fixed rule only for the rare
+                    // nested case, since it has no width to span).
+                    flush_text(&mut run, theme, width, &mut segs, &mut y);
+                    if !segs.is_empty() {
+                        y += GAP;
+                    }
+                    let line = Line::styled(
+                        "─".repeat(width as usize),
+                        Style::default().fg(theme.border),
+                    );
+                    segs.push(Segment::Text {
+                        text: Text::from(line),
+                        top: y,
+                        height: 1,
+                    });
+                    y += 1;
                 }
                 _ => run.push(block),
             }
@@ -801,5 +1028,161 @@ mod tests {
         terminal
             .draw(|f| crate::ui::draw(f, &mut app, &theme))
             .unwrap();
+    }
+
+    #[test]
+    fn scan_locates_and_highlights_a_link() {
+        let theme = Theme::modern_dark();
+        let link_style = Style::default()
+            .fg(theme.accent)
+            .add_modifier(Modifier::UNDERLINED);
+        let mut text = Text::from(Line::from(vec![
+            Span::styled("see ", theme.body()),
+            Span::styled("here", link_style),
+        ]));
+        let mut idx = 0;
+        let mut rects = Vec::new();
+        scan_text_links(&mut text, 0, 80, 0, &theme, Some(0), &mut idx, &mut rects);
+        assert_eq!(rects.len(), 1);
+        assert_eq!(rects[0].col, 4, "starts after 'see '");
+        assert_eq!(rects[0].width, 4, "'here' is 4 cols");
+        // The focused link is reverse-highlighted.
+        let here = text.lines[0]
+            .spans
+            .iter()
+            .find(|s| s.content == "here")
+            .unwrap();
+        assert!(here.style.add_modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn scan_splits_a_wrapping_link_across_rows() {
+        // A link wider than the pane should produce one rect per wrapped row, all sharing
+        // the same `idx` — so a click on the tail piece still resolves to the link.
+        let theme = Theme::modern_dark();
+        let link_style = Style::default()
+            .fg(theme.accent)
+            .add_modifier(Modifier::UNDERLINED);
+        let mut text = Text::from(Line::from(vec![Span::styled("abcdefghijkl", link_style)]));
+        let mut idx = 0;
+        let mut rects = Vec::new();
+        // width=8, 12-col link → row 0 cols 0..8, row 1 cols 0..4.
+        scan_text_links(&mut text, 5, 8, 0, &theme, None, &mut idx, &mut rects);
+        assert_eq!(rects.len(), 2, "one rect per wrapped row");
+        assert!(rects.iter().all(|r| r.idx == 0), "same link idx for both");
+        assert_eq!((rects[0].row, rects[0].col, rects[0].width), (5, 0, 8));
+        assert_eq!((rects[1].row, rects[1].col, rects[1].width), (6, 0, 4));
+        assert_eq!(idx, 1, "still counts as one link");
+    }
+
+    #[test]
+    fn scan_pushes_an_unbreakable_link_to_the_next_row_on_word_wrap() {
+        // Line: `▍ Visit davidlewis.xyz` — 22 cells flowed, width 20 forces a wrap.
+        // Word-wrap (vs. char-wrap) pushes the whole link "davidlewis.xyz" to row 1
+        // because it's one unbreakable word; the rect must follow the actual render so
+        // the link text itself is clickable (not just the gap before it).
+        let theme = Theme::modern_dark();
+        let link_style = Style::default()
+            .fg(theme.accent)
+            .add_modifier(Modifier::UNDERLINED);
+        let mut text = Text::from(Line::from(vec![
+            Span::styled("▍ ", theme.body()),
+            Span::styled("Visit ", theme.body()),
+            Span::styled("davidlewis.xyz", link_style),
+        ]));
+        let mut idx = 0;
+        let mut rects = Vec::new();
+        scan_text_links(&mut text, 0, 20, 0, &theme, None, &mut idx, &mut rects);
+        assert_eq!(
+            rects.len(),
+            1,
+            "unbreakable link sits on one row after wrap"
+        );
+        assert_eq!(rects[0].row, 1, "pushed to the wrapped row");
+        assert_eq!(rects[0].col, 0, "starts at column 0 on the wrapped row");
+        assert_eq!(rects[0].width, 14, "covers the full link, not a sliver");
+    }
+
+    #[test]
+    fn every_link_cell_is_covered_by_a_rect_after_word_wrap() {
+        // Regression for the wrapped-tail bug: in the user's doc, a multi-word link
+        // ("on Threads here") had its last word wrap to its own row, but the char-wrap
+        // math placed the row-N rect at a column where word-wrap had nothing, leaving
+        // the visible "here" text unclickable. With the buffer-scan implementation,
+        // every link-styled cell in the rendered output must be covered by some rect,
+        // and every rect must point at link cells (no phantom rects).
+        let theme = Theme::modern_dark();
+        let link_style = Style::default()
+            .fg(theme.accent)
+            .add_modifier(Modifier::UNDERLINED);
+        let mut text = Text::from(Line::from(vec![
+            Span::styled("posted ", theme.body()),
+            Span::styled("X", link_style),
+            Span::styled(" and ", theme.body()),
+            Span::styled("on Threads here", link_style),
+            Span::styled(".", theme.body()),
+        ]));
+        let w: u16 = 12; // narrow enough that "here." wraps onto its own row
+        let line_rows = Paragraph::new(text.lines[0].clone())
+            .wrap(Wrap { trim: false })
+            .line_count(w) as u16;
+        let mut idx = 0;
+        let mut rects = Vec::new();
+        scan_text_links(&mut text, 0, w, 0, &theme, None, &mut idx, &mut rects);
+
+        let area = Rect::new(0, 0, w, line_rows);
+        let mut buf = Buffer::empty(area);
+        Paragraph::new(text.clone())
+            .wrap(Wrap { trim: false })
+            .render(area, &mut buf);
+
+        // Every visible link cell is inside at least one rect (no orphan link cells).
+        for r in 0..line_rows {
+            for c in 0..w {
+                if is_link_cell(&buf[(c, r)], &theme) {
+                    let covered = rects
+                        .iter()
+                        .any(|lr| lr.row == r && c >= lr.col && c < lr.col + lr.width);
+                    assert!(covered, "link cell at ({c}, {r}) not covered by any rect");
+                }
+            }
+        }
+        // Every rect covers only link cells (no phantom rects in empty/non-link space).
+        for lr in &rects {
+            for dc in 0..lr.width {
+                assert!(
+                    is_link_cell(&buf[(lr.col + dc, lr.row)], &theme),
+                    "rect cell at ({}, {}) is not link-styled",
+                    lr.col + dc,
+                    lr.row
+                );
+            }
+        }
+        assert_eq!(idx, 2, "two link occurrences (X and 'on Threads here')");
+    }
+
+    #[test]
+    fn reader_records_a_link_rect() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let (tx, _rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, Picker::halfblocks());
+        app.reading = Some(RichDoc {
+            blocks: vec![DocBlock::Paragraph(vec![
+                Inline::Text("go ".into()),
+                Inline::Link {
+                    href: "https://example.com".into(),
+                    content: vec![Inline::Text("there".into())],
+                },
+            ])],
+        });
+        app.links = vec!["https://example.com".into()];
+        app.loading = false;
+        let theme = Theme::modern_dark();
+        let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+        terminal
+            .draw(|f| crate::ui::draw(f, &mut app, &theme))
+            .unwrap();
+        assert_eq!(app.link_rects.len(), 1, "one link rect recorded");
+        assert_eq!(app.link_rects[0].idx, 0);
     }
 }

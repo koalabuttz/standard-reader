@@ -22,6 +22,8 @@ pull your subscriptions, and read — with images and real formatting, online or
 - **Full-text search** across the cache (a hand-rolled inverted index over the spec's
   `textContent` field).
 - **Keyboard-first**, with a command palette, `?` help, vim/arrow navigation, and mouse.
+  In-post hyperlinks are navigable too — cycle them with `n`/`N` and open with `Enter`, or
+  click them straight from the rendered text.
 - **A local follow-list, no account required** — add a blog by handle, DID, or URL and it
   persists. Sign in (OAuth) and it **mirrors to atproto** `site.standard.graph.subscription`,
   reconciling local-only follows without silent deletes.
@@ -53,6 +55,7 @@ Keys in the reader:
 | `r` | refresh the selected feed | `g` / `G` | top / bottom |
 | `d` | unfollow the selected feed | `PgUp`/`PgDn` | scroll ±10 |
 | `m` | mark the open post read | `o` | open the post in a browser |
+| `n` / `N` | focus next / prev link | `Enter` / click | open focused / clicked link |
 | `i` | toggle images (text-only) | `L` | sign in / out (atproto OAuth) |
 | `?` | help | `q` | quit |
 

@@ -102,6 +102,19 @@ pub struct Rects {
     pub reader: Rect,
 }
 
+/// One row of a hyperlink's on-screen footprint in the reader body, in *virtual* document
+/// coordinates (`row` is the pre-scroll document row). A link that wraps across rows contributes
+/// one `LinkRect` per row, all sharing the same `idx` so any of them resolves back to the same
+/// href. Filled by the reader each draw; used for click hit-testing and scroll-to-focus. `idx`
+/// indexes [`App::links`].
+#[derive(Clone, Copy)]
+pub struct LinkRect {
+    pub idx: usize,
+    pub row: u16,
+    pub col: u16,
+    pub width: u16,
+}
+
 pub struct App {
     pub mode: Mode,
     pub focus: Focus,
@@ -135,6 +148,14 @@ pub struct App {
     pub account: Option<Account>,
     /// Local-only follows awaiting reconciliation `(publication_uri, name)`; drives `SyncPrompt`.
     pub sync_prompt: Vec<(String, String)>,
+    /// Hyperlinks in the open document, in reading order — the navigable set for `n`/`N`/Enter/click.
+    pub links: Vec<String>,
+    /// Focused link (index into `links`) for keyboard navigation + `Enter` to open.
+    pub focused_link: Option<usize>,
+    /// Set when a focus change should scroll the focused link into view (honored on the next draw).
+    pub scroll_to_focused: bool,
+    /// Link rectangles from the last render, for click hit-testing (filled by the reader).
+    pub link_rects: Vec<LinkRect>,
     tx: Sender<ToWorker>,
 }
 
@@ -165,6 +186,10 @@ impl App {
             show_images: true,
             account: None,
             sync_prompt: Vec::new(),
+            links: Vec::new(),
+            focused_link: None,
+            scroll_to_focused: false,
+            link_rects: Vec::new(),
             tx,
         };
         app.send(ToWorker::LoadHome);
@@ -200,6 +225,9 @@ impl App {
             FromWorker::Doc { uri, body } => {
                 if self.reading_uri.as_deref() == Some(uri.as_str()) || self.reading_uri.is_none() {
                     self.request_body_images(&body);
+                    self.links.clear();
+                    collect_links(&body.blocks, &mut self.links);
+                    self.focused_link = None;
                     self.reading = Some(body);
                     self.scroll = 0;
                 }
@@ -285,7 +313,10 @@ impl App {
             KeyCode::Char('i') => self.toggle_images(),
             KeyCode::Char('L') => self.toggle_account(),
             KeyCode::Tab => self.toggle_focus(),
+            KeyCode::Char('n') => self.focus_link(1),
+            KeyCode::Char('N') => self.focus_link(-1),
             KeyCode::Enter if self.focus == Focus::Sidebar => self.open_feed(),
+            KeyCode::Enter => self.open_focused_link(),
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
             KeyCode::Up | KeyCode::Char('k') => self.move_up(),
             KeyCode::Char('g') => self.go_top(),
@@ -387,6 +418,8 @@ impl App {
                     self.feed_sel = i;
                     self.focus = Focus::Sidebar;
                     self.open_feed();
+                } else if let Some(href) = self.link_at(ev.column, ev.row) {
+                    self.open_link(&href);
                 }
             }
             _ => {}
@@ -528,6 +561,9 @@ impl App {
         let cover = self.reading_cover.clone(); // ends the borrow of self.docs (`d`)
 
         self.reading = None;
+        self.links.clear();
+        self.focused_link = None;
+        self.link_rects.clear();
         self.scroll = 0;
         self.loading = true;
         self.mode = Mode::Browse;
@@ -606,6 +642,63 @@ impl App {
             self.send(ToWorker::SetRead(uri.clone(), true));
             self.status = "marked read".into();
         }
+    }
+
+    /// Cycle the focused link (`delta` +1/-1, wrapping) and ask the reader to scroll it into view.
+    fn focus_link(&mut self, delta: i32) {
+        if self.links.is_empty() {
+            self.status = "no links in this post".into();
+            return;
+        }
+        let n = self.links.len() as i32;
+        let next = match self.focused_link {
+            None if delta < 0 => (n - 1) as usize,
+            None => 0,
+            Some(i) => (i as i32 + delta).rem_euclid(n) as usize,
+        };
+        self.focused_link = Some(next);
+        self.scroll_to_focused = true;
+        self.focus = Focus::Reader;
+        self.status = format!("link {}/{}: {}", next + 1, n, self.links[next]);
+    }
+
+    /// Open the focused link (`Enter` while reading).
+    fn open_focused_link(&mut self) {
+        match self.focused_link.and_then(|i| self.links.get(i)) {
+            Some(href) => {
+                let href = href.clone();
+                self.open_link(&href);
+            }
+            None if !self.links.is_empty() => {
+                self.status = "press n to focus a link, then Enter".into();
+            }
+            None => {}
+        }
+    }
+
+    /// Open a hyperlink in the browser.
+    fn open_link(&mut self, href: &str) {
+        self.status = format!("opening {href}");
+        let _ = open::that_detached(href);
+    }
+
+    /// The link under a click in the reader pane, if any (maps screen → virtual doc coordinates).
+    fn link_at(&self, col: u16, row: u16) -> Option<String> {
+        let r = self.rects.reader;
+        let (inner_x, inner_y) = (r.x + 1, r.y + 1); // inside the 1-cell border
+        if col < inner_x
+            || row < inner_y
+            || col >= r.right().saturating_sub(1)
+            || row >= r.bottom().saturating_sub(1)
+        {
+            return None;
+        }
+        let vrow = (row - inner_y) + self.scroll;
+        let vcol = col - inner_x;
+        self.link_rects
+            .iter()
+            .find(|lr| lr.row == vrow && vcol >= lr.col && vcol < lr.col + lr.width)
+            .and_then(|lr| self.links.get(lr.idx).cloned())
     }
 
     /// Open the focused/open document's post in the browser (`o`).
@@ -703,6 +796,42 @@ fn collect_image_sources(blocks: &[Block], out: &mut Vec<ImageSource>) {
     }
 }
 
+/// Collect hyperlink hrefs in `blocks`, in document/reading order — the navigable set for
+/// `n`/`N`/Enter and clicks. Mirrors how the reader renders links: tables render as plain text,
+/// so their links are skipped to keep this list in lock-step with the rendered link order.
+fn collect_links(blocks: &[Block], out: &mut Vec<String>) {
+    for block in blocks {
+        match block {
+            Block::Paragraph(c)
+            | Block::Heading { content: c, .. }
+            | Block::Callout { content: c, .. } => collect_inline_links(c, out),
+            Block::Quote(inner) => collect_links(inner, out),
+            Block::List { items, .. } => {
+                for item in items {
+                    collect_links(item, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Collect hrefs from inline content, in order (recursing into styled spans + link content).
+fn collect_inline_links(inlines: &[Inline], out: &mut Vec<String>) {
+    for inline in inlines {
+        match inline {
+            Inline::Link { href, content } => {
+                out.push(href.clone());
+                collect_inline_links(content, out);
+            }
+            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strike(c) | Inline::Underline(c) => {
+                collect_inline_links(c, out)
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Collect image sources from inline content (recursing into styled/link spans).
 fn collect_inline_images(inlines: &[Inline], out: &mut Vec<ImageSource>) {
     for inline in inlines {
@@ -758,7 +887,65 @@ pub fn web_url(base: &str, path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{fuzzy, web_url};
+    use super::{collect_links, fuzzy, web_url};
+    use standard_core::model::{Block, Inline};
+
+    #[test]
+    fn collect_links_walks_in_document_order() {
+        let link = |href: &str, text: &str| Inline::Link {
+            href: href.into(),
+            content: vec![Inline::Text(text.into())],
+        };
+        let blocks = vec![
+            Block::Paragraph(vec![
+                Inline::Text("see ".into()),
+                link("https://a", "a"),
+                Inline::Text(" and ".into()),
+                Inline::Strong(vec![link("https://b", "b")]),
+            ]),
+            Block::Quote(vec![Block::Paragraph(vec![link("https://c", "c")])]),
+            // Table links are skipped (they render as plain text), keeping order in lock-step
+            // with the reader.
+            Block::Table {
+                head: vec![vec![link("https://skip", "x")]],
+                rows: vec![],
+            },
+        ];
+        let mut out = Vec::new();
+        collect_links(&blocks, &mut out);
+        assert_eq!(out, vec!["https://a", "https://b", "https://c"]);
+    }
+
+    #[test]
+    fn link_at_maps_a_click_to_its_href() {
+        use super::{App, LinkRect};
+        use crate::worker::ToWorker;
+        use ratatui::layout::Rect;
+        use ratatui_image::picker::Picker;
+        use std::sync::mpsc::channel;
+
+        let (tx, _rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, Picker::halfblocks());
+        app.rects.reader = Rect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 20,
+        };
+        app.links = vec!["https://x".into()];
+        // Link at virtual row 2, cols 5..9. Inner origin is (1,1) past the border.
+        app.link_rects = vec![LinkRect {
+            idx: 0,
+            row: 2,
+            col: 5,
+            width: 4,
+        }];
+        // screen (col 6, row 3) → virtual (col 5, row 2): a hit.
+        assert_eq!(app.link_at(6, 3).as_deref(), Some("https://x"));
+        // outside the link's column span, and a different row: misses.
+        assert_eq!(app.link_at(10, 3), None);
+        assert_eq!(app.link_at(6, 4), None);
+    }
 
     #[test]
     fn fuzzy_subsequence() {

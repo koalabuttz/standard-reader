@@ -51,6 +51,8 @@ Sequenced so each step is runnable on top of the last:
 - [ ] RSS feed support (the original "like an RSS reader" stretch).
 - [ ] Recommends (`site.standard.graph.recommend`) as a discovery signal.
 - [ ] Show the Bluesky comment thread (`bskyPostRef`).
+- [ ] **Embeds beyond Pckt iframes.** Pckt `iframe` blocks now decode to a clickable link (YouTube → `watch?v=` page); extend the same link treatment to **Leaflet's website/bsky embed blocks** and any Offprint embeds, so no embed is silently dropped.
+- [ ] **Richer embed labels.** A Bluesky embed (`bsky.app` / AT-URI) currently links by raw URL; resolve a friendlier label (author + snippet) instead. Same idea for other recognizable embed hosts.
 - [ ] `tantivy` search swap (only if ranked/fuzzy search is wanted).
 - [ ] **PS Vita frontend** — new `Transport` + `Store` impls + framebuffer renderer, reusing all of `standard-core`.
 

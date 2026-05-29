@@ -435,6 +435,31 @@ pub fn list_all_documents<T: Transport>(
         .collect())
 }
 
+/// A **bounded window** of a repo's documents (metadata only), newest-first, starting from
+/// `cursor` (`None` = the newest). Walks at most `max_pages` pages and returns the docs plus the
+/// cursor to resume from for *older* records — `None` when the repo is exhausted within the window.
+/// The building block for the bounded initial fetch and for "load older" (pass the stored resume
+/// cursor). Like [`paginate`], it stops as soon as a page returns no cursor or no records.
+pub fn list_documents_window<T: Transport>(
+    t: &T,
+    repo: &Identity,
+    cursor: Option<&str>,
+    max_pages: u32,
+) -> Result<(Vec<Document>, Option<String>), ReadError> {
+    let mut out = Vec::new();
+    let mut cursor: Option<String> = cursor.map(str::to_string);
+    for _ in 0..max_pages.max(1) {
+        let (docs, next) = list_documents(t, repo, cursor.as_deref())?;
+        let got = docs.len();
+        out.extend(docs);
+        match next {
+            Some(c) if got > 0 => cursor = Some(c),
+            _ => return Ok((out, None)), // exhausted within the window
+        }
+    }
+    Ok((out, cursor)) // hit the page cap; `cursor` resumes the older walk
+}
+
 /// Fetch one document and decode its body. Honors the `#contentRef` seam: when the
 /// `content` is a reference (GreenGale), the referenced record is fetched and *its*
 /// content decoded.
@@ -759,6 +784,72 @@ mod tests {
         routes.insert(page2, br#"{"records":[],"cursor":"pg3"}"#.to_vec());
         let docs = list_all_documents(&MockTransport(routes), &repo).unwrap();
         assert_eq!(docs.len(), 1);
+    }
+
+    /// Build a 3-page repo (1→pg2→pg3→end) once, reused by the window test below.
+    fn three_page_routes() -> (Identity, std::collections::HashMap<String, Vec<u8>>) {
+        let repo = Identity {
+            did: "did:plc:abc".into(),
+            pds: "https://pds.test".into(),
+        };
+        let page1 = "https://pds.test/xrpc/com.atproto.repo.listRecords?repo=did:plc:abc&collection=site.standard.document&limit=50";
+        let page2 = format!("{page1}&cursor=pg2");
+        let page3 = format!("{page1}&cursor=pg3");
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            page1.to_string(),
+            format!(
+                r#"{{"records":[{}],"cursor":"pg2"}}"#,
+                doc_record("1", "One")
+            )
+            .into_bytes(),
+        );
+        routes.insert(
+            page2,
+            format!(
+                r#"{{"records":[{}],"cursor":"pg3"}}"#,
+                doc_record("2", "Two")
+            )
+            .into_bytes(),
+        );
+        // Last page: records but no cursor → the repo is exhausted here.
+        routes.insert(
+            page3,
+            format!(r#"{{"records":[{}]}}"#, doc_record("3", "Three")).into_bytes(),
+        );
+        (repo, routes)
+    }
+
+    #[test]
+    fn window_stops_at_the_page_cap_and_returns_a_resume_cursor() {
+        let (repo, routes) = three_page_routes();
+        // Cap at 2 pages: we get the first two docs and a cursor to resume the older walk —
+        // page 3 is never requested.
+        let (docs, resume) = list_documents_window(&MockTransport(routes), &repo, None, 2).unwrap();
+        assert_eq!(docs.len(), 2);
+        assert_eq!(docs[0].title, "One");
+        assert_eq!(docs[1].title, "Two");
+        assert_eq!(resume.as_deref(), Some("pg3"));
+    }
+
+    #[test]
+    fn window_returns_none_when_the_repo_is_exhausted_within_the_cap() {
+        let (repo, routes) = three_page_routes();
+        // A generous cap walks all three pages; the last has no cursor → resume is None (done).
+        let (docs, resume) = list_documents_window(&MockTransport(routes), &repo, None, 5).unwrap();
+        assert_eq!(docs.len(), 3);
+        assert_eq!(resume, None);
+    }
+
+    #[test]
+    fn window_resumes_from_a_given_cursor() {
+        let (repo, routes) = three_page_routes();
+        // "Load older" starting at pg3 (the stored resume cursor): just the last page, exhausted.
+        let (docs, resume) =
+            list_documents_window(&MockTransport(routes), &repo, Some("pg3"), 3).unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].title, "Three");
+        assert_eq!(resume, None);
     }
 
     #[test]

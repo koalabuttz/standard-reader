@@ -46,4 +46,11 @@ pub trait Store {
     /// refresh can stop once it walks back to already-cached records. Opaque to the store.
     fn sync_cursor(&self, publication_uri: &str) -> Result<Option<String>, Self::Error>;
     fn set_sync_cursor(&mut self, publication_uri: &str, cursor: &str) -> Result<(), Self::Error>;
+
+    /// Repo-wide "load older" cursor, keyed by **repo DID** (a `listRecords` cursor is repo-wide,
+    /// not per-publication): the position to resume fetching *older* documents. `None` = this repo
+    /// was never fetched; an **empty string** = fetched and exhausted (no older records); a
+    /// non-empty value = more to load. Opaque to the store.
+    fn older_cursor(&self, did: &str) -> Result<Option<String>, Self::Error>;
+    fn set_older_cursor(&mut self, did: &str, cursor: &str) -> Result<(), Self::Error>;
 }

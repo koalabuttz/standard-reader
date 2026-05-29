@@ -23,6 +23,8 @@ const DOCUMENTS: TableDefinition<&str, &[u8]> = TableDefinition::new("documents"
 const BLOBS: TableDefinition<&str, &[u8]> = TableDefinition::new("blobs");
 // publication uri → listRecords sync cursor
 const CURSORS: TableDefinition<&str, &str> = TableDefinition::new("cursors");
+// repo DID → "load older" listRecords cursor (repo-wide). Absent = never fetched; "" = exhausted.
+const OLDER_CURSORS: TableDefinition<&str, &str> = TableDefinition::new("older_cursors");
 // publication uri → doc uri  (backs documents_for)
 const DOCS_BY_PUB: MultimapTableDefinition<&str, &str> =
     MultimapTableDefinition::new("docs_by_pub");
@@ -153,6 +155,7 @@ impl RedbStore {
             w.open_table(DOCUMENTS)?;
             w.open_table(BLOBS)?;
             w.open_table(CURSORS)?;
+            w.open_table(OLDER_CURSORS)?;
             w.open_multimap_table(DOCS_BY_PUB)?;
             w.open_multimap_table(INDEX)?;
             w.open_table(FOLLOWS)?;
@@ -419,6 +422,22 @@ impl Store for RedbStore {
         w.commit()?;
         Ok(())
     }
+
+    fn older_cursor(&self, did: &str) -> Result<Option<String>> {
+        let r = self.db.begin_read()?;
+        let table = r.open_table(OLDER_CURSORS)?;
+        Ok(table.get(did)?.map(|g| g.value().to_string()))
+    }
+
+    fn set_older_cursor(&mut self, did: &str, cursor: &str) -> Result<()> {
+        let w = self.db.begin_write()?;
+        {
+            let mut table = w.open_table(OLDER_CURSORS)?;
+            table.insert(did, cursor)?;
+        }
+        w.commit()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -520,6 +539,22 @@ mod tests {
             s.sync_cursor("at://d/p/1").unwrap().as_deref(),
             Some("cursor123")
         );
+    }
+
+    #[test]
+    fn older_cursor_tracks_the_three_fetch_states() {
+        let mut s = RedbStore::in_memory().unwrap();
+        let did = "did:plc:abc";
+        // Absent = never fetched (drives the first-open bounded window).
+        assert_eq!(s.older_cursor(did).unwrap(), None);
+        // Non-empty = more older posts to load.
+        s.set_older_cursor(did, "pg3").unwrap();
+        assert_eq!(s.older_cursor(did).unwrap().as_deref(), Some("pg3"));
+        // Empty string = exhausted sentinel (distinct from absent — won't re-trigger a window).
+        s.set_older_cursor(did, "").unwrap();
+        assert_eq!(s.older_cursor(did).unwrap().as_deref(), Some(""));
+        // Keyed by repo DID, not publication — a different repo is independent.
+        assert_eq!(s.older_cursor("did:plc:other").unwrap(), None);
     }
 
     #[test]

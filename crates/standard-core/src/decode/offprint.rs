@@ -8,7 +8,7 @@ use serde_json::Value;
 use super::facets::{parse_css_rgb, text_block_inlines};
 use super::image::blob_image;
 use super::{ContentDecoder, DecodeCtx};
-use crate::model::{Block, Image, Inline, RichDoc};
+use crate::model::{Align, Block, Image, Inline, RichDoc};
 
 pub struct Offprint;
 
@@ -21,30 +21,39 @@ impl ContentDecoder for Offprint {
         let items = content.get("items")?.as_array()?;
         let mut blocks = Vec::new();
         for item in items {
+            // Most block kinds carry a horizontal alignment; wrap their result when it's not the
+            // default (left), so the reader can honor it without touching every other decoder.
+            let align = read_align(item);
             // Match on the suffix after `app.offprint.block.`.
             match item
                 .get("$type")
                 .and_then(Value::as_str)
                 .and_then(|t| t.rsplit('.').next())
             {
-                Some("text") => blocks.push(Block::Paragraph(text_block_inlines(item))),
+                Some("text") => blocks.push(wrap_align(
+                    Block::Paragraph(text_block_inlines(item)),
+                    align,
+                )),
                 Some("heading") => {
                     let level = item
                         .get("level")
                         .and_then(Value::as_u64)
                         .unwrap_or(2)
                         .clamp(1, 6) as u8;
-                    blocks.push(Block::Heading {
-                        level,
-                        content: text_block_inlines(item),
-                    });
+                    blocks.push(wrap_align(
+                        Block::Heading {
+                            level,
+                            content: text_block_inlines(item),
+                        },
+                        align,
+                    ));
                 }
                 Some("image") => {
                     if let Some(img) = item
                         .get("image")
                         .and_then(|b| blob_image(b, ctx.repo_did, ""))
                     {
-                        blocks.push(Block::Image(img));
+                        blocks.push(wrap_image_align(Block::Image(img), item));
                     }
                 }
                 Some("imageGrid") | Some("imageCarousel") => {
@@ -52,14 +61,14 @@ impl ContentDecoder for Offprint {
                     // grid of all their images.
                     let images = grid_images(item, ctx);
                     if !images.is_empty() {
-                        blocks.push(Block::ImageGrid(images));
+                        blocks.push(wrap_image_align(Block::ImageGrid(images), item));
                     }
                 }
                 Some("imageDiff") => {
                     // Before/after pair: render both side by side, carrying the labels as alt text.
                     let images = diff_images(item, ctx);
                     if !images.is_empty() {
-                        blocks.push(Block::ImageGrid(images));
+                        blocks.push(wrap_image_align(Block::ImageGrid(images), item));
                     }
                 }
                 Some("bulletList") => blocks.push(Block::List {
@@ -80,12 +89,12 @@ impl ContentDecoder for Offprint {
                 // (reusing the link machinery), keeping a bookmark's description as a trailing line.
                 Some("webEmbed") => {
                     if let Some(b) = link_block(item, false) {
-                        blocks.push(b);
+                        blocks.push(wrap_align(b, align));
                     }
                 }
                 Some("webBookmark") => {
                     if let Some(b) = link_block(item, true) {
-                        blocks.push(b);
+                        blocks.push(wrap_align(b, align));
                     }
                 }
                 Some("callout") => blocks.push(callout(item)),
@@ -103,6 +112,49 @@ impl ContentDecoder for Offprint {
             }
         }
         Some(RichDoc { blocks })
+    }
+}
+
+/// A block's horizontal alignment, from `textAlign` (text/heading) or `alignment`
+/// (image/embed). Anything but `center`/`right` (incl. absent) is the default left.
+fn read_align(item: &Value) -> Align {
+    match item
+        .get("textAlign")
+        .or_else(|| item.get("alignment"))
+        .and_then(Value::as_str)
+    {
+        Some("center") => Align::Center,
+        Some("right") => Align::Right,
+        _ => Align::Left,
+    }
+}
+
+/// Wrap `block` in [`Block::Aligned`] when it isn't left-aligned; left stays the bare block (so the
+/// common case adds no wrapper and other decoders/fixtures are unaffected). For **text**, where the
+/// reader's default is already left.
+fn wrap_align(block: Block, align: Align) -> Block {
+    match align {
+        Align::Left => block,
+        _ => Block::Aligned {
+            align,
+            content: Box::new(block),
+        },
+    }
+}
+
+/// Wrap an **image-like** block by its explicit `alignment` — *including* left, because the
+/// reader's default for a bare image is *centered*, so honoring "left" requires an explicit wrapper
+/// to override that. An absent `alignment` (e.g. a Markdown image) stays bare → centered.
+fn wrap_image_align(block: Block, item: &Value) -> Block {
+    let align = match item.get("alignment").and_then(Value::as_str) {
+        Some("left") => Align::Left,
+        Some("center") => Align::Center,
+        Some("right") => Align::Right,
+        _ => return block, // absent/unknown → bare (reader centers)
+    };
+    Block::Aligned {
+        align,
+        content: Box::new(block),
     }
 }
 

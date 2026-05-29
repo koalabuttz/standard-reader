@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use standard_core::atp::AtUri;
 use standard_core::decode::{DecodeCtx, Registry, content_ref};
-use standard_core::model::{Block, ImageSource, Inline, RichDoc};
+use standard_core::model::{Align, Block, ImageSource, Inline, RichDoc};
 
 /// Load a saved `getRecord` response and decode its `content`, using the record's own
 /// repo DID for blob refs.
@@ -131,11 +131,14 @@ fn offprint_real_record() {
         other => panic!("expected paragraph first, got {other:?}"),
     }
 
-    // Image blocks resolve to blob refs against this record's DID.
+    // Image blocks resolve to blob refs against this record's DID; this one is center-aligned, so
+    // it now decodes wrapped in `Block::Aligned`.
     assert!(matches!(
         &doc.blocks[3],
-        Block::Image(img) if matches!(&img.source, ImageSource::Blob { did, .. }
-            if did == "did:plc:gj55urnejshc53jzje5afyk2")
+        Block::Aligned { align: Align::Center, content }
+            if matches!(content.as_ref(), Block::Image(img)
+                if matches!(&img.source, ImageSource::Blob { did, .. }
+                    if did == "did:plc:gj55urnejshc53jzje5afyk2"))
     ));
     assert!(matches!(&doc.blocks[8], Block::List { ordered: false, .. }));
     // Callout decodes to a real Block::Callout, keeping its emoji + tint colour.
@@ -377,6 +380,54 @@ fn offprint_all_blocks_and_facets_are_covered() {
     assert!(
         palette.len() >= 2,
         "highlights should carry their distinct authored colours, got {palette:?}"
+    );
+}
+
+/// The doc demonstrates `textAlign` (center/right text) and `alignment` (left/center/right images);
+/// those must wrap in `Block::Aligned`, while ordinary left text stays a bare block.
+#[test]
+fn offprint_alignment_wraps_only_non_default_blocks() {
+    let doc = decode_fixture("offprint_allblocks.json");
+
+    fn kind(b: &Block) -> &'static str {
+        match b {
+            Block::Paragraph(_) => "paragraph",
+            Block::Heading { .. } => "heading",
+            Block::Image(_) => "image",
+            Block::ImageGrid(_) => "imagegrid",
+            _ => "other",
+        }
+    }
+    let aligned: Vec<(Align, &str)> = doc
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Aligned { align, content } => Some((*align, kind(content))),
+            _ => None,
+        })
+        .collect();
+
+    // Center + right text blocks wrap (textAlign).
+    assert!(
+        aligned.contains(&(Align::Center, "paragraph")),
+        "center text"
+    );
+    assert!(aligned.contains(&(Align::Right, "paragraph")), "right text");
+    // Images honor explicit alignment, incl. left (overriding the reader's centered default).
+    assert!(
+        aligned.contains(&(Align::Left, "image")),
+        "explicit-left image wraps"
+    );
+    assert!(aligned.contains(&(Align::Center, "image")), "center image");
+    // The right-aligned imageDiff (→ ImageGrid) wraps too.
+    assert!(
+        aligned.contains(&(Align::Right, "imagegrid")),
+        "right imageDiff"
+    );
+    // Ordinary left text is NOT wrapped — the wrapper is opt-in (zero ripple to the common case).
+    assert!(
+        doc.blocks.iter().any(|b| matches!(b, Block::Paragraph(_))),
+        "left text stays a bare paragraph"
     );
 }
 

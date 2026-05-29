@@ -29,6 +29,9 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
   render too. Embeds a terminal can't host become clickable links (reusing the link machinery);
   highlighted text renders in the author's highlighter colour, and `@mentions` link to the
   author's Bluesky profile.
+- **Text & image alignment.** Center/right `textAlign` on paragraphs/headings and `alignment` on
+  images now render aligned instead of flush-left (images already centered by default; an explicit
+  "left" is honored too).
 
 ### Changed
 - **Lazy, bounded fetching.** Following a blog no longer backfills its entire history up front (a

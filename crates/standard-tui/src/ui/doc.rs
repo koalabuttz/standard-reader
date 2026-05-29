@@ -3,11 +3,21 @@
 //! the reader (for real image rendering / tinted boxes); the arms here are the text-flow
 //! fallback (e.g. when nested inside a quote or list).
 
+use ratatui::layout::Alignment;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use standard_core::model::{Block, Inline};
+use standard_core::model::{Align, Block, Inline};
+
+/// Map the neutral [`Align`] to ratatui's `Alignment` (the core stays UI-agnostic).
+pub(crate) fn to_alignment(a: Align) -> Alignment {
+    match a {
+        Align::Left => Alignment::Left,
+        Align::Center => Alignment::Center,
+        Align::Right => Alignment::Right,
+    }
+}
 
 /// Display width (terminal columns) of a string — counts wide glyphs (CJK, many emoji) as 2,
 /// so table layout lines up instead of measuring by `char` count.
@@ -152,6 +162,17 @@ fn block_lines(block: &Block, theme: &Theme, out: &mut Vec<Line<'static>>) {
         )),
         // Resolved to an ImageGrid in `read::get_document`; only reached if that fetch failed.
         Block::GalleryRef { .. } => out.push(Line::styled("🖼  (gallery)", theme.dim_style())),
+        Block::Aligned { align, content } => {
+            // Render the inner block, then stamp each of its lines with the alignment. Per-line
+            // (not per-Paragraph) so it survives the reader merging a run of blocks into one
+            // Paragraph, and so the link-rect scan — which renders each line on its own — agrees.
+            let start = out.len();
+            block_lines(content, theme, out);
+            let a = to_alignment(*align);
+            for line in &mut out[start..] {
+                *line = std::mem::take(line).alignment(a);
+            }
+        }
     }
 }
 
@@ -349,6 +370,25 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn aligned_block_stamps_per_line_alignment() {
+        use standard_core::model::Align;
+        let theme = Theme::modern_dark();
+        let blocks = [Block::Aligned {
+            align: Align::Center,
+            content: Box::new(Block::Paragraph(vec![Inline::Text("centered text".into())])),
+        }];
+        let text = blocks_to_text(blocks.iter(), &theme);
+        assert!(!text.lines.is_empty());
+        assert!(
+            text.lines
+                .iter()
+                .all(|l| l.alignment == Some(Alignment::Center)),
+            "every line of an Aligned block carries the alignment"
+        );
+        assert_eq!(flat(&text), "centered text");
     }
 
     #[test]

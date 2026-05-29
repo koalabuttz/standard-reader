@@ -55,6 +55,23 @@ pub enum Block {
     GalleryRef {
         uri: String,
     },
+    /// A block with a non-default horizontal alignment (Offprint `textAlign` / `alignment`). A thin
+    /// wrapper so the common (left) case stays the bare block — only center/right are wrapped — and
+    /// no other decoder has to thread alignment through. Frontends render `content` aligned.
+    Aligned {
+        align: Align,
+        content: Box<Block>,
+    },
+}
+
+/// Horizontal alignment for an [`Block::Aligned`] block. `Left` is the default everywhere, so a
+/// decoder only wraps a block when the author chose `Center`/`Right`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Align {
+    #[default]
+    Left,
+    Center,
+    Right,
 }
 
 /// Inline (span-level) content. Leaflet/Bluesky "facets" (byte-range annotations)

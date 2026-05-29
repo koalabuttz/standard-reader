@@ -46,6 +46,8 @@ enum Segment {
         indent: u16,
         /// Draw a quote bar in the reserved gutter (for images nested in a blockquote).
         bar: bool,
+        /// Horizontal placement of the image within the pane (when not framed/indented).
+        align: Alignment,
     },
     /// A callout box: pre-built text (emoji already prefixed) drawn over a tinted fill.
     Callout {
@@ -54,7 +56,8 @@ enum Segment {
         top: u16,
         height: u16,
     },
-    /// A grid of images laid out in columns; each cell positioned relative to the grid top.
+    /// A grid of images laid out in columns; each cell positioned relative to the grid top
+    /// (alignment is baked into each cell's `dx` by `grid_layout`).
     Grid {
         cells: Vec<GridCell>,
         top: u16,
@@ -439,7 +442,8 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
                       alt: String,
                       indent: u16,
                       bar: bool,
-                      gap: bool| {
+                      gap: bool,
+                      align: Alignment| {
         let (cols, rows) = image_display_size(app, &key, width.saturating_sub(indent), vh);
         if gap && !segs.is_empty() {
             *y += GAP;
@@ -452,6 +456,7 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
             width: cols,
             indent,
             bar,
+            align,
         });
         *y += rows;
     };
@@ -467,13 +472,24 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
             0,
             false,
             true,
+            Alignment::Center,
         );
     }
 
     if let Some(body) = &app.reading {
         let mut run: Vec<&DocBlock> = Vec::new();
         for block in &body.blocks {
-            match block {
+            // Peel an alignment wrapper only to *detect* an aligned image/grid; a bare image keeps
+            // the reader's long-standing centered default, an explicit wrapper overrides it. Text
+            // (and everything else) falls through to `run.push(block)` with the wrapper intact, so
+            // `doc.rs` applies per-line alignment.
+            let (inner, align) = match block {
+                DocBlock::Aligned { align, content } => {
+                    (content.as_ref(), doc::to_alignment(*align))
+                }
+                other => (other, Alignment::Center),
+            };
+            match inner {
                 DocBlock::Image(img) if app.show_images => {
                     flush_text(&mut run, theme, width, &mut segs, &mut y);
                     push_image(
@@ -484,17 +500,18 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
                         0,
                         false,
                         true,
+                        align,
                     );
                 }
                 // A quote/list with image(s) nested in it: render the de-imaged container as text
                 // (its bar/markers via doc.rs), then the images framed in place — so a photo
                 // lazy-continued into a `> quote` shows inside the quote, matching the source.
                 DocBlock::Quote(_) | DocBlock::List { .. }
-                    if app.show_images && contains_image(block) =>
+                    if app.show_images && contains_image(inner) =>
                 {
                     flush_text(&mut run, theme, width, &mut segs, &mut y);
-                    let is_quote = matches!(block, DocBlock::Quote(_));
-                    let (stripped, images) = strip_container_images(block.clone());
+                    let is_quote = matches!(inner, DocBlock::Quote(_));
+                    let (stripped, images) = strip_container_images(inner.clone());
                     if container_has_text(&stripped) {
                         let text = doc::blocks_to_text(std::iter::once(&stripped), theme);
                         let height = Paragraph::new(text.clone())
@@ -519,6 +536,7 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
                             2, // align under the `▍ ` quote bar / list marker
                             is_quote,
                             false,
+                            Alignment::Left,
                         );
                     }
                 }
@@ -542,7 +560,7 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
                 }
                 DocBlock::ImageGrid(images) if app.show_images => {
                     flush_text(&mut run, theme, width, &mut segs, &mut y);
-                    let (cells, height) = grid_layout(app, images, width, vh);
+                    let (cells, height) = grid_layout(app, images, width, vh, align);
                     if !cells.is_empty() {
                         if !segs.is_empty() {
                             y += GAP;
@@ -591,6 +609,7 @@ fn contains_image(block: &DocBlock) -> bool {
         }
         DocBlock::Quote(blocks) => blocks.iter().any(contains_image),
         DocBlock::List { items, .. } => items.iter().flatten().any(contains_image),
+        DocBlock::Aligned { content, .. } => contains_image(content),
         _ => false,
     }
 }
@@ -640,6 +659,10 @@ fn strip_block(block: DocBlock, images: &mut Vec<Image>) -> DocBlock {
             images.extend(grid);
             DocBlock::Paragraph(Vec::new())
         }
+        DocBlock::Aligned { align, content } => DocBlock::Aligned {
+            align,
+            content: Box::new(strip_block(*content, images)),
+        },
         other => other,
     }
 }
@@ -762,10 +785,16 @@ fn grid_cols(n: usize, width: u16) -> usize {
         .unwrap_or(1)
 }
 
-/// Lay images out in a balanced grid: size each cell to its column, centre each *row*
-/// (so a short last row sits in the middle), and stack rows. Returns positioned cells and
-/// the grid's total height.
-fn grid_layout(app: &App, images: &[Image], width: u16, vh: u16) -> (Vec<GridCell>, u16) {
+/// Lay images out in a balanced grid: size each cell to its column, place each *row* per `align`
+/// (centre by default, so a short last row sits in the middle), and stack rows. Returns positioned
+/// cells and the grid's total height.
+fn grid_layout(
+    app: &App,
+    images: &[Image],
+    width: u16,
+    vh: u16,
+    align: Alignment,
+) -> (Vec<GridCell>, u16) {
     const GAP_X: u16 = 1;
     const GAP_Y: u16 = 1;
     if images.is_empty() {
@@ -792,7 +821,11 @@ fn grid_layout(app: &App, images: &[Image], width: u16, vh: u16) -> (Vec<GridCel
         // so height-capped images sit side by side instead of floating in wide cells.
         let row_width: u16 = row.iter().map(|(_, w, _)| *w).sum::<u16>()
             + (row.len() as u16).saturating_sub(1) * GAP_X;
-        let mut x = width.saturating_sub(row_width) / 2;
+        let mut x = match align {
+            Alignment::Left => 0,
+            Alignment::Right => width.saturating_sub(row_width),
+            _ => width.saturating_sub(row_width) / 2,
+        };
         let mut row_h = 0u16;
         for (key, w, h) in row {
             cells.push(GridCell {
@@ -839,6 +872,7 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                 width: cols,
                 indent,
                 bar,
+                align,
                 ..
             } => {
                 // Quote framing: a thin bar down the reserved gutter (matches doc.rs's `▍`).
@@ -854,11 +888,16 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                 // signed vertical offset, so scrolling never re-encodes (no lag, no resize)
                 // and a partly-visible image shows correctly whether its top or bottom is cut.
                 if let Some(sliced) = app.images.get(key).and_then(|li| li.sliced.as_ref()) {
-                    // Framed images sit left-aligned after the gutter; standalone ones center.
+                    // Framed images sit left-aligned after the gutter; standalone ones follow their
+                    // alignment (centered by default).
                     let x = if *indent > 0 {
                         *indent as i16
                     } else {
-                        (inner.width.saturating_sub(*cols) / 2) as i16
+                        match align {
+                            Alignment::Left => 0,
+                            Alignment::Right => inner.width.saturating_sub(*cols) as i16,
+                            _ => (inner.width.saturating_sub(*cols) / 2) as i16,
+                        }
                     };
                     let y =
                         (top as i32 - scroll as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
@@ -873,7 +912,7 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                 } else {
                     format!("🖼 loading… {alt}")
                 };
-                let (prect, align) = if *indent > 0 {
+                let (prect, plabel_align) = if *indent > 0 {
                     (
                         Rect {
                             x: rect.x + *indent,
@@ -883,12 +922,12 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                         Alignment::Left,
                     )
                 } else {
-                    (rect, Alignment::Center)
+                    (rect, *align)
                 };
                 f.render_widget(
                     Paragraph::new(label.trim().to_string())
                         .style(theme.dim_style())
-                        .alignment(align),
+                        .alignment(plabel_align),
                     prect,
                 );
             }
@@ -974,6 +1013,36 @@ mod tests {
         assert_eq!(grid_cols(6, 100), 3); // 3+3
         // Narrow pane caps at 1 column.
         assert_eq!(grid_cols(4, 30), 1);
+    }
+
+    #[test]
+    fn aligned_image_carries_alignment_into_its_segment() {
+        use standard_core::model::Align;
+        let img = |alt: &str| {
+            DocBlock::Image(Image {
+                alt: alt.into(),
+                source: ImageSource::Url(format!("https://i.test/{alt}.png")),
+            })
+        };
+        // A wrapped image keeps its alignment; a bare image keeps the centered default.
+        let app = app_with(RichDoc {
+            blocks: vec![
+                DocBlock::Aligned {
+                    align: Align::Right,
+                    content: Box::new(img("a")),
+                },
+                img("b"),
+            ],
+        });
+        let (segs, _) = build(&app, &Theme::modern_dark(), 60, 40);
+        let aligns: Vec<Alignment> = segs
+            .iter()
+            .filter_map(|s| match s {
+                Segment::Image { align, .. } => Some(*align),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(aligns, vec![Alignment::Right, Alignment::Center]);
     }
 
     #[test]

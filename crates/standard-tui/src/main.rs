@@ -375,6 +375,10 @@ fn print_block(block: &Block, indent: usize) {
         }
         Block::Rule => println!("{pad}───"),
         Block::GalleryRef { uri } => println!("{pad}[gallery: {uri}]"),
+        Block::Aligned { align, content } => {
+            print!("{pad}[{align:?}] ");
+            print_block(content, 0);
+        }
     }
 }
 
@@ -410,6 +414,7 @@ fn block_text(block: &Block) -> String {
         }
         Block::Rule => "───".to_string(),
         Block::GalleryRef { .. } => "[gallery]".to_string(),
+        Block::Aligned { content, .. } => block_text(content),
     }
 }
 

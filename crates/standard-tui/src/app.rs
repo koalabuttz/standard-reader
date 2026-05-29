@@ -1486,6 +1486,9 @@ fn collect_image_sources(blocks: &[Block], out: &mut Vec<ImageSource>) {
             | Block::Callout {
                 content: inlines, ..
             } => collect_inline_images(inlines, out),
+            Block::Aligned { content, .. } => {
+                collect_image_sources(std::slice::from_ref(content.as_ref()), out)
+            }
             _ => {}
         }
     }
@@ -1505,6 +1508,9 @@ fn collect_links(blocks: &[Block], out: &mut Vec<String>) {
                 for item in items {
                     collect_links(item, out);
                 }
+            }
+            Block::Aligned { content, .. } => {
+                collect_links(std::slice::from_ref(content.as_ref()), out)
             }
             _ => {}
         }

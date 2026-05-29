@@ -240,6 +240,9 @@ pub struct App {
     pub unread_counts: HashMap<String, usize>,
     /// Whether the open feed has older posts left to load (drives the end-of-list affordance).
     pub has_older: bool,
+    /// Posts we've already asked the worker to background-freshen this session, so re-opening a
+    /// post (cache-first) doesn't re-fetch it every time.
+    pub freshened: HashSet<String>,
     /// Snapshot of the status text shown in the [`Mode::StatusDetail`] popup (taken on click, so
     /// it doesn't change underneath the reader while open).
     pub status_detail: String,
@@ -292,6 +295,7 @@ impl App {
             read_uris: HashSet::new(),
             unread_counts: HashMap::new(),
             has_older: false,
+            freshened: HashSet::new(),
             prefs,
             tx,
         };
@@ -387,7 +391,11 @@ impl App {
                     self.loading = false;
                 }
             }
-            FromWorker::Doc { uri, body } => {
+            FromWorker::Doc {
+                uri,
+                body,
+                from_cache,
+            } => {
                 if self.reading_uri.as_deref() == Some(uri.as_str()) || self.reading_uri.is_none() {
                     let mut body = body;
                     // Metadata-only post: the core fell back to the description blurb (the full
@@ -406,6 +414,12 @@ impl App {
                     self.scroll = 0;
                     self.reading_version = self.reading_version.wrapping_add(1); // invalidate reader cache
                     self.note_read(&uri); // opening a post auto-marks it read (mirror the worker)
+                    // A cached open is instant but possibly stale (author edit / decoder upgrade):
+                    // schedule a background freshen, once per post per session, after the image
+                    // requests above so they take the worker first.
+                    if from_cache && self.freshened.insert(uri.clone()) {
+                        self.send(ToWorker::FreshenDoc(uri.clone()));
+                    }
                 }
                 self.loading = false;
             }
@@ -2010,6 +2024,7 @@ mod tests {
         app.apply(FromWorker::Doc {
             uri: "at://d/2".into(),
             body: RichDoc::default(),
+            from_cache: false,
         });
         assert!(app.read_uris.contains("at://d/2"));
         assert_eq!(app.unread_counts.get("at://p/1").copied(), Some(1));
@@ -2018,7 +2033,54 @@ mod tests {
         app.apply(FromWorker::Doc {
             uri: "at://d/2".into(),
             body: RichDoc::default(),
+            from_cache: false,
         });
         assert_eq!(app.unread_counts.get("at://p/1").copied(), Some(1));
+    }
+
+    #[test]
+    fn cached_open_schedules_one_background_freshen() {
+        use crate::worker::{FromWorker, ToWorker};
+        use standard_core::model::RichDoc;
+        use std::sync::mpsc::channel;
+
+        let (tx, rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, Picker::halfblocks(), Prefs::for_test());
+        while rx.try_recv().is_ok() {} // drain startup (LoadHome)
+
+        let cached = |uri: &str| FromWorker::Doc {
+            uri: uri.into(),
+            body: RichDoc::default(),
+            from_cache: true,
+        };
+
+        // A cache-served body schedules exactly one freshen for that post.
+        app.reading_uri = Some("at://d/9".into());
+        app.apply(cached("at://d/9"));
+        let n = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|c| matches!(c, ToWorker::FreshenDoc(u) if u.as_str() == "at://d/9"))
+            .count();
+        assert_eq!(n, 1, "one freshen scheduled on a cached open");
+
+        // Re-opening it (cache-first again) does not re-schedule — once per session.
+        app.apply(cached("at://d/9"));
+        assert!(
+            !std::iter::from_fn(|| rx.try_recv().ok())
+                .any(|c| matches!(c, ToWorker::FreshenDoc(_))),
+            "no re-freshen on re-open"
+        );
+
+        // A freshly fetched body (from_cache:false) is already current → never freshened.
+        app.reading_uri = Some("at://d/10".into());
+        app.apply(FromWorker::Doc {
+            uri: "at://d/10".into(),
+            body: RichDoc::default(),
+            from_cache: false,
+        });
+        assert!(
+            !std::iter::from_fn(|| rx.try_recv().ok())
+                .any(|c| matches!(c, ToWorker::FreshenDoc(_))),
+            "a fresh fetch isn't freshened again"
+        );
     }
 }

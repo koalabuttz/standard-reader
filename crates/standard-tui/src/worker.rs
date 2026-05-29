@@ -34,6 +34,9 @@ pub enum ToWorker {
     FollowPublications(Vec<String>),
     OpenFeed(String),
     OpenDoc(String),
+    /// Re-fetch + re-decode an already-open post in the background, updating it only if its body
+    /// changed (an author edit, or our decoder improving). Scheduled by the UI after a cached open.
+    FreshenDoc(String),
     Search(String),
     Refresh(String),
     /// Fetch the next older window of the feed's repo (on-demand "load older").
@@ -75,6 +78,9 @@ pub enum FromWorker {
     Doc {
         uri: String,
         body: RichDoc,
+        /// True when served from cache (instant) — the UI schedules a background freshen.
+        /// False for a freshly fetched/re-decoded body (the freshen result), which is final.
+        from_cache: bool,
     },
     Results(Vec<Document>),
     Image {
@@ -142,6 +148,7 @@ fn run(
         registry: Registry::with_defaults(),
         pds_cache: HashMap::new(),
         pending_pubs: Vec::new(),
+        network_ok: true,
         account: None,
         auth,
         prefs_path,
@@ -217,6 +224,10 @@ struct Ctx {
     /// Publications resolved by `add_feed` and awaiting the user's pick (multi-publication repos);
     /// `follow_chosen` consumes the chosen subset.
     pending_pubs: Vec<Publication>,
+    /// Whether the network last looked reachable. A background freshen sets this `false` on a fetch
+    /// error and skips subsequent freshens (so offline navigation never eats repeated timeouts);
+    /// any successful fetch clears it back to `true`. Best-effort, not a real connectivity check.
+    network_ok: bool,
     /// The signed-in identity, or `None` when signed out.
     account: Option<Account>,
     /// The OAuth runtime + client, or `None` if auth couldn't be initialized.
@@ -274,6 +285,7 @@ impl Ctx {
             ToWorker::FollowPublications(uris) => self.follow_chosen(uris),
             ToWorker::OpenFeed(uri) => self.open_feed(&uri),
             ToWorker::OpenDoc(uri) => self.open_doc(&uri),
+            ToWorker::FreshenDoc(uri) => self.freshen_doc(&uri),
             ToWorker::Search(query) => self.search(&query),
             ToWorker::Refresh(uri) => self.refresh_docs(&uri),
             ToWorker::LoadOlder(uri) => self.load_older(&uri),
@@ -544,8 +556,8 @@ impl Ctx {
         Ok(())
     }
 
-    /// A document's decoded body: cached if present, else fetched + decoded + cached. Opening
-    /// marks it read.
+    /// A document's decoded body: served from cache if present (instant; the UI then schedules a
+    /// background [`Self::freshen_doc`]), else fetched + decoded + cached. Opening marks it read.
     fn open_doc(&mut self, doc_uri: &str) -> Done {
         if let Some(stored) = self.store.document(doc_uri)?
             && let Some(body) = stored.body
@@ -554,19 +566,59 @@ impl Ctx {
             self.send(FromWorker::Doc {
                 uri: doc_uri.to_string(),
                 body,
+                from_cache: true,
             });
             return Ok(());
         }
-        let uri = AtUri::parse(doc_uri).ok_or("malformed document AT-URI")?;
-        let pds = read::resolve_pds(&self.transport, &uri.did)?;
-        let (meta, body) = read::get_document(&self.transport, &self.registry, &uri, &pds)?;
-        self.store.upsert_document(&meta, Some(&body))?;
+        let body = self.fetch_and_cache_doc(doc_uri)?;
         self.store.set_read(doc_uri, true)?;
         self.send(FromWorker::Doc {
             uri: doc_uri.to_string(),
             body,
+            from_cache: false,
         });
         Ok(())
+    }
+
+    /// Background freshen of an already-open post: re-fetch + re-decode and push an updated body
+    /// only if it differs from what's cached (an author edit, or our decoder improving). Skipped
+    /// while the network looks down (see [`Ctx::network_ok`]) so offline navigation stays snappy —
+    /// the cached body the UI already showed stands.
+    fn freshen_doc(&mut self, doc_uri: &str) -> Done {
+        if !self.network_ok {
+            return Ok(());
+        }
+        let before = self.store.document(doc_uri)?.and_then(|s| s.body);
+        match self.fetch_and_cache_doc(doc_uri) {
+            Ok(body) => {
+                self.network_ok = true;
+                // Only disturb the reader if the re-decoded body actually changed.
+                if Some(&body) != before.as_ref() {
+                    self.send(FromWorker::Doc {
+                        uri: doc_uri.to_string(),
+                        body,
+                        from_cache: false,
+                    });
+                }
+                Ok(())
+            }
+            // A freshen failure is non-fatal (the cached body is already on screen). Note the
+            // apparent outage and stop freshening until something fetches successfully again.
+            Err(_) => {
+                self.network_ok = false;
+                Ok(())
+            }
+        }
+    }
+
+    /// Fetch a document, decode its body, and cache it (preserving read-state). Shared by the
+    /// open and freshen paths.
+    fn fetch_and_cache_doc(&mut self, doc_uri: &str) -> Result<RichDoc, Box<dyn Error>> {
+        let uri = AtUri::parse(doc_uri).ok_or("malformed document AT-URI")?;
+        let pds = read::resolve_pds(&self.transport, &uri.did)?;
+        let (meta, body) = read::get_document(&self.transport, &self.registry, &uri, &pds)?;
+        self.store.upsert_document(&meta, Some(&body))?;
+        Ok(body)
     }
 
     fn search(&self, query: &str) -> Done {

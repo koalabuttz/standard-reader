@@ -18,6 +18,10 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
   remain, `— end —` when exhausted), and the footer hints it.
 - **Unread badges.** Per-feed unread counts in the sidebar and an unread dot beside each unread
   post (read posts dim); both update live as you read.
+- **Posts freshen on open.** Opening a post still renders instantly from cache, but now a
+  background re-fetch (once per post per session) updates it in place if the author edited it — or
+  if our decoder improved — so cached posts aren't frozen at first-read. Offline-safe: the cached
+  copy stands, and freshening backs off while the network is unreachable.
 - **Complete Offprint + Leaflet coverage.** Every Offprint block now decodes — blockquotes, code
   blocks, ordered & task lists (with ☑/☐), image carousels and before/after diffs, and web
   embeds/bookmarks — plus the `highlight`, `@mention`, and `webMention` text styles. Leaflet's

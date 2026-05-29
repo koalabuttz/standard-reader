@@ -34,8 +34,15 @@ const INDEX: MultimapTableDefinition<&str, &str> = MultimapTableDefinition::new(
 // local-only / its `site.standard.graph.subscription` rkey isn't known — e.g. signed out, or
 // added before sign-in. A non-empty rkey lets `unfollow` issue the matching `deleteRecord`.)
 const FOLLOWS: TableDefinition<&str, &str> = TableDefinition::new("follows");
-// key → value  (persisted preferences, e.g. "show_images")
+// key → value  (persisted preferences, e.g. "show_images"; also the cache "schema" marker)
 const SETTINGS: TableDefinition<&str, &str> = TableDefinition::new("settings");
+
+/// The cache's decoded-body format version. **Bump this** whenever a change to `RichDoc`'s
+/// serialized shape (a new or restructured `Block`/`Inline` variant) makes older cached bodies
+/// undeserializable — opening then wipes decoded bodies + walk cursors so everything re-fetches and
+/// re-decodes cleanly. Follows, publication records, and image blobs (format-stable) are kept.
+/// History: `1` = the 1.1.0 model after `Inline::Highlight` became a struct + `Block::Aligned`.
+const CACHE_SCHEMA: &str = "1";
 
 /// Errors from the cache: a redb failure or a (de)serialization failure.
 #[derive(Debug)]
@@ -104,6 +111,7 @@ impl RedbStore {
         };
         store.migrate_follows()?;
         store.init_tables()?;
+        store.migrate_schema()?;
         Ok(store)
     }
 
@@ -138,13 +146,57 @@ impl RedbStore {
         Ok(())
     }
 
+    /// Wipe decoded bodies + walk cursors when the cache's body format predates [`CACHE_SCHEMA`]
+    /// (or is unversioned), so a model change can't surface as a deserialization error on read.
+    /// A cache, so this is a clean re-fetch — follows, publication records, and image blobs stay.
+    fn migrate_schema(&self) -> Result<()> {
+        let current = {
+            let r = self.db.begin_read()?;
+            let settings = r.open_table(SETTINGS)?;
+            settings.get("cache_schema")?.map(|v| v.value().to_string())
+        };
+        if current.as_deref() == Some(CACHE_SCHEMA) {
+            return Ok(());
+        }
+        let w = self.db.begin_write()?;
+        {
+            // delete + recreate empties each table (init_tables already created them).
+            w.delete_table(DOCUMENTS)?;
+            w.open_table(DOCUMENTS)?;
+            w.delete_multimap_table(DOCS_BY_PUB)?;
+            w.open_multimap_table(DOCS_BY_PUB)?;
+            w.delete_multimap_table(INDEX)?;
+            w.open_multimap_table(INDEX)?;
+            w.delete_table(CURSORS)?;
+            w.open_table(CURSORS)?;
+            w.delete_table(OLDER_CURSORS)?;
+            w.open_table(OLDER_CURSORS)?;
+            w.open_table(SETTINGS)?
+                .insert("cache_schema", CACHE_SCHEMA)?;
+        }
+        w.commit()?;
+        Ok(())
+    }
+
     /// An in-memory cache (tests).
     #[cfg(test)]
     pub fn in_memory() -> Result<Self> {
         let db = Database::builder().create_with_backend(redb::backends::InMemoryBackend::new())?;
         let store = Self { db };
         store.init_tables()?;
+        store.migrate_schema()?;
         Ok(store)
+    }
+
+    /// Force the stored cache-schema marker (tests only), to exercise the migration.
+    #[cfg(test)]
+    fn set_cache_schema_for_test(&self, v: &str) -> Result<()> {
+        let w = self.db.begin_write()?;
+        {
+            w.open_table(SETTINGS)?.insert("cache_schema", v)?;
+        }
+        w.commit()?;
+        Ok(())
     }
 
     /// Create every table once so later read transactions never hit `TableDoesNotExist`.
@@ -608,6 +660,40 @@ mod tests {
 
         // A different publication is independent (no cross-feed bleed).
         assert_eq!(s.unread_count("at://d/p/other").unwrap(), 0);
+    }
+
+    #[test]
+    fn schema_change_wipes_bodies_but_keeps_follows() {
+        let mut s = RedbStore::in_memory().unwrap();
+        s.follow("at://d/p/1").unwrap();
+        s.upsert_document(&doc("at://d/c/1", "at://d/p/1", "2026-01-01", "x"), None)
+            .unwrap();
+        s.set_older_cursor("did:plc:d", "pg3").unwrap();
+        assert_eq!(s.documents_for("at://d/p/1").unwrap().len(), 1);
+
+        // An older / unversioned cache → migration wipes decoded bodies + walk cursors so they
+        // re-fetch (instead of failing to deserialize), but the follow list survives.
+        s.set_cache_schema_for_test("old").unwrap();
+        s.migrate_schema().unwrap();
+        assert!(
+            s.documents_for("at://d/p/1").unwrap().is_empty(),
+            "bodies wiped"
+        );
+        assert_eq!(
+            s.older_cursor("did:plc:d").unwrap(),
+            None,
+            "walk cursor reset"
+        );
+        assert!(
+            s.follows().unwrap().iter().any(|u| u == "at://d/p/1"),
+            "follow kept"
+        );
+
+        // Idempotent: re-running at the current schema doesn't wipe again.
+        s.upsert_document(&doc("at://d/c/2", "at://d/p/1", "2026-01-02", "y"), None)
+            .unwrap();
+        s.migrate_schema().unwrap();
+        assert_eq!(s.documents_for("at://d/p/1").unwrap().len(), 1);
     }
 
     #[test]

@@ -5,7 +5,7 @@
 
 use serde_json::Value;
 
-use super::facets::text_block_inlines;
+use super::facets::{parse_css_rgb, text_block_inlines};
 use super::image::blob_image;
 use super::{ContentDecoder, DecodeCtx};
 use crate::model::{Block, Image, Inline, RichDoc};
@@ -269,33 +269,5 @@ fn callout(block: &Value) -> Block {
         emoji,
         tint,
         content: text_block_inlines(block),
-    }
-}
-
-/// Parse the RGB channels from a CSS colour like `rgb(168 85 247 / 0.2)` or
-/// `rgb(168,85,247)` — the first three integers (alpha is ignored; the reader applies
-/// its own subtle tint opacity).
-fn parse_css_rgb(s: &str) -> Option<(u8, u8, u8)> {
-    let nums: Vec<u8> = s
-        .split(|c: char| !c.is_ascii_digit())
-        .filter(|t| !t.is_empty())
-        .take(3)
-        .map(|t| t.parse::<u16>().unwrap_or(0).min(255) as u8)
-        .collect();
-    match nums[..] {
-        [r, g, b] => Some((r, g, b)),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_css_rgb;
-
-    #[test]
-    fn parses_css_rgb_with_alpha() {
-        assert_eq!(parse_css_rgb("rgb(168 85 247 / 0.2)"), Some((168, 85, 247)));
-        assert_eq!(parse_css_rgb("rgb(10,20,30)"), Some((10, 20, 30)));
-        assert_eq!(parse_css_rgb("nope"), None);
     }
 }

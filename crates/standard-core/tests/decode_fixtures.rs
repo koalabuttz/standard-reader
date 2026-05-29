@@ -242,8 +242,8 @@ fn link_hrefs(blocks: &[Block]) -> Vec<String> {
                 Inline::Strong(c)
                 | Inline::Emphasis(c)
                 | Inline::Strike(c)
-                | Inline::Underline(c)
-                | Inline::Highlight(c) => from_inlines(c, out),
+                | Inline::Underline(c) => from_inlines(c, out),
+                Inline::Highlight { content, .. } => from_inlines(content, out),
                 _ => {}
             }
         }
@@ -264,11 +264,45 @@ fn link_hrefs(blocks: &[Block]) -> Vec<String> {
     out
 }
 
+/// Every highlight colour anywhere in the blocks (the `Inline::Highlight` `color`s).
+fn highlight_colors(blocks: &[Block]) -> Vec<Option<(u8, u8, u8)>> {
+    fn from_inlines(inlines: &[Inline], out: &mut Vec<Option<(u8, u8, u8)>>) {
+        for i in inlines {
+            match i {
+                Inline::Highlight { color, content } => {
+                    out.push(*color);
+                    from_inlines(content, out);
+                }
+                Inline::Strong(c)
+                | Inline::Emphasis(c)
+                | Inline::Strike(c)
+                | Inline::Underline(c)
+                | Inline::Link { content: c, .. } => from_inlines(c, out),
+                _ => {}
+            }
+        }
+    }
+    fn walk(blocks: &[Block], out: &mut Vec<Option<(u8, u8, u8)>>) {
+        for b in blocks {
+            match b {
+                Block::Paragraph(c) | Block::Heading { content: c, .. } => from_inlines(c, out),
+                Block::Callout { content, .. } => from_inlines(content, out),
+                Block::Quote(bs) => walk(bs, out),
+                Block::List { items, .. } => items.iter().for_each(|it| walk(it, out)),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(blocks, &mut out);
+    out
+}
+
 /// Whether any inline anywhere is an `Inline::Highlight`.
 fn has_highlight(blocks: &[Block]) -> bool {
     fn in_inlines(inlines: &[Inline]) -> bool {
         inlines.iter().any(|i| match i {
-            Inline::Highlight(_) => true,
+            Inline::Highlight { .. } => true,
             Inline::Strong(c)
             | Inline::Emphasis(c)
             | Inline::Strike(c)
@@ -338,6 +372,12 @@ fn offprint_all_blocks_and_facets_are_covered() {
         "mention facet → bsky profile link"
     );
     assert!(has_highlight(b), "highlight facet → Inline::Highlight");
+    // Highlights keep their *distinct* authored colours (the doc demos several) — not one fixed one.
+    let palette: std::collections::HashSet<_> = highlight_colors(b).into_iter().flatten().collect();
+    assert!(
+        palette.len() >= 2,
+        "highlights should carry their distinct authored colours, got {palette:?}"
+    );
 }
 
 /// Leaflet's catch-all used to drop lists and embeds; now they decode (validated against a live

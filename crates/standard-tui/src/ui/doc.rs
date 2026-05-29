@@ -265,12 +265,12 @@ fn inline_text(inlines: &[Inline]) -> String {
     for inline in inlines {
         match inline {
             Inline::Text(t) | Inline::Code(t) => s.push_str(t),
-            Inline::Strong(c)
-            | Inline::Emphasis(c)
-            | Inline::Strike(c)
-            | Inline::Underline(c)
-            | Inline::Highlight(c) => s.push_str(&inline_text(c)),
-            Inline::Link { content, .. } => s.push_str(&inline_text(content)),
+            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strike(c) | Inline::Underline(c) => {
+                s.push_str(&inline_text(c))
+            }
+            Inline::Highlight { content, .. } | Inline::Link { content, .. } => {
+                s.push_str(&inline_text(content))
+            }
             Inline::Image(img) => s.push_str(&img.alt),
             Inline::LineBreak => s.push(' '),
         }
@@ -300,7 +300,9 @@ fn spans_into(inline: &Inline, base: Style, theme: &Theme, out: &mut Vec<Span<'s
         Inline::Emphasis(c) => run(c, base.add_modifier(Modifier::ITALIC), theme, out),
         Inline::Strike(c) => run(c, base.add_modifier(Modifier::CROSSED_OUT), theme, out),
         Inline::Underline(c) => run(c, base.add_modifier(Modifier::UNDERLINED), theme, out),
-        Inline::Highlight(c) => run(c, theme.highlight(), theme, out),
+        Inline::Highlight { color, content } => {
+            run(content, highlight_style(theme, *color), theme, out)
+        }
         Inline::Code(t) => out.push(Span::styled(t.clone(), theme.code_inline())),
         Inline::Link { content, .. } => run(
             content,
@@ -317,6 +319,16 @@ fn spans_into(inline: &Inline, base: Style, theme: &Theme, out: &mut Vec<Span<'s
 fn run(inlines: &[Inline], base: Style, theme: &Theme, out: &mut Vec<Span<'static>>) {
     for inline in inlines {
         spans_into(inline, base, theme, out);
+    }
+}
+
+/// Background style for a highlight span: the author's colour tinted over the background (so it
+/// reads as a highlighter mark with normal text on top), or the neutral theme highlight when the
+/// author gave no colour.
+fn highlight_style(theme: &Theme, color: Option<(u8, u8, u8)>) -> Style {
+    match color {
+        Some(rgb) => Style::default().bg(theme.tint(rgb, 0.5)).fg(theme.fg),
+        None => theme.highlight(),
     }
 }
 

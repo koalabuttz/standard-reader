@@ -17,7 +17,8 @@ pub enum FacetKind {
     Emphasis,
     Strike,
     Underline,
-    Highlight,
+    /// Highlighted text, carrying the author's highlighter colour (parsed from a CSS `rgb(...)`).
+    Highlight(Option<(u8, u8, u8)>),
     Code,
     Link(String),
 }
@@ -41,7 +42,12 @@ pub fn default_facet_kind(feature: &Value) -> Option<FacetKind> {
         "italic" => FacetKind::Emphasis,
         "strikethrough" | "strike" => FacetKind::Strike,
         "underline" => FacetKind::Underline,
-        "highlight" => FacetKind::Highlight,
+        "highlight" => FacetKind::Highlight(
+            feature
+                .get("color")
+                .and_then(Value::as_str)
+                .and_then(parse_css_rgb),
+        ),
         "code" => FacetKind::Code,
         "link" => FacetKind::Link(feature.get("uri")?.as_str()?.to_string()),
         // A mention of an atproto identity (Offprint `#mention`, Leaflet `#didMention`) carries a
@@ -131,6 +137,22 @@ fn push_text(out: &mut Vec<Inline>, s: &str) {
     }
 }
 
+/// Parse the RGB channels from a CSS colour like `rgb(168 85 247 / 0.2)` or `rgb(168,85,247)` —
+/// the first three integers (any alpha is ignored; the model carries solid RGB and the frontend
+/// applies its own opacity). Shared by the highlight facet and Offprint's callout tint.
+pub fn parse_css_rgb(s: &str) -> Option<(u8, u8, u8)> {
+    let nums: Vec<u8> = s
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|t| !t.is_empty())
+        .take(3)
+        .map(|t| t.parse::<u16>().unwrap_or(0).min(255) as u8)
+        .collect();
+    match nums[..] {
+        [r, g, b] => Some((r, g, b)),
+        _ => None,
+    }
+}
+
 /// Nest `text` inside its styles, `kinds[0]` outermost. `kinds` is non-empty.
 fn wrap(text: String, kinds: &[FacetKind]) -> Inline {
     let mut it = kinds.iter().rev();
@@ -147,7 +169,10 @@ fn apply_kind(kind: &FacetKind, content: Vec<Inline>) -> Inline {
         FacetKind::Emphasis => Inline::Emphasis(content),
         FacetKind::Strike => Inline::Strike(content),
         FacetKind::Underline => Inline::Underline(content),
-        FacetKind::Highlight => Inline::Highlight(content),
+        FacetKind::Highlight(color) => Inline::Highlight {
+            color: *color,
+            content,
+        },
         FacetKind::Code => Inline::Code(flatten_text(&content)),
         FacetKind::Link(href) => Inline::Link {
             href: href.clone(),
@@ -167,12 +192,12 @@ fn collect_text(inlines: &[Inline], out: &mut String) {
     for i in inlines {
         match i {
             Inline::Text(t) | Inline::Code(t) => out.push_str(t),
-            Inline::Strong(c)
-            | Inline::Emphasis(c)
-            | Inline::Strike(c)
-            | Inline::Underline(c)
-            | Inline::Highlight(c) => collect_text(c, out),
-            Inline::Link { content, .. } => collect_text(content, out),
+            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strike(c) | Inline::Underline(c) => {
+                collect_text(c, out)
+            }
+            Inline::Highlight { content, .. } | Inline::Link { content, .. } => {
+                collect_text(content, out)
+            }
             Inline::LineBreak => out.push('\n'),
             Inline::Image(_) => {}
         }
@@ -244,21 +269,31 @@ mod tests {
     }
 
     #[test]
-    fn highlight_facet_maps_to_inline_highlight() {
+    fn highlight_facet_keeps_its_authored_colour() {
         let block = serde_json::json!({
             "plaintext": "look here",
             "facets": [{
                 "index": { "byteStart": 5, "byteEnd": 9 },
-                "features": [{ "$type": "app.offprint.richtext.facet#highlight", "color": "rgb(1 2 3)" }]
+                "features": [{ "$type": "app.offprint.richtext.facet#highlight", "color": "rgb(168 85 247 / 0.5)" }]
             }]
         });
         assert_eq!(
             text_block_inlines(&block),
             vec![
                 Inline::Text("look ".into()),
-                Inline::Highlight(vec![Inline::Text("here".into())]),
+                Inline::Highlight {
+                    color: Some((168, 85, 247)),
+                    content: vec![Inline::Text("here".into())]
+                },
             ]
         );
+    }
+
+    #[test]
+    fn parses_css_rgb_first_three_ints() {
+        assert_eq!(parse_css_rgb("rgb(168 85 247 / 0.2)"), Some((168, 85, 247)));
+        assert_eq!(parse_css_rgb("rgb(10,20,30)"), Some((10, 20, 30)));
+        assert_eq!(parse_css_rgb("nope"), None);
     }
 
     #[test]

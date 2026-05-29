@@ -27,7 +27,8 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
   embeds/bookmarks — plus the `highlight`, `@mention`, and `webMention` text styles. Leaflet's
   lists and embeds (website / Bluesky post / button / post reference), previously dropped, now
   render too. Embeds a terminal can't host become clickable links (reusing the link machinery);
-  highlighted text renders with a tint, and `@mentions` link to the author's Bluesky profile.
+  highlighted text renders in the author's highlighter colour, and `@mentions` link to the
+  author's Bluesky profile.
 
 ### Changed
 - **Lazy, bounded fetching.** Following a blog no longer backfills its entire history up front (a

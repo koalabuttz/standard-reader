@@ -1519,11 +1519,10 @@ fn collect_inline_links(inlines: &[Inline], out: &mut Vec<String>) {
                 out.push(href.clone());
                 collect_inline_links(content, out);
             }
-            Inline::Strong(c)
-            | Inline::Emphasis(c)
-            | Inline::Strike(c)
-            | Inline::Underline(c)
-            | Inline::Highlight(c) => collect_inline_links(c, out),
+            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strike(c) | Inline::Underline(c) => {
+                collect_inline_links(c, out)
+            }
+            Inline::Highlight { content, .. } => collect_inline_links(content, out),
             _ => {}
         }
     }
@@ -1534,12 +1533,12 @@ fn collect_inline_images(inlines: &[Inline], out: &mut Vec<ImageSource>) {
     for inline in inlines {
         match inline {
             Inline::Image(img) => out.push(img.source.clone()),
-            Inline::Strong(c)
-            | Inline::Emphasis(c)
-            | Inline::Strike(c)
-            | Inline::Underline(c)
-            | Inline::Highlight(c)
-            | Inline::Link { content: c, .. } => collect_inline_images(c, out),
+            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strike(c) | Inline::Underline(c) => {
+                collect_inline_images(c, out)
+            }
+            Inline::Highlight { content: c, .. } | Inline::Link { content: c, .. } => {
+                collect_inline_images(c, out)
+            }
             _ => {}
         }
     }

@@ -203,11 +203,22 @@ impl Theme {
     pub fn code_inline(&self) -> Style {
         Style::default().fg(self.accent2)
     }
-    /// Highlighted / marker text (Offprint `#highlight`): a solid tint behind readable text.
+    /// Highlighted / marker text with no authored colour: a neutral tint behind readable text.
     /// Derived from the palette (no extra configurable slot) and distinct from links (accent fg),
     /// inline code (accent2 fg), and the selected row (accent bg + bold).
     pub fn highlight(&self) -> Style {
         Style::default().bg(self.accent2).fg(self.bg)
+    }
+    /// Blend `color` over the background at `alpha` (0..=1) — for subtle tints like a highlighter
+    /// mark, so the author's colour shows while normal-fg text stays readable. `bg` is always RGB
+    /// (theme invariant); a non-RGB bg degrades to black.
+    pub fn tint(&self, (r, g, b): (u8, u8, u8), alpha: f32) -> Color {
+        let (br, bg, bb) = match self.bg {
+            Color::Rgb(r, g, b) => (r, g, b),
+            _ => (0, 0, 0),
+        };
+        let mix = |fg: u8, bg: u8| (fg as f32 * alpha + bg as f32 * (1.0 - alpha)).round() as u8;
+        Color::Rgb(mix(r, br), mix(g, bg), mix(b, bb))
     }
     /// Fenced code block body.
     pub fn code_block(&self) -> Style {

@@ -67,8 +67,13 @@ pub enum Inline {
     Strike(Vec<Inline>),
     Underline(Vec<Inline>),
     /// Highlighted / marker text (Offprint `#highlight`). Emphasis by background, not weight;
-    /// the frontend renders it as a tint behind the span.
-    Highlight(Vec<Inline>),
+    /// the frontend renders the span over a tint of `color` (the author's highlighter colour,
+    /// `None` = a neutral default). Like [`Block::Callout`]'s tint, the colour is solid RGB and the
+    /// frontend applies its own opacity.
+    Highlight {
+        color: Option<(u8, u8, u8)>,
+        content: Vec<Inline>,
+    },
     Code(String),
     Link {
         href: String,

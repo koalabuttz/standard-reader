@@ -69,6 +69,8 @@ pub enum Mode {
     BlogMenu,
     /// Show the full (untruncated) status line in a popup — opened by clicking the footer.
     StatusDetail,
+    /// Choose which of a repo's publications to follow (checklist), after adding a multi-blog repo.
+    PublicationPicker,
 }
 
 /// Which pane-width field a resize targets (see [`App::focused_pane_width`]).
@@ -211,6 +213,13 @@ pub struct App {
     pub theme: Theme,
     /// The *resolved, effective* layout for the current view (per-blog override else global).
     pub layout: LayoutKind,
+    /// Cached reader-pane layout; reused across draws unless an input changed (see the reader's
+    /// `ReaderKey`). Lets scroll + sidebar nav skip the expensive re-layout.
+    pub reader_cache: Option<crate::ui::reader::ReaderLayout>,
+    /// Bumped whenever the open document's body changes — part of the reader cache key.
+    pub reading_version: u64,
+    /// Bumped whenever an image loads (which can reflow the layout) — part of the reader cache key.
+    pub images_version: u64,
     /// Open colour editor, while [`Mode::ThemeEditor`] is active (drives live preview).
     pub theme_editor: Option<ThemeEditor>,
     /// Selection index for the list-style pickers (theme / layout / per-blog).
@@ -221,6 +230,8 @@ pub struct App {
     /// True during the first-launch flow (layout picker → theme picker), so each picker advances
     /// to the next step instead of returning to the reader.
     pub onboarding: bool,
+    /// Candidates for the publication picker: `(uri, name, selected)`; drives `PublicationPicker`.
+    pub publication_choices: Vec<(String, String, bool)>,
     /// Snapshot of the status text shown in the [`Mode::StatusDetail`] popup (taken on click, so
     /// it doesn't change underneath the reader while open).
     pub status_detail: String,
@@ -261,11 +272,15 @@ impl App {
             link_rects: Vec::new(),
             theme: Theme::modern_dark(),
             layout: prefs.layout,
+            reader_cache: None,
+            reading_version: 0,
+            images_version: 0,
             theme_editor: None,
             menu_sel: 0,
             menu_target: None,
             onboarding: false,
             status_detail: String::new(),
+            publication_choices: Vec::new(),
             prefs,
             tx,
         };
@@ -370,10 +385,12 @@ impl App {
                     self.focused_link = None;
                     self.reading = Some(body);
                     self.scroll = 0;
+                    self.reading_version = self.reading_version.wrapping_add(1); // invalidate reader cache
                 }
                 self.loading = false;
             }
             FromWorker::Image { key, image } => {
+                self.images_version = self.images_version.wrapping_add(1); // a new image can reflow
                 let (width, height) = image.dimensions();
                 // Slicing is built lazily in the reader, once the display size is known.
                 self.images.insert(
@@ -416,6 +433,14 @@ impl App {
                     self.mode = Mode::SyncPrompt;
                 }
             }
+            FromWorker::ChoosePublications { candidates } => {
+                // Default everything selected — the user deselects what they don't want.
+                self.publication_choices =
+                    candidates.into_iter().map(|(u, n)| (u, n, true)).collect();
+                self.menu_sel = 0;
+                self.mode = Mode::PublicationPicker;
+                self.loading = false;
+            }
             FromWorker::Status(s) => self.status = s,
             FromWorker::Error(e) => {
                 self.loading = false;
@@ -436,6 +461,7 @@ impl App {
             Mode::ThemeEditor => self.theme_editor_key(key),
             Mode::LayoutPicker => self.layout_picker_key(key),
             Mode::BlogMenu => self.blog_menu_key(key),
+            Mode::PublicationPicker => self.publication_picker_key(key),
             Mode::DocList => self.doclist_key(key),
             Mode::Browse => self.browse_key(key),
         }
@@ -487,9 +513,7 @@ impl App {
             }
             KeyCode::Char('q') => self.quit(),
             KeyCode::Enter => self.open_doc(),
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.doc_sel = (self.doc_sel + 1).min(self.docs.len().saturating_sub(1));
-            }
+            KeyCode::Down | KeyCode::Char('j') => self.posts_down(),
             KeyCode::Up | KeyCode::Char('k') => self.doc_sel = self.doc_sel.saturating_sub(1),
             KeyCode::Char('g') => self.doc_sel = 0,
             KeyCode::Char('G') => self.doc_sel = self.docs.len().saturating_sub(1),
@@ -1079,6 +1103,46 @@ impl App {
         }
     }
 
+    /// The multi-publication add picker: ↑↓ move, Space toggle, `a` all, `n` none, Enter follow
+    /// the selected, Esc cancel.
+    fn publication_picker_key(&mut self, key: KeyEvent) {
+        let n = self.publication_choices.len();
+        match key.code {
+            KeyCode::Esc => {
+                self.publication_choices.clear();
+                self.mode = Mode::Browse;
+                self.status = "add cancelled".into();
+            }
+            KeyCode::Up | KeyCode::Char('k') => self.menu_sel = self.menu_sel.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.menu_sel = (self.menu_sel + 1).min(n.saturating_sub(1))
+            }
+            KeyCode::Char(' ') => {
+                if let Some(choice) = self.publication_choices.get_mut(self.menu_sel) {
+                    choice.2 = !choice.2;
+                }
+            }
+            KeyCode::Char('a') => self.publication_choices.iter_mut().for_each(|c| c.2 = true),
+            KeyCode::Char('n') => self
+                .publication_choices
+                .iter_mut()
+                .for_each(|c| c.2 = false),
+            KeyCode::Enter => {
+                let chosen: Vec<String> = self
+                    .publication_choices
+                    .iter()
+                    .filter(|c| c.2)
+                    .map(|c| c.0.clone())
+                    .collect();
+                self.publication_choices.clear();
+                self.mode = Mode::Browse;
+                self.status = format!("following {} publication(s)…", chosen.len());
+                self.send(ToWorker::FollowPublications(chosen));
+            }
+            _ => {}
+        }
+    }
+
     fn open_feed(&mut self) {
         let Some(p) = self.feeds.get(self.feed_sel) else {
             return;
@@ -1185,6 +1249,23 @@ impl App {
         .into();
         if self.show_images {
             self.request_current_images();
+        }
+    }
+
+    /// Advance the post selection; at (or past) the bottom, ask the worker to load older posts.
+    fn posts_down(&mut self) {
+        if self.doc_sel + 1 >= self.docs.len() {
+            self.load_older_current();
+        } else {
+            self.doc_sel += 1;
+        }
+    }
+
+    /// Request the next older window for the open feed (the worker no-ops when exhausted).
+    fn load_older_current(&mut self) {
+        if let Some(uri) = self.open_pub.clone() {
+            self.status = "loading older…".into();
+            self.send(ToWorker::LoadOlder(uri));
         }
     }
 
@@ -1303,9 +1384,7 @@ impl App {
             Focus::Sidebar => {
                 self.feed_sel = (self.feed_sel + 1).min(self.feeds.len().saturating_sub(1))
             }
-            Focus::Posts => {
-                self.doc_sel = (self.doc_sel + 1).min(self.docs.len().saturating_sub(1))
-            }
+            Focus::Posts => self.posts_down(),
             Focus::Reader => self.scroll = self.scroll.saturating_add(1),
         }
     }
@@ -1792,5 +1871,74 @@ mod tests {
         // Any click dismisses it (without triggering a pane action behind it).
         app.on_mouse(click_at(4));
         assert_eq!(app.mode, Mode::Browse);
+    }
+
+    // --- publication picker -------------------------------------------------------
+
+    fn picker_choices() -> Vec<(String, String, bool)> {
+        vec![
+            ("at://r/p/1".into(), "One".into(), true),
+            ("at://r/p/2".into(), "Two".into(), true),
+            ("at://r/p/3".into(), "Three".into(), true),
+        ]
+    }
+
+    #[test]
+    fn publication_picker_toggles_select_all_and_none() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = test_app(Prefs::for_test());
+        app.publication_choices = picker_choices();
+        app.menu_sel = 0;
+        app.mode = Mode::PublicationPicker;
+        let key = |c| KeyEvent::new(c, KeyModifiers::NONE);
+
+        // Space toggles only the row under the cursor.
+        app.publication_picker_key(key(KeyCode::Char(' ')));
+        assert!(!app.publication_choices[0].2);
+        assert!(app.publication_choices[1].2);
+
+        // 'n' clears all; 'a' re-selects all.
+        app.publication_picker_key(key(KeyCode::Char('n')));
+        assert!(app.publication_choices.iter().all(|c| !c.2));
+        app.publication_picker_key(key(KeyCode::Char('a')));
+        assert!(app.publication_choices.iter().all(|c| c.2));
+
+        // Down advances the cursor, clamped to the last row.
+        app.publication_picker_key(key(KeyCode::Down));
+        assert_eq!(app.menu_sel, 1);
+        app.menu_sel = 2;
+        app.publication_picker_key(key(KeyCode::Down));
+        assert_eq!(app.menu_sel, 2, "cursor clamps at the last choice");
+    }
+
+    #[test]
+    fn publication_picker_enter_follows_only_the_checked_subset() {
+        use crate::worker::ToWorker;
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use std::sync::mpsc::channel;
+
+        let (tx, rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, Picker::halfblocks(), Prefs::for_test());
+        app.publication_choices = vec![
+            ("at://r/p/1".into(), "One".into(), true),
+            ("at://r/p/2".into(), "Two".into(), false),
+            ("at://r/p/3".into(), "Three".into(), true),
+        ];
+        app.mode = Mode::PublicationPicker;
+        // Drain the startup commands (`App::new` sends `LoadHome`) so we read only the picker's.
+        while rx.try_recv().is_ok() {}
+        app.publication_picker_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        // Only the checked publications are sent to the worker; the picker then closes.
+        let sent = rx.try_recv().expect("a follow command was sent");
+        match sent {
+            ToWorker::FollowPublications(uris) => assert_eq!(
+                uris,
+                vec!["at://r/p/1".to_string(), "at://r/p/3".to_string()]
+            ),
+            _ => panic!("expected FollowPublications"),
+        }
+        assert_eq!(app.mode, Mode::Browse);
+        assert!(app.publication_choices.is_empty());
     }
 }

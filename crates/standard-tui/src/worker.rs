@@ -21,14 +21,23 @@ use crate::prefs::Prefs;
 use crate::store::RedbStore;
 use crate::transport::ReqwestTransport;
 
+/// Pages (~50 docs each) fetched on a repo's first open, and per "load older" step. Bounds the
+/// work any single command does, so adding a prolific author can't wedge the worker.
+const INITIAL_PAGES: u32 = 3;
+const LOAD_OLDER_PAGES: u32 = 3;
+
 /// Commands from the UI to the worker.
 pub enum ToWorker {
     LoadHome,
     AddFeed(String),
+    /// Follow the chosen subset of a multi-publication repo (the picker's answer to `AddFeed`).
+    FollowPublications(Vec<String>),
     OpenFeed(String),
     OpenDoc(String),
     Search(String),
     Refresh(String),
+    /// Fetch the next older window of the feed's repo (on-demand "load older").
+    LoadOlder(String),
     SetRead(String, bool),
     Unfollow(String),
     LoadImage {
@@ -71,6 +80,11 @@ pub enum FromWorker {
     /// as `(publication_uri, display_name)` pairs.
     SyncDiff {
         local_only: Vec<(String, String)>,
+    },
+    /// A repo published more than one publication — the picker's candidates, as
+    /// `(publication_uri, name)` pairs, for the user to choose which to follow.
+    ChoosePublications {
+        candidates: Vec<(String, String)>,
     },
     Status(String),
     Error(String),
@@ -119,6 +133,7 @@ fn run(
         store,
         registry: Registry::with_defaults(),
         pds_cache: HashMap::new(),
+        pending_pubs: Vec::new(),
         account: None,
         auth,
         prefs_path,
@@ -191,6 +206,9 @@ struct Ctx {
     registry: Registry,
     /// did → PDS endpoint, so image-blob fetches don't re-resolve per image.
     pds_cache: HashMap<String, String>,
+    /// Publications resolved by `add_feed` and awaiting the user's pick (multi-publication repos);
+    /// `follow_chosen` consumes the chosen subset.
+    pending_pubs: Vec<Publication>,
     /// The signed-in identity, or `None` when signed out.
     account: Option<Account>,
     /// The OAuth runtime + client, or `None` if auth couldn't be initialized.
@@ -245,10 +263,12 @@ impl Ctx {
         match msg {
             ToWorker::LoadHome => self.load_home(),
             ToWorker::AddFeed(input) => self.add_feed(&input),
+            ToWorker::FollowPublications(uris) => self.follow_chosen(uris),
             ToWorker::OpenFeed(uri) => self.open_feed(&uri),
             ToWorker::OpenDoc(uri) => self.open_doc(&uri),
             ToWorker::Search(query) => self.search(&query),
             ToWorker::Refresh(uri) => self.refresh_docs(&uri),
+            ToWorker::LoadOlder(uri) => self.load_older(&uri),
             ToWorker::SetRead(uri, read) => Ok(self.store.set_read(&uri, read)?),
             ToWorker::Unfollow(uri) => self.unfollow(&uri),
             ToWorker::LoadImage { key, source } => self.load_image(key, source),
@@ -287,7 +307,7 @@ impl Ctx {
     /// DID owns `retrobailey.leaflet.pub` *and* two others), so it follows just that one.
     fn add_feed(&mut self, input: &str) -> Done {
         let target = normalize(input);
-        let (identity, publications) = match read::resolve_identity(&self.transport, &target) {
+        let (_identity, publications) = match read::resolve_identity(&self.transport, &target) {
             Ok(identity) => {
                 let pubs = read::list_publications(&self.transport, &identity)?;
                 (identity, pubs)
@@ -307,28 +327,47 @@ impl Ctx {
             )));
             return Ok(());
         }
+        // A repo can host several publications — let the user pick which to follow instead of
+        // silently following all. (A URL-add already yields exactly one, so it skips the picker.)
+        if publications.len() > 1 {
+            let candidates = publications
+                .iter()
+                .map(|p| (p.uri.clone(), p.name.clone()))
+                .collect();
+            self.pending_pubs = publications;
+            self.send(FromWorker::ChoosePublications { candidates });
+            return Ok(());
+        }
+        let added = self.follow_publications(&publications)?;
+        self.send(FromWorker::Status(if added == 0 {
+            format!("already following {target}")
+        } else {
+            format!("followed {added} publication(s) from {target}")
+        }));
+        self.load_home()
+    }
+
+    /// Follow each publication (caching its record). Documents are fetched lazily (bounded) on
+    /// first open — never a synchronous backfill here. Returns how many were newly followed.
+    fn follow_publications(&mut self, pubs: &[Publication]) -> Result<usize, Box<dyn Error>> {
         let mut added = 0;
-        for publication in &publications {
+        for publication in pubs {
             self.store.upsert_publication(publication)?;
             if !self.store.is_followed(&publication.uri)? {
                 self.follow(&publication.uri)?;
                 added += 1;
             }
         }
-        // Cache the repo's full document history so the new feed is readable immediately/offline.
-        let repo_docs = read::list_all_documents(&self.transport, &identity)?;
-        for doc in &repo_docs {
-            self.store.upsert_document(doc, None)?;
-        }
-        // Seed each followed publication's incremental high-water mark.
-        for publication in &publications {
-            self.record_watermark(&publication.uri, &repo_docs)?;
-        }
-        self.send(FromWorker::Status(if added == 0 {
-            format!("already following {target}")
-        } else {
-            format!("followed {added} publication(s) from {target}")
-        }));
+        Ok(added)
+    }
+
+    /// Follow the subset of `pending_pubs` the user chose in the picker (consuming the pending set).
+    fn follow_chosen(&mut self, uris: Vec<String>) -> Done {
+        let chosen = select_chosen(std::mem::take(&mut self.pending_pubs), &uris);
+        let added = self.follow_publications(&chosen)?;
+        self.send(FromWorker::Status(format!(
+            "followed {added} publication(s)"
+        )));
         self.load_home()
     }
 
@@ -367,20 +406,27 @@ impl Ctx {
         self.refresh_docs(pub_uri)
     }
 
-    /// Re-fetch a publication's documents and cache them. First time (nothing cached yet) → a full
-    /// **backfill** so older posts aren't unreachable; afterwards → a cheap **incremental** walk
-    /// that stops once it reaches documents already in the cache, so a refresh only pulls what's
-    /// new. Either way the feed is then served from the cache (newest-first).
+    /// Re-fetch a publication's documents and cache them. The **first** open of a repo fetches a
+    /// bounded recent window (so adding a prolific author can't wedge the worker) and remembers the
+    /// resume point for "load older"; afterwards → a cheap **incremental** walk that stops once it
+    /// reaches already-cached records. Older posts arrive on demand via [`Self::load_older`]. Either
+    /// way the feed is then served from the cache (newest-first).
     fn refresh_docs(&mut self, pub_uri: &str) -> Done {
         let uri = AtUri::parse(pub_uri).ok_or("malformed publication AT-URI")?;
         let (_, repo) = read::get_publication(&self.transport, &uri)?;
 
-        if self.store.documents_for(pub_uri)?.is_empty() {
-            let all = read::list_all_documents(&self.transport, &repo)?;
-            for doc in &all {
+        // The older-cursor entry doubles as the per-repo "initialized" marker (absent = never
+        // fetched). Keyed by repo DID because a `listRecords` cursor is repo-wide.
+        if self.store.older_cursor(&repo.did)?.is_none() {
+            let (docs, next) =
+                read::list_documents_window(&self.transport, &repo, None, INITIAL_PAGES)?;
+            for doc in &docs {
                 self.store.upsert_document(doc, None)?;
             }
-            self.record_watermark(pub_uri, &all)?;
+            self.record_watermark(pub_uri, &docs)?;
+            // "" = exhausted within the window (no older to load); else the resume cursor.
+            self.store
+                .set_older_cursor(&repo.did, next.as_deref().unwrap_or(""))?;
         } else {
             self.fetch_new_documents(&repo, pub_uri)?;
         }
@@ -391,6 +437,36 @@ impl Ctx {
             publication: pub_uri.to_string(),
             docs,
         });
+        Ok(())
+    }
+
+    /// Fetch the next older window of a feed's repo, resuming from the stored older cursor, and
+    /// re-serve the (now longer) cached list. No-op when the repo is exhausted.
+    fn load_older(&mut self, pub_uri: &str) -> Done {
+        let uri = AtUri::parse(pub_uri).ok_or("malformed publication AT-URI")?;
+        let (_, repo) = read::get_publication(&self.transport, &uri)?;
+        match self.store.older_cursor(&repo.did)? {
+            Some(cursor) if !cursor.is_empty() => {
+                let (docs, next) = read::list_documents_window(
+                    &self.transport,
+                    &repo,
+                    Some(&cursor),
+                    LOAD_OLDER_PAGES,
+                )?;
+                for doc in &docs {
+                    self.store.upsert_document(doc, None)?;
+                }
+                self.store
+                    .set_older_cursor(&repo.did, next.as_deref().unwrap_or(""))?;
+                let docs = self.store.documents_for(pub_uri)?;
+                self.send(FromWorker::Docs {
+                    publication: pub_uri.to_string(),
+                    docs,
+                });
+            }
+            // "" (exhausted) or None (never opened) → nothing older to load.
+            _ => self.send(FromWorker::Status("no older posts".into())),
+        }
         Ok(())
     }
 
@@ -642,6 +718,9 @@ impl Ctx {
             }
             self.store.follow(pub_uri)?;
             self.store.set_follow_rkey(pub_uri, rkey)?;
+            // Progressively populate the sidebar as imports land (best-effort), so a large sync
+            // fills in rather than appearing all at once at the end.
+            let _ = self.load_home();
         }
         // Already followed → just record the upstream rkey.
         for (pub_uri, rkey) in &diff.in_both {
@@ -730,16 +809,13 @@ impl Ctx {
             .map_err(|e| -> Box<dyn Error> { e.to_string().into() })
     }
 
-    /// Fetch + cache a publication and its documents (no UI emission); used for sync imports.
+    /// Cache a publication's record (no UI emission); used for sync imports. Documents are fetched
+    /// lazily (bounded) on first open, so importing many subscriptions can't trigger a bulk
+    /// backfill that wedges the worker.
     fn cache_publication(&mut self, pub_uri: &str) -> Done {
         let uri = AtUri::parse(pub_uri).ok_or("malformed publication AT-URI")?;
-        let (publication, repo) = read::get_publication(&self.transport, &uri)?;
+        let (publication, _repo) = read::get_publication(&self.transport, &uri)?;
         self.store.upsert_publication(&publication)?;
-        let repo_docs = read::list_all_documents(&self.transport, &repo)?;
-        for doc in &repo_docs {
-            self.store.upsert_document(doc, None)?;
-        }
-        self.record_watermark(pub_uri, &repo_docs)?;
         Ok(())
     }
 }
@@ -862,9 +938,17 @@ fn normalize(input: &str) -> String {
     host.trim_start_matches('@').to_string()
 }
 
+/// Keep only the pending publications whose URI the user checked in the picker, preserving order.
+fn select_chosen(pending: Vec<Publication>, uris: &[String]) -> Vec<Publication> {
+    pending
+        .into_iter()
+        .filter(|p| uris.contains(&p.uri))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SubscriptionDiff, diff_subscriptions, normalize, rkey_from_uri};
+    use super::{SubscriptionDiff, diff_subscriptions, normalize, rkey_from_uri, select_chosen};
     use std::collections::HashMap;
 
     #[test]
@@ -938,5 +1022,29 @@ mod tests {
         );
         assert_eq!(normalize("@alice.test"), "alice.test");
         assert_eq!(normalize("did:plc:abc"), "did:plc:abc");
+    }
+
+    #[test]
+    fn select_chosen_keeps_only_the_checked_publications() {
+        use standard_core::model::Publication;
+        let pub_at = |uri: &str| Publication {
+            uri: uri.into(),
+            url: "https://x.test".into(),
+            name: "p".into(),
+            description: None,
+            icon: None,
+        };
+        let pending = vec![
+            pub_at("at://r/p/1"),
+            pub_at("at://r/p/2"),
+            pub_at("at://r/p/3"),
+        ];
+        // Only the 1st and 3rd were checked → the 2nd is dropped, original order preserved.
+        let chosen = select_chosen(pending, &["at://r/p/3".into(), "at://r/p/1".into()]);
+        let uris: Vec<_> = chosen.iter().map(|p| p.uri.as_str()).collect();
+        assert_eq!(uris, ["at://r/p/1", "at://r/p/3"]);
+
+        // Selecting none follows nothing (the "n then enter" path).
+        assert!(select_chosen(vec![pub_at("at://r/p/1")], &[]).is_empty());
     }
 }

@@ -91,6 +91,29 @@ impl Segment {
     }
 }
 
+/// Cached reader layout, reused across draws when nothing affecting it changed. `build()` + the
+/// per-line buffer-render link scan are expensive and scroll-independent, so caching them makes
+/// scrolling and (especially) sidebar navigation cheap. Stored on [`App`] as an opaque handle.
+pub(crate) struct ReaderLayout {
+    key: ReaderKey,
+    segments: Vec<Segment>,
+    total: u16,
+}
+
+/// Everything that determines the laid-out segments + link rects. Excludes `scroll` (applied
+/// per-frame in `render`); includes `focused_link` so `n`/`N` simply recompute (rare) rather than
+/// us splitting the focus-highlight restyle out of the rect scan.
+#[derive(PartialEq)]
+struct ReaderKey {
+    width: u16,
+    height: u16,
+    show_images: bool,
+    reading_version: u64,
+    images_version: u64,
+    theme: Theme,
+    focused_link: Option<usize>,
+}
+
 /// Draw the reader pane (bordered panel + scrolled block-flow body).
 pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
     let focused = app.focus == Focus::Reader;
@@ -126,10 +149,33 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
         return;
     }
 
-    let (mut segments, total) = build(app, theme, inner.width, inner.height);
-    // Locate the document's links (for click hit-testing) and brighten the focused one.
-    app.link_rects =
-        locate_and_highlight_links(&mut segments, app.focused_link, theme, inner.width);
+    // Reuse the cached layout when nothing relevant changed (scroll/sidebar-nav are cache hits);
+    // otherwise rebuild — the expensive `build` + per-line buffer-render link scan. Taken out of
+    // `app` so the rest of the draw can still hold `&mut app`; `link_rects` (set on a miss) stays
+    // valid across hits because the key covers everything that affects it.
+    let key = ReaderKey {
+        width: inner.width,
+        height: inner.height,
+        show_images: app.show_images,
+        reading_version: app.reading_version,
+        images_version: app.images_version,
+        theme: *theme,
+        focused_link: app.focused_link,
+    };
+    let layout = match app.reader_cache.take() {
+        Some(cached) if cached.key == key => cached,
+        _ => {
+            let (mut segments, total) = build(app, theme, inner.width, inner.height);
+            app.link_rects =
+                locate_and_highlight_links(&mut segments, app.focused_link, theme, inner.width);
+            ReaderLayout {
+                key,
+                segments,
+                total,
+            }
+        }
+    };
+    let total = layout.total;
     // Bring the focused link into view if a keyboard focus change asked for it.
     if app.scroll_to_focused {
         if let Some(fi) = app.focused_link
@@ -145,8 +191,9 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
     }
     app.scroll = app.scroll.min(total.saturating_sub(inner.height));
     let scroll = app.scroll;
-    ensure_slices(app, &segments);
-    render(f, app, theme, inner, &segments, scroll);
+    ensure_slices(app, &layout.segments);
+    render(f, app, theme, inner, &layout.segments, scroll);
+    app.reader_cache = Some(layout); // put the (reused or freshly built) layout back
 }
 
 /// Find each hyperlink's on-screen rectangle(s) (virtual doc coordinates) by scanning the built
@@ -927,6 +974,63 @@ mod tests {
         assert_eq!(grid_cols(6, 100), 3); // 3+3
         // Narrow pane caps at 1 column.
         assert_eq!(grid_cols(4, 30), 1);
+    }
+
+    #[test]
+    fn reader_cache_key_hits_on_scroll_and_misses_on_change() {
+        // The key deliberately excludes `scroll` (applied per-frame in `render`), so scrolling and
+        // sidebar navigation reuse the cached layout; anything that affects the laid-out segments
+        // or link rects flips the key, forcing a rebuild. (`==`/`!=` so we needn't derive Debug.)
+        let base = || ReaderKey {
+            width: 80,
+            height: 24,
+            show_images: true,
+            reading_version: 3,
+            images_version: 1,
+            theme: Theme::modern_dark(),
+            focused_link: None,
+        };
+        assert!(base() == base(), "identical inputs → cache hit");
+        assert!(
+            base()
+                != ReaderKey {
+                    width: 100,
+                    ..base()
+                },
+            "pane resize is a miss"
+        );
+        assert!(
+            base()
+                != ReaderKey {
+                    reading_version: 4,
+                    ..base()
+                },
+            "a new post body is a miss"
+        );
+        assert!(
+            base()
+                != ReaderKey {
+                    images_version: 2,
+                    ..base()
+                },
+            "an arriving image reflows (miss)"
+        );
+        assert!(
+            base()
+                != ReaderKey {
+                    focused_link: Some(0),
+                    ..base()
+                },
+            "moving link focus is a miss"
+        );
+        assert!(
+            base()
+                != ReaderKey {
+                    theme: Theme::from(&crate::ui::theme::ThemeColors::light()),
+                    ..base()
+                },
+            "a theme change is a miss"
+        );
     }
 
     fn app_with(doc: RichDoc) -> App {

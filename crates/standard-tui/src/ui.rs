@@ -54,6 +54,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         Mode::LayoutPicker => draw_layout_picker(f, app, theme, area),
         Mode::BlogMenu => draw_blog_menu(f, app, theme, area),
         Mode::StatusDetail => draw_status_detail(f, app, theme, area),
+        Mode::PublicationPicker => draw_publication_picker(f, app, theme, area),
         _ => {}
     }
 }
@@ -244,6 +245,9 @@ fn draw_footer(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
         Mode::SyncPrompt => "s subscribe · r remove · esc dismiss".into(),
         Mode::ThemePicker | Mode::LayoutPicker | Mode::BlogMenu => {
             "↑↓ choose · enter select · esc cancel".into()
+        }
+        Mode::PublicationPicker => {
+            "↑↓ move · space toggle · a all · n none · enter follow · esc cancel".into()
         }
         Mode::ThemeEditor => {
             "↑↓ slot · ←→ channel · -/+ adjust · [ ] ±16 · enter save · esc cancel".into()
@@ -669,6 +673,42 @@ fn draw_status_detail(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
             .style(theme.body()),
         popup,
     );
+}
+
+/// The multi-publication add picker: a checklist of the repo's publications with `[x]`/`[ ]`
+/// toggles. The user picks which to follow (a repo can host several).
+fn draw_publication_picker(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
+    let n = app.publication_choices.len();
+    let popup = centered(area, 56, (n as u16 + 4).min(area.height));
+    f.render_widget(Clear, popup);
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(theme.accent_style())
+        .title(Span::styled(
+            " Follow which blogs? ",
+            theme.accent_style().add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().fg(theme.fg).bg(theme.panel));
+    let items: Vec<ListItem> = app
+        .publication_choices
+        .iter()
+        .map(|(_, name, selected)| {
+            let mark = if *selected { "[x] " } else { "[ ] " };
+            ListItem::new(Line::from(vec![
+                Span::styled(mark, theme.accent_style()),
+                Span::styled(name.clone(), theme.body()),
+            ]))
+        })
+        .collect();
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(theme.selected())
+        .highlight_symbol("▸ ");
+    let mut state = ListState::default();
+    if n > 0 {
+        state.select(Some(app.menu_sel.min(n - 1)));
+    }
+    f.render_stateful_widget(list, popup, &mut state);
 }
 
 /// A centered rect of the given width/height, clamped to `area`.

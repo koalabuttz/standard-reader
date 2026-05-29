@@ -13,7 +13,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
     pub bg: Color,
     pub panel: Color,

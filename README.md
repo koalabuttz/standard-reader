@@ -122,7 +122,7 @@ same structure, so customization only changes presentation.
 
 ```
 cargo build
-cargo test                     # the full suite (118 tests across both crates)
+cargo test                     # the full suite (121 tests across both crates)
 cargo test -p standard-core    # just the engine
 cargo run -p standard-reader   # runs the `sr` binary
 ```

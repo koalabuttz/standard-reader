@@ -10,6 +10,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
 use crate::app::{Action, App, Focus, Mode};
 use crate::prefs::{LayoutKind, PANE_MAX, PANE_MIN};
 use theme::{PRESETS, SLOTS, Theme, ThemeColors};
@@ -238,12 +240,9 @@ fn draw_footer(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     } else {
         "L log in"
     };
+    let _ = login_hint; // login is discoverable from the sidebar footer + help; keep this line short
     let hints: String = match app.mode {
-        Mode::Browse => {
-            format!(
-                "a add · ⇥ focus · enter open · \\ layout · t theme · / search · {login_hint} · : palette · ? help"
-            )
-        }
+        Mode::Browse => "a add · ⇥ focus · enter open · / search · : palette · ? help".into(),
         Mode::DocList => "↑↓ select · enter read · o browser · esc back · / search".into(),
         Mode::Search | Mode::AddFeed | Mode::SignIn => "type · enter submit · esc cancel".into(),
         Mode::Palette => "↑↓ choose · enter run · esc cancel".into(),
@@ -256,12 +255,38 @@ fn draw_footer(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
         }
         Mode::Help => "any key to close".into(),
     };
+    // Hints take priority: clip the (left) status to whatever space the hints leave, so a long
+    // status can never push the control hints off the right edge.
+    let budget = (area.width as usize).saturating_sub(hints.width() + 4);
+    let status = truncate_width(&app.status, budget);
     let line = Line::from(vec![
-        Span::styled(format!(" {} ", app.status), theme.dim_style()),
+        Span::styled(format!(" {status} "), theme.dim_style()),
         Span::styled("· ", Style::default().fg(theme.border)),
         Span::styled(hints, theme.accent_style()),
     ]);
     f.render_widget(Paragraph::new(line).style(theme.base()), area);
+}
+
+/// Truncate `s` to a maximum display width, appending `…` when it's cut.
+fn truncate_width(s: &str, max: usize) -> String {
+    if s.width() <= max {
+        return s.to_string();
+    }
+    if max == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut w = 0;
+    for ch in s.chars() {
+        let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if w + cw > max - 1 {
+            break; // leave a column for the ellipsis
+        }
+        out.push(ch);
+        w += cw;
+    }
+    out.push('…');
+    out
 }
 
 fn draw_input(f: &mut Frame, app: &App, theme: &Theme, area: Rect, title: &str) {
@@ -321,7 +346,7 @@ fn draw_palette(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
     let keys = [
         ("↑↓ / j k", "move selection / scroll"),
-        ("⇥ Tab", "switch sidebar ↔ reader"),
+        ("⇥ Tab", "cycle pane focus"),
         ("Enter", "open feed, then open a post"),
         ("Esc", "back / close"),
         ("a", "add a blog (handle, DID, or URL)"),
@@ -342,7 +367,12 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
         ("? ", "this help"),
         ("q", "quit"),
     ];
-    let popup = centered(area, 52, keys.len() as u16 + 2);
+    // Size the key column to the widest key (by display width, so the `↑↓`/`⇥` rows line up too),
+    // and the popup to fit key + gap + the widest description — no row's text gets squeezed.
+    let key_w = keys.iter().map(|(k, _)| k.width()).max().unwrap_or(0);
+    let desc_w = keys.iter().map(|(_, d)| d.width()).max().unwrap_or(0);
+    let width = (key_w + desc_w + 5) as u16; // 1 lead + key + 2 gap + desc + 2 border
+    let popup = centered(area, width, keys.len() as u16 + 2);
     f.render_widget(Clear, popup);
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
@@ -355,8 +385,9 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
     let lines: Vec<Line> = keys
         .iter()
         .map(|(k, desc)| {
+            let pad = " ".repeat(key_w.saturating_sub(k.width()));
             Line::from(vec![
-                Span::styled(format!(" {k:<12}"), theme.accent_style()),
+                Span::styled(format!(" {k}{pad}  "), theme.accent_style()),
                 Span::styled((*desc).to_string(), theme.body()),
             ])
         })
@@ -731,6 +762,40 @@ mod tests {
         let text = buffer_text(t.backend().buffer());
         assert!(text.contains("Feeds"), "feeds pane visible in stage 2");
         assert!(text.contains("a post"), "posts pane visible in stage 2");
+    }
+
+    #[test]
+    fn truncate_width_adds_an_ellipsis_when_cut() {
+        assert_eq!(truncate_width("hello", 10), "hello");
+        assert_eq!(truncate_width("hello world", 5), "hell…");
+        assert_eq!(truncate_width("hi", 0), "");
+    }
+
+    #[test]
+    fn long_status_never_pushes_hints_off_the_footer() {
+        let (tx, _rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        app.status = "x".repeat(200); // an absurdly long status line
+        let mut t = Terminal::new(TestBackend::new(80, 6)).unwrap();
+        t.draw(|f| draw(f, &mut app)).unwrap();
+        let text = buffer_text(t.backend().buffer());
+        assert!(text.contains("? help"), "control hints stay visible");
+        assert!(text.contains('…'), "the status got truncated to make room");
+    }
+
+    #[test]
+    fn help_rows_render_descriptions_in_full() {
+        let (tx, _rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        app.mode = crate::app::Mode::Help;
+        let mut t = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        t.draw(|f| draw(f, &mut app)).unwrap();
+        let text = buffer_text(t.backend().buffer());
+        // The widest key ("Enter / click") must not squeeze its description.
+        assert!(
+            text.contains("open the focused / clicked link"),
+            "the longest-key row's description renders in full"
+        );
     }
 
     #[test]

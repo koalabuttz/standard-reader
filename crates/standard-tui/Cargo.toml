@@ -1,11 +1,11 @@
 [package]
 name = "standard-reader"
-version = "1.0.0"
+version = "1.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "A lean, polished TUI reader for standard.site (long-form on the AT Protocol)."
+description = "A TUI reader for standard.site (long-form on the AT Protocol)."
 
 [[bin]]
 name = "sr"
@@ -48,3 +48,23 @@ unicode-width = "0.2.2"
 # Human-editable preferences file (layout/theme/per-blog overrides). Pure-Rust; chosen over
 # JSON so `prefs.toml` reads and hand-edits cleanly. Default features only (serde via derive).
 toml = "0.8"
+
+# OS keyring for the OAuth session (DPoP key + tokens). keyring v3 has no default features — pick
+# a backend per OS. macOS Keychain + Windows Credential Manager are pure-Rust native stores, on by
+# default. Linux Secret Service is opt-in via `--features secret-service` because it pulls
+# `dbus-secret-service` → libdbus (a C dep); default/prebuilt Linux builds use the 0600 file
+# fallback instead, so nothing we ship links a C library.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", default-features = false, optional = true, features = [
+    "sync-secret-service",
+    "crypto-rust",
+] }
+
+[features]
+secret-service = ["dep:keyring"]

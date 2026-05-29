@@ -17,5 +17,5 @@ description = "UI- and I/O-agnostic engine for reading standard.site (atproto lo
 pulldown-cmark = { version = "0.13.4", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
-# Lean, zero-dependency, lenient HTML parser for `org.wordpress.html`.
+# Small, dependency-free, lenient HTML parser for `org.wordpress.html`.
 tl = "0.7.8"

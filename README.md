@@ -1,11 +1,11 @@
 # standard-reader (`sr`)
 
-A lean, polished **TUI reader for [standard.site](https://standard.site)** — long-form
+A **TUI reader for [standard.site](https://standard.site)** — long-form
 writing published to the AT Protocol (Leaflet, Pckt, Offprint, GreenGale, and any
 blog that publishes `site.standard.*` records). Sign in with your atproto account,
 pull your subscriptions, and read — with images and real formatting, online or off.
 
-> Status: **1.0 — a complete, polished reader.** Add a blog by handle, browse the sidebar →
+> Status: **1.0.** Add a blog by handle, browse the sidebar →
 > document list → reader, and read a block-flow with inline + cover images, search, a command
 > palette, and full layout/theme customization — all over an offline cache. Reading needs no
 > auth; signing in mirrors your follow-list to atproto subscriptions. No build step beyond
@@ -31,7 +31,7 @@ pull your subscriptions, and read — with images and real formatting, online or
 - **A local follow-list, no account required** — add a blog by handle, DID, or URL and it
   persists. Sign in (OAuth) and it **mirrors to atproto** `site.standard.graph.subscription`,
   reconciling local-only follows without silent deletes.
-- **Graceful images** — JPEG/PNG/GIF/WebP decode directly from the PDS; formats the lean
+- **Graceful images** — JPEG/PNG/GIF/WebP decode directly from the PDS; formats the default-features
   build can't decode (notably **AVIF**, which GreenGale emits) fall back to the Bluesky CDN's
   transcode-to-JPEG, then cache offline.
 - **A portable core.** The engine has zero platform dependencies — a **PS Vita** frontend is
@@ -44,7 +44,7 @@ pull your subscriptions, and read — with images and real formatting, online or
 `sr` on your `PATH`. Builds are published for Linux (x86_64 + aarch64), macOS (Apple Silicon),
 and Windows (x86_64).
 
-**From source** (needs Rust 1.87+):
+**From source** (needs Rust 1.88+):
 
 ```
 cargo install --git https://github.com/koalabuttz/standard-reader
@@ -82,7 +82,7 @@ Keys in the reader:
 
 ```
 crates/
-  standard-core/   lib · ZERO platform deps — the whole brain (sync, lean)
+  standard-core/   lib · ZERO platform deps — the whole brain (synchronous)
     model            · the RichDoc AST + Document/Publication/Subscription
     decode           · ContentDecoder trait + per-publisher decoders
     atp              · AT-URI parsing + XRPC request building (over a Transport)
@@ -148,10 +148,15 @@ host, because the apex 301-redirects and a `client_id` must not redirect. (A ref
 lives at this repo's root; the served copy is in the website repo.) Login uses the loopback
 redirect to `http://127.0.0.1:4599/callback` (DPoP/PKCE/PAR via `atrium-oauth`).
 
-The session is stored in a **`0600` file under XDG config** — no system keyring required (the
-`keyring` crate is opt-in). Set **`SR_OAUTH_LOCALHOST=1`** to fall back to the no-hosting dev
-client (local work, or before the metadata is deployed). Reading public feeds needs no auth —
-sign-in only enables write/sync of subscriptions.
+The session (DPoP key + tokens) is stored in the **OS keyring** where a native backend exists —
+macOS Keychain, Windows Credential Manager — falling back to a **`0600` file under XDG config**
+elsewhere (Linux by default, and anywhere without a secret store, e.g. headless or Crostini; on
+Windows the file fallback relies on per-user-profile ACLs, not `0600`). Linux Secret Service is
+opt-in at build time via `--features secret-service` (it pulls `libdbus`, a C dep, so the
+prebuilt binaries don't). The non-secret account sidecar (handle + DID) stays a plain file. Set
+**`SR_OAUTH_LOCALHOST=1`** to fall back to the no-hosting dev client (local work, or before the
+metadata is deployed). Reading public feeds needs no auth — sign-in only enables write/sync of
+subscriptions.
 
 ## License
 

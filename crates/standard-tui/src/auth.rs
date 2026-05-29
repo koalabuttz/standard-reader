@@ -4,16 +4,19 @@
 //! `standard-core` stays synchronous. atproto requires auth only for *identity* (sign-in) and
 //! *writes* (subscription create/delete) — public reads keep using the blocking `Transport`.
 //!
-//! Two deliberate leanness choices:
+//! Two deliberate dependency choices (keeping C libraries out):
 //! - A custom rustls [`HttpClient`] (`RustlsHttpClient`) instead of atrium's `default-client`,
 //!   which pulls `reqwest/default-tls` (openssl, a C dep). We reuse reqwest's async side.
 //! - The handle→DID step uses atrium's HTTPS well-known resolver (a stub DNS resolver forces
 //!   the fallback), so we don't pull a DNS stack. This matches `read::resolve_did`'s own
 //!   well-known-only behaviour; a DID typed directly skips resolution entirely.
 //!
-//! The OAuth session (DPoP key + tokens) is persisted to a `0600` JSON file under the config
-//! dir via [`FileSessionStore`]; a tiny `account.json` sidecar remembers the signed-in
-//! did/handle so startup can present "@handle" without a network round-trip.
+//! The OAuth session (DPoP key + tokens) is stored in the OS keyring where a native backend
+//! exists ([`KeyringSessionStore`] — macOS Keychain, Windows Credential Manager, or Linux Secret
+//! Service behind `--features secret-service`), falling back to a `0600` JSON file
+//! ([`FileSessionStore`]) elsewhere (Linux by default, headless/Crostini). A tiny `account.json`
+//! sidecar (non-secret: did + handle) remembers the signed-in identity so startup can present
+//! "@handle" without a network round-trip.
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -96,11 +99,11 @@ pub struct Account {
 
 // --- The concrete OAuth client ---------------------------------------------------
 
-/// The fully-monomorphised client type: our rustls HTTP, file-backed sessions, in-memory
-/// transient state, and the no-DNS identity resolvers.
+/// The fully-monomorphised client type: our rustls HTTP, the keyring-or-file session store,
+/// in-memory transient state, and the no-DNS identity resolvers.
 type Client = OAuthClient<
     MemoryStateStore,
-    FileSessionStore,
+    SrSessionStore,
     CommonDidResolver<RustlsHttpClient>,
     AtprotoHandleResolver<DohDnsTxtResolver, RustlsHttpClient>,
     RustlsHttpClient,
@@ -223,6 +226,9 @@ impl Auth {
         {
             let _ = self.client.revoke(&did).await;
         }
+        // Clear the session store explicitly (esp. the keyring entry) in case revoke didn't, so no
+        // token material lingers; then remove the on-disk session/account files.
+        let _ = select_session_store(&self.session_path).clear().await;
         self.clear_files()
     }
 
@@ -332,7 +338,10 @@ fn build_client(session_path: PathBuf) -> AuthResult<Client> {
         protected_resource_metadata: Default::default(),
     };
     let state_store = MemoryStateStore::default();
-    let session_store = FileSessionStore { path: session_path };
+    // OS keyring where available (Keychain / Credential Manager / opt-in Secret Service), else the
+    // 0600 file; migrate any legacy session file into the keyring on first use.
+    let session_store = select_session_store(&session_path);
+    session_store.migrate_legacy_file(&session_path);
     let scopes = vec![
         Scope::Known(KnownScope::Atproto),
         Scope::Known(KnownScope::TransitionGeneric),
@@ -515,6 +524,161 @@ impl Store<Did, Session> for FileSessionStore {
 
 impl SessionStore for FileSessionStore {}
 
+// --- OS keyring session store ----------------------------------------------------
+// macOS Keychain (apple-native) + Windows Credential Manager (windows-native) by default; Linux
+// Secret Service behind `--features secret-service` (it pulls libdbus, a C dep). Compiled only
+// where a backend exists; everywhere else `SrSessionStore` is the file store alone.
+
+/// The whole DID→Session JSON map stored under one OS-keyring secret (mirrors the file shape).
+#[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+#[derive(Clone)]
+struct KeyringSessionStore;
+
+#[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+impl KeyringSessionStore {
+    const SERVICE: &'static str = "standard-reader";
+    const USER: &'static str = "oauth-session";
+
+    fn entry() -> Result<keyring::Entry, SessionStoreError> {
+        keyring::Entry::new(Self::SERVICE, Self::USER).map_err(|e| SessionStoreError(e.to_string()))
+    }
+
+    fn read_map(&self) -> Result<BTreeMap<String, Session>, SessionStoreError> {
+        match Self::entry()?.get_secret() {
+            Ok(bytes) => Ok(serde_json::from_slice(&bytes).unwrap_or_default()),
+            Err(keyring::Error::NoEntry) => Ok(BTreeMap::new()),
+            Err(e) => Err(SessionStoreError(e.to_string())),
+        }
+    }
+
+    fn write_map(&self, map: &BTreeMap<String, Session>) -> Result<(), SessionStoreError> {
+        let entry = Self::entry()?;
+        if map.is_empty() {
+            // No sessions left → drop the credential rather than store an empty map.
+            return match entry.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+                Err(e) => Err(SessionStoreError(e.to_string())),
+            };
+        }
+        entry
+            .set_secret(&serde_json::to_vec(map)?)
+            .map_err(|e| SessionStoreError(e.to_string()))
+    }
+
+    /// Whether the keyring is usable here: a missing entry is fine (empty, usable); an
+    /// unreachable backend (no Secret Service daemon on Crostini, a locked store) is not.
+    fn available() -> bool {
+        match Self::entry() {
+            Ok(entry) => !matches!(
+                entry.get_secret(),
+                Err(keyring::Error::NoStorageAccess(_)) | Err(keyring::Error::PlatformFailure(_))
+            ),
+            Err(_) => false,
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+impl Store<Did, Session> for KeyringSessionStore {
+    type Error = SessionStoreError;
+    async fn get(&self, key: &Did) -> Result<Option<Session>, Self::Error> {
+        Ok(self.read_map()?.get(key.as_ref()).cloned())
+    }
+    async fn set(&self, key: Did, value: Session) -> Result<(), Self::Error> {
+        let mut map = self.read_map()?;
+        map.insert(key.as_ref().to_string(), value);
+        self.write_map(&map)
+    }
+    async fn del(&self, key: &Did) -> Result<(), Self::Error> {
+        let mut map = self.read_map()?;
+        map.remove(key.as_ref());
+        self.write_map(&map)
+    }
+    async fn clear(&self) -> Result<(), Self::Error> {
+        self.write_map(&BTreeMap::new())
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+impl SessionStore for KeyringSessionStore {}
+
+/// The session store the OAuth client uses: the OS keyring where available, else the 0600 file.
+#[derive(Clone)]
+enum SrSessionStore {
+    #[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+    Keyring(KeyringSessionStore),
+    File(FileSessionStore),
+}
+
+impl SrSessionStore {
+    /// One-time migration: if this is the keyring store, it's still empty, and a legacy
+    /// `session.json` exists, import it into the keyring then delete the file (so plaintext tokens
+    /// aren't left behind). No-op for the file store / when there's nothing to migrate.
+    fn migrate_legacy_file(&self, file_path: &Path) {
+        #[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+        if let SrSessionStore::Keyring(keyring) = self
+            && keyring.read_map().map(|m| m.is_empty()).unwrap_or(false)
+        {
+            let file = FileSessionStore {
+                path: file_path.to_path_buf(),
+            };
+            if let Ok(map) = file.read_map()
+                && !map.is_empty()
+                && keyring.write_map(&map).is_ok()
+            {
+                let _ = fs::remove_file(file_path);
+            }
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows", feature = "secret-service")))]
+        let _ = file_path;
+    }
+}
+
+impl Store<Did, Session> for SrSessionStore {
+    type Error = SessionStoreError;
+    async fn get(&self, key: &Did) -> Result<Option<Session>, Self::Error> {
+        match self {
+            SrSessionStore::File(s) => s.get(key).await,
+            #[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+            SrSessionStore::Keyring(s) => s.get(key).await,
+        }
+    }
+    async fn set(&self, key: Did, value: Session) -> Result<(), Self::Error> {
+        match self {
+            SrSessionStore::File(s) => s.set(key, value).await,
+            #[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+            SrSessionStore::Keyring(s) => s.set(key, value).await,
+        }
+    }
+    async fn del(&self, key: &Did) -> Result<(), Self::Error> {
+        match self {
+            SrSessionStore::File(s) => s.del(key).await,
+            #[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+            SrSessionStore::Keyring(s) => s.del(key).await,
+        }
+    }
+    async fn clear(&self) -> Result<(), Self::Error> {
+        match self {
+            SrSessionStore::File(s) => s.clear().await,
+            #[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+            SrSessionStore::Keyring(s) => s.clear().await,
+        }
+    }
+}
+
+impl SessionStore for SrSessionStore {}
+
+/// Pick the session store: the OS keyring when a backend is present and reachable, else the file.
+fn select_session_store(session_path: &Path) -> SrSessionStore {
+    #[cfg(any(target_os = "macos", target_os = "windows", feature = "secret-service"))]
+    if KeyringSessionStore::available() {
+        return SrSessionStore::Keyring(KeyringSessionStore);
+    }
+    SrSessionStore::File(FileSessionStore {
+        path: session_path.to_path_buf(),
+    })
+}
+
 /// Write `bytes` to `path` with owner-only permissions on unix (`0600`).
 #[cfg(unix)]
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -681,6 +845,28 @@ mod tests {
         assert_eq!(
             rkey_from_uri("at://did:plc:abc/site.standard.graph.subscription/3kxyz"),
             "3kxyz"
+        );
+    }
+
+    #[test]
+    fn file_store_empty_map_removes_the_file_and_reads_clean() {
+        // The 0600-file fallback (used on Linux + anywhere without a keyring): an empty map must
+        // delete the file rather than leave key material behind, and a missing/garbage file reads
+        // as an empty map (so a corrupt session never aborts startup).
+        let path = std::env::temp_dir().join(format!("sr-auth-test-{}.json", std::process::id()));
+        let store = FileSessionStore { path: path.clone() };
+
+        std::fs::write(&path, b"not valid json").unwrap();
+        assert!(
+            store.read_map().unwrap().is_empty(),
+            "garbage reads as empty"
+        );
+
+        store.write_map(&BTreeMap::new()).unwrap();
+        assert!(!path.exists(), "an empty map removes the session file");
+        assert!(
+            store.read_map().unwrap().is_empty(),
+            "missing file reads as empty"
         );
     }
 }

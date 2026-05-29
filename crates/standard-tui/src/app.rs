@@ -173,6 +173,9 @@ pub struct App {
     pub reading: Option<RichDoc>,
     pub reading_title: String,
     pub reading_uri: Option<String>,
+    /// The open doc's `description`, kept so the reader can recognise a metadata-only post (whose
+    /// body is just the description blurb) and append a "press o to open" hint.
+    pub reading_description: Option<String>,
     /// The open document's cover image source, rendered atop the reader.
     pub reading_cover: Option<ImageSource>,
     pub scroll: u16,
@@ -238,6 +241,7 @@ impl App {
             reading: None,
             reading_title: String::new(),
             reading_uri: None,
+            reading_description: None,
             reading_cover: None,
             scroll: 0,
             input: String::new(),
@@ -351,6 +355,15 @@ impl App {
             }
             FromWorker::Doc { uri, body } => {
                 if self.reading_uri.as_deref() == Some(uri.as_str()) || self.reading_uri.is_none() {
+                    let mut body = body;
+                    // Metadata-only post: the core fell back to the description blurb (the full
+                    // article is on the web). Append a hint that `o` opens it.
+                    if self.is_description_stub(&body) {
+                        body.blocks.push(Block::Paragraph(vec![Inline::Text(
+                            "— No full text in this post; press o to open it in your browser."
+                                .into(),
+                        )]));
+                    }
                     self.request_body_images(&body);
                     self.links.clear();
                     collect_links(&body.blocks, &mut self.links);
@@ -1090,6 +1103,17 @@ impl App {
         self.send(ToWorker::OpenFeed(uri));
     }
 
+    /// Whether `body` is the core's description-blurb fallback for a metadata-only document — a
+    /// single paragraph equal to the open doc's `description`. Drives the "press o to open" hint.
+    fn is_description_stub(&self, body: &RichDoc) -> bool {
+        let Some(desc) = self.reading_description.as_deref() else {
+            return false;
+        };
+        !desc.trim().is_empty()
+            && body.blocks.len() == 1
+            && body.blocks[0] == Block::Paragraph(vec![Inline::Text(desc.to_string())])
+    }
+
     fn open_doc(&mut self) {
         let Some(d) = self.docs.get(self.doc_sel) else {
             return;
@@ -1100,6 +1124,7 @@ impl App {
             d.title.clone()
         };
         self.reading_uri = Some(d.uri.clone());
+        self.reading_description = d.description.clone();
         self.reading_cover = d.cover_image.as_ref().map(|i| i.source.clone());
         let doc_uri = d.uri.clone();
         let cover = self.reading_cover.clone(); // ends the borrow of self.docs (`d`)

@@ -19,7 +19,7 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
 ### Fixed
 - Metadata-only documents (no `content`/`textContent` — e.g. publications that keep the full
   article on the web and publish only a stub to atproto, like `atproto.com/blog`) now render
-  their `description` blurb instead of a blank reader.
+  their `description` blurb, with a hint to press `o` for the full post, instead of a blank reader.
 - Declared MSRV corrected to **Rust 1.88** (the code uses let-chains, stable since 1.88).
 
 ## [1.0.0] - 2026-05-29 — `sr` (with `standard-core` 0.2.0)

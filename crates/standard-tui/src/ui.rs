@@ -40,8 +40,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         LayoutKind::OnePane => draw_one_pane(f, app, theme, body),
         LayoutKind::DrillDown => draw_drill_down(f, app, theme, body),
     }
-    app.rects.footer = footer; // click target for expanding the status
-    draw_footer(f, app, theme, footer);
+    draw_footer(f, app, theme, footer); // also records the status region as a click target
 
     match app.mode {
         Mode::Help => draw_help(f, theme, area),
@@ -236,7 +235,7 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect, focused: bo
     f.render_stateful_widget(list, area, &mut state);
 }
 
-fn draw_footer(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
+fn draw_footer(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
     let login_hint = if app.account.is_some() {
         "L log out"
     } else {
@@ -269,6 +268,15 @@ fn draw_footer(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     } else {
         let budget = total.saturating_sub(hints.width() + 4);
         (truncate_width(&app.status, budget), hints)
+    };
+    // Record just the status text's footprint (" {status} ") as the click target, so clicking
+    // the hints on the right doesn't open the popup.
+    let status_w = (status.width() as u16 + 2).min(area.width);
+    app.rects.status = Rect {
+        x: area.x,
+        y: area.y,
+        width: status_w,
+        height: 1,
     };
     // Errors render in the foreground colour (the `⚠` already flags them); info stays dim.
     let status_style = if is_error {

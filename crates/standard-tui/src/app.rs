@@ -141,8 +141,9 @@ pub struct Rects {
     pub sidebar: Rect,
     pub posts: Rect,
     pub reader: Rect,
-    /// The footer row, for click-to-expand the (possibly truncated) status.
-    pub footer: Rect,
+    /// The status-text region of the footer (left side only), for click-to-expand. The hints on
+    /// the right are deliberately *not* covered, so clicking them doesn't open the status popup.
+    pub status: Rect,
 }
 
 /// One row of a hyperlink's on-screen footprint in the reader body, in *virtual* document
@@ -549,8 +550,8 @@ impl App {
                     self.mode = Mode::Browse;
                     return;
                 }
-                // Clicking the footer expands the (possibly truncated) status into a popup.
-                if in_rect(self.rects.footer, ev.column, ev.row) {
+                // Clicking the status text (not the hints) expands the full status into a popup.
+                if in_rect(self.rects.status, ev.column, ev.row) {
                     if !self.status.is_empty() {
                         self.status_detail = self.status.clone();
                         self.mode = Mode::StatusDetail;
@@ -1736,26 +1737,35 @@ mod tests {
         use ratatui::layout::Rect;
         let mut app = test_app(Prefs::for_test());
         app.status = "a long error message worth reading in full".into();
-        app.rects.footer = Rect {
+        // Only the status text region (left side) is the click target — not the whole footer.
+        app.rects.status = Rect {
             x: 0,
             y: 23,
-            width: 80,
+            width: 20,
             height: 1,
         };
-        let click = MouseEvent {
+        let click_at = |col| MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: 4,
+            column: col,
             row: 23,
             modifiers: KeyModifiers::NONE,
         };
-        app.on_mouse(click);
+        // Clicking the hints region (outside the status rect) does nothing.
+        app.on_mouse(click_at(60));
+        assert_eq!(
+            app.mode,
+            Mode::Browse,
+            "clicking the hints doesn't open the status"
+        );
+        // Clicking the status text opens the popup with the full text.
+        app.on_mouse(click_at(4));
         assert_eq!(app.mode, Mode::StatusDetail);
         assert_eq!(
             app.status_detail,
             "a long error message worth reading in full"
         );
         // Any click dismisses it (without triggering a pane action behind it).
-        app.on_mouse(click);
+        app.on_mouse(click_at(4));
         assert_eq!(app.mode, Mode::Browse);
     }
 }

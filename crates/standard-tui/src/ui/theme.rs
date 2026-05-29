@@ -203,6 +203,12 @@ impl Theme {
     pub fn code_inline(&self) -> Style {
         Style::default().fg(self.accent2)
     }
+    /// Highlighted / marker text (Offprint `#highlight`): a solid tint behind readable text.
+    /// Derived from the palette (no extra configurable slot) and distinct from links (accent fg),
+    /// inline code (accent2 fg), and the selected row (accent bg + bold).
+    pub fn highlight(&self) -> Style {
+        Style::default().bg(self.accent2).fg(self.bg)
+    }
     /// Fenced code block body.
     pub fn code_block(&self) -> Style {
         Style::default().fg(self.fg).bg(self.panel)

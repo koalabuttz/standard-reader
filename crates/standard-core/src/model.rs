@@ -66,8 +66,14 @@ pub enum Inline {
     Emphasis(Vec<Inline>),
     Strike(Vec<Inline>),
     Underline(Vec<Inline>),
+    /// Highlighted / marker text (Offprint `#highlight`). Emphasis by background, not weight;
+    /// the frontend renders it as a tint behind the span.
+    Highlight(Vec<Inline>),
     Code(String),
-    Link { href: String, content: Vec<Inline> },
+    Link {
+        href: String,
+        content: Vec<Inline>,
+    },
     Image(Image),
     LineBreak,
 }

@@ -1,0 +1,1238 @@
+{
+  "uri": "at://did:plc:eob75vcjtmbaef2tn4evc4sl/site.standard.document/3me4uplhwk323",
+  "cid": "bafyreiebfpuilys23hpw2tetqldw73htqaokbn3nksvrroetafspeuf7ua",
+  "value": {
+    "path": "/a/3me4uplhwk323-all-available-blocks",
+    "site": "at://did:plc:eob75vcjtmbaef2tn4evc4sl/site.standard.publication/3mcqos7xcwc2j",
+    "$type": "site.standard.document",
+    "title": "All available blocks",
+    "content": {
+      "$type": "app.offprint.content",
+      "items": [
+        {
+          "$type": "app.offprint.block.text",
+          "facets": [
+            {
+              "index": {
+                "byteEnd": 68,
+                "byteStart": 35
+              },
+              "features": [
+                {
+                  "$type": "app.offprint.richtext.facet#bold"
+                }
+              ]
+            }
+          ],
+          "plaintext": "This article exists to demonstrate every supported formatting option in one place. Each block is intentionally obvious so you can scan, copy, and verify behavior."
+        },
+        {
+          "$type": "app.offprint.block.callout",
+          "emoji": "\ud83d\udde3\ufe0f",
+          "plaintext": "All text formatting options can be mixed and combined in any way and should be supported. This is an example of a callout."
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Inline text styles"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "This paragraph shows basic inline styles working together:"
+        },
+        {
+          "$type": "app.offprint.block.bulletList",
+          "children": [
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 9,
+                      "byteStart": 0
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#bold"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 35,
+                      "byteStart": 24
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#italic"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 98,
+                      "byteStart": 80
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#strikethrough"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Bold text for emphasis, italic text for tone, underlined text for callouts, and strikethrough text for edits"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 38,
+                      "byteStart": 17
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#code"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Inline code like const example = true;"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 39,
+                      "byteStart": 26
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#bold"
+                      },
+                      {
+                        "$type": "app.offprint.richtext.facet#italic"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 63,
+                      "byteStart": 43
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#bold"
+                      },
+                      {
+                        "$type": "app.offprint.richtext.facet#strikethrough"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Combined examples such as bold + italic or bold + strikethrough"
+              }
+            }
+          ]
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Text alignment"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "This section demonstrates paragraph-level alignment options."
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Text left aligned."
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Text center aligned.",
+          "textAlign": "center"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Text right aligned.",
+          "textAlign": "right"
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Subscript and superscript"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Use these for formulas, footnotes, or precise notation:"
+        },
+        {
+          "$type": "app.offprint.block.bulletList",
+          "children": [
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "Chemical formula: H2O"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "Mathematical exponent: x2 + y2"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "Footnote-style reference: Example text[1]"
+              }
+            }
+          ]
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Text colors + highlights"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Each example below pairs a text color with a matching highlight to demonstrate stacking without wasting space."
+        },
+        {
+          "$type": "app.offprint.block.bulletList",
+          "children": [
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 23,
+                      "byteStart": 14
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#highlight",
+                        "color": "rgb(156 163 175 / 0.5)"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Grey text and highlight: Subtle, secondary information"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 24,
+                      "byteStart": 15
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#highlight",
+                        "color": "rgb(187 77 0 / 0.5)"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Brown text and highlight: Warm, muted annotation"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 25,
+                      "byteStart": 16
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#highlight",
+                        "color": "rgb(251 146 60 / 0.5)"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Orange text and highlight: Warnings or attention cues"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 25,
+                      "byteStart": 16
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#highlight",
+                        "color": "rgb(250 204 21 / 0.5)"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Yellow text and highlight: Notes and callouts"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 24,
+                      "byteStart": 15
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#highlight",
+                        "color": "rgb(34 197 94 / 0.5)"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Green text and highlight: Success or positive state"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 23,
+                      "byteStart": 14
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#highlight",
+                        "color": "rgb(59 130 246 / 0.5)"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Blue text and highlight: Informational or link-adjacent text"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 25,
+                      "byteStart": 16
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#highlight",
+                        "color": "rgb(168 85 247 / 0.5)"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Purple text and highlight: Creative or special emphasis"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 23,
+                      "byteStart": 14
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#highlight",
+                        "color": "rgb(236 72 153 / 0.5)"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Pink text and highlight: Playful or expressive tone"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 22,
+                      "byteStart": 13
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#highlight",
+                        "color": "rgb(239 68 68 / 0.5)"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Red text and highlight: Errors or critical warnings"
+              }
+            }
+          ]
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 1,
+          "plaintext": "Heading Level 1"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Use H1 for the article title or major sections. There should usually be only one H1 per article."
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Heading Level 2"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Lists"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Use H2 for main sections. This is where most structure lives in longer writing."
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 3,
+          "plaintext": "Heading Level 3"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Use H3 for subsections, clarifications, or grouped ideas under an H2."
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "This paragraph exists purely as filler content to show how normal body text looks beneath a third-level heading. It should feel readable, balanced, and not visually overwhelming."
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Mixed formatting example"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Here\u2019s a realistic paragraph combining everything:"
+        },
+        {
+          "$type": "app.offprint.block.blockquote",
+          "content": [
+            {
+              "$type": "app.offprint.block.text",
+              "facets": [
+                {
+                  "index": {
+                    "byteEnd": 5,
+                    "byteStart": 0
+                  },
+                  "features": [
+                    {
+                      "$type": "app.offprint.richtext.facet#bold"
+                    }
+                  ]
+                },
+                {
+                  "index": {
+                    "byteEnd": 54,
+                    "byteStart": 43
+                  },
+                  "features": [
+                    {
+                      "$type": "app.offprint.richtext.facet#code"
+                    }
+                  ]
+                },
+                {
+                  "index": {
+                    "byteEnd": 72,
+                    "byteStart": 56
+                  },
+                  "features": [
+                    {
+                      "$type": "app.offprint.richtext.facet#italic"
+                    }
+                  ]
+                },
+                {
+                  "index": {
+                    "byteEnd": 97,
+                    "byteStart": 78
+                  },
+                  "features": [
+                    {
+                      "$type": "app.offprint.richtext.facet#highlight",
+                      "color": "rgb(250 204 21 / 0.5)"
+                    }
+                  ]
+                },
+                {
+                  "index": {
+                    "byteEnd": 168,
+                    "byteStart": 155
+                  },
+                  "features": [
+                    {
+                      "$type": "app.offprint.richtext.facet#strikethrough"
+                    }
+                  ]
+                }
+              ],
+              "plaintext": "Note: This sentence is important, contains inline code, emphasized ideas, and highlighted phrases to draw attention. If something changes later, you might strike it out and replace it."
+            }
+          ]
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 3,
+          "plaintext": "Bulleted list"
+        },
+        {
+          "$type": "app.offprint.block.bulletList",
+          "children": [
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "First unordered item"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "Second unordered item"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 30,
+                      "byteStart": 26
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#bold"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 46,
+                      "byteStart": 35
+                    },
+                    "features": [
+                      {
+                        "$type": "app.offprint.richtext.facet#code"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Third unordered item with bold and inline code"
+              }
+            }
+          ]
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 3,
+          "plaintext": "Numbered list"
+        },
+        {
+          "$type": "app.offprint.block.orderedList",
+          "children": [
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "First ordered item"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "Second ordered item"
+              }
+            },
+            {
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "Third ordered item"
+              }
+            }
+          ]
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 3,
+          "plaintext": "Todo list"
+        },
+        {
+          "$type": "app.offprint.block.taskList",
+          "children": [
+            {
+              "checked": true,
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "First todo item"
+              }
+            },
+            {
+              "checked": false,
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "Second todo item"
+              }
+            },
+            {
+              "checked": false,
+              "content": {
+                "$type": "app.offprint.block.text",
+                "plaintext": "Third todo item"
+              }
+            }
+          ]
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Media blocks"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 3,
+          "plaintext": "Single images"
+        },
+        {
+          "$type": "app.offprint.block.image",
+          "image": {
+            "ref": {
+              "$link": "bafkreiexj52pdjc5b3i6aa4r5a2udloppob6pxqlwawsgrrmyi7qetgwri"
+            },
+            "size": 223563,
+            "$type": "blob",
+            "mimeType": "image/jpeg"
+          },
+          "width": "40%",
+          "alignment": "left",
+          "aspectRatio": {
+            "width": 1440,
+            "height": 960
+          }
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Single image blocks can be resized (minimum 25%) and aligned to the left, center or right."
+        },
+        {
+          "$type": "app.offprint.block.image",
+          "image": {
+            "ref": {
+              "$link": "bafkreidz5psk27kg44nq62rcqzx5ekclkrubliu4wzpa3u6d6r3pwvylgq"
+            },
+            "size": 645195,
+            "$type": "blob",
+            "mimeType": "image/jpeg"
+          },
+          "alignment": "center",
+          "aspectRatio": {
+            "width": 1440,
+            "height": 925
+          }
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "They could also take the full width of the container."
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 3,
+          "plaintext": "Image grid"
+        },
+        {
+          "$type": "app.offprint.block.imageGrid",
+          "images": [
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreigamqqgi3udsmpeq26l47alip6kdoeenix4iovidoatdlpgpsrzlq"
+                },
+                "size": 147331,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1008,
+                "height": 1440
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreibxyfhimjhqmhsyxbqi26nrvsqao4rzyk6cavcdf22svhzibv47im"
+                },
+                "size": 347441,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 1080
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreihke3xh7i2lmhvfdfkf2yvhsvo3tkz7zycmf7vu5qorq73g3bjm2m"
+                },
+                "size": 301784,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 960
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreiexj52pdjc5b3i6aa4r5a2udloppob6pxqlwawsgrrmyi7qetgwri"
+                },
+                "size": 223563,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 960
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreieo53qejzo7prd6i5pepoq74t6733t6swgdlehxxowe5hg6bfxvyq"
+                },
+                "size": 437127,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 960,
+                "height": 1440
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreiae2k3ewg7ceu5w7k4h7imejvqy33vm4tnwy7d5t5h2st2kq2u65a"
+                },
+                "size": 387664,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1078,
+                "height": 1440
+              }
+            }
+          ],
+          "gridRows": 2,
+          "aspectRatio": "mosaic"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Image grids can be mosaic grid, displaying the images original aspect ratio."
+        },
+        {
+          "$type": "app.offprint.block.imageGrid",
+          "images": [
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreihikc3drewkdlmuwb6ydx6sr5jrtql4hxccwda7wzeemcpslv4hoi"
+                },
+                "size": 592802,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 870
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreibxyfhimjhqmhsyxbqi26nrvsqao4rzyk6cavcdf22svhzibv47im"
+                },
+                "size": 347441,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 1080
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreienfsjowqaxkqp4msvfmwwa3nyrjtyhn5y3vkmk3yajq2ovgicdkm"
+                },
+                "size": 451664,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 960
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreihke3xh7i2lmhvfdfkf2yvhsvo3tkz7zycmf7vu5qorq73g3bjm2m"
+                },
+                "size": 301784,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 960
+              }
+            }
+          ],
+          "gridRows": 2,
+          "aspectRatio": "landscape"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "They can be locked to 3:2, 2:3 or 1:1 ratios."
+        },
+        {
+          "$type": "app.offprint.block.imageGrid",
+          "images": [
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreihla2mxfi6fcwswuqrrt5hjkdkoasqh4tpghf2tveacmtepnrgwty"
+                },
+                "size": 112480,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1029,
+                "height": 1440
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreiez6rib5lxcozb6zhx76ygswzz6t37fcmpgblbzlw42izmci4i7vy"
+                },
+                "size": 186575,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 958,
+                "height": 1440
+              }
+            }
+          ],
+          "gridRows": 1,
+          "aspectRatio": "mosaic"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "They can also be 1 or 2 rows, but require a minimum of 2 images and a max of 6 currently."
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 3,
+          "plaintext": "Image carousel"
+        },
+        {
+          "$type": "app.offprint.block.imageCarousel",
+          "images": [
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreiaddom537ev4b7m4eenomcbx7f4rlktfzf3spjev6bzmgeviliy34"
+                },
+                "size": 240578,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1078,
+                "height": 1440
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreibh4gmb4wiifbei3dzpkjfp4pilggk7wrnnxcjzaa2fduur7rsqca"
+                },
+                "size": 574705,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 961
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreieliqhtandg3yolj3leydpjjqzn46wbt47skeux7ir5vzo4y7oz2e"
+                },
+                "size": 243894,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 960,
+                "height": 1440
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreifazvnaydlqvnka3gakqtwyfpfwrp3vjz3w7dsot6vbrjfmcrz5la"
+                },
+                "size": 114892,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 960
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreibkphyrr7bgtz35y7mdoeapt2u2oz7fbdhrc7a3sgggyixpw6vjae"
+                },
+                "size": 577725,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1152,
+                "height": 1440
+              }
+            }
+          ],
+          "autoplay": false,
+          "interval": 3000
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Image carousels also require a minimum of 2 images and a max of 6 currently"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 3,
+          "plaintext": "Image comparison"
+        },
+        {
+          "$type": "app.offprint.block.imageDiff",
+          "width": "40%",
+          "images": [
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreieliqhtandg3yolj3leydpjjqzn46wbt47skeux7ir5vzo4y7oz2e"
+                },
+                "size": 243894,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 960,
+                "height": 1440
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreigk7kljlmcvvcb56gnqzp6hkb7lam5yondgiylpvkrj3nxkollfkm"
+                },
+                "size": 370032,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 960,
+                "height": 1440
+              }
+            }
+          ],
+          "labels": [
+            "Before",
+            "After"
+          ],
+          "alignment": "right"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Image comparisons can also be resized (minimum 25%) and aligned to the left, center or right."
+        },
+        {
+          "$type": "app.offprint.block.imageDiff",
+          "images": [
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreibh4gmb4wiifbei3dzpkjfp4pilggk7wrnnxcjzaa2fduur7rsqca"
+                },
+                "size": 574705,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 961
+              }
+            },
+            {
+              "image": {
+                "ref": {
+                  "$link": "bafkreihke3xh7i2lmhvfdfkf2yvhsvo3tkz7zycmf7vu5qorq73g3bjm2m"
+                },
+                "size": 301784,
+                "$type": "blob",
+                "mimeType": "image/jpeg"
+              },
+              "aspectRatio": {
+                "width": 1440,
+                "height": 960
+              }
+            }
+          ],
+          "labels": [
+            "Before",
+            "After"
+          ],
+          "alignment": "center"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "They could also take the full width of the container. These are limited to exactly 2 images."
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Links and embeds"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "facets": [
+            {
+              "index": {
+                "byteEnd": 22,
+                "byteStart": 10
+              },
+              "features": [
+                {
+                  "uri": "https://example.com/",
+                  "$type": "app.offprint.richtext.facet#link"
+                }
+              ]
+            },
+            {
+              "index": {
+                "byteEnd": 60,
+                "byteStart": 40
+              },
+              "features": [
+                {
+                  "uri": "https://example.com/",
+                  "$type": "app.offprint.richtext.facet#link"
+                }
+              ]
+            },
+            {
+              "index": {
+                "byteEnd": 119,
+                "byteStart": 97
+              },
+              "features": [
+                {
+                  "uri": "https://example.com/",
+                  "$type": "app.offprint.richtext.facet#webMention",
+                  "title": "Example Domain",
+                  "siteName": "Example"
+                }
+              ]
+            }
+          ],
+          "plaintext": "This is a regular link, and so is this: https://example.com/ but we could also add a web mention Example Example Domain for richer content."
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 3,
+          "plaintext": "Web bookmark"
+        },
+        {
+          "href": "https://www.raycast.com/juliet_philippe/pdsls",
+          "$type": "app.offprint.block.webBookmark",
+          "title": "Raycast Store: PDSls",
+          "preview": {
+            "ref": {
+              "$link": "bafkreihvybfpy6q3z4tqhegwfjbsmfyi6ixprjt3kgzf445ho5dtdafd54"
+            },
+            "size": 683749,
+            "$type": "blob",
+            "mimeType": "image/png"
+          },
+          "siteName": "Raycast",
+          "description": "Browse the public data on atproto."
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 3,
+          "plaintext": "Web embed"
+        },
+        {
+          "href": "https://example.com/",
+          "$type": "app.offprint.block.webEmbed",
+          "title": "Example Domain",
+          "width": "50%",
+          "embedUrl": "https://example.com/",
+          "siteName": "Example",
+          "alignment": "center"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "Web embeds can also be resized (minimum 50%) and aligned to the left, center or right."
+        },
+        {
+          "href": "https://www.youtube.com/watch?v=o4W3oZPRSD8",
+          "$type": "app.offprint.block.webEmbed",
+          "title": "Protocol composition: extending atproto for private data, Rashid Aziz   ATmosphere Seattle 2025",
+          "width": "100%",
+          "embedUrl": "https://www.youtube.com/embed/o4W3oZPRSD8?feature=oembed",
+          "siteName": "YouTube",
+          "alignment": "center",
+          "embedWidth": 800,
+          "description": "Enjoy the videos and music you love, upload original content, and share it all with friends, family, and the world on YouTube.",
+          "embedHeight": 450
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "They could also take the full width of the container."
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Code blocks"
+        },
+        {
+          "code": "// Example JavaScript code block\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n\nconsole.log(greet('world'));",
+          "$type": "app.offprint.block.codeBlock",
+          "language": "javascript"
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "code": "/* Example CSS code block */\n.container {\n  display: grid;\n  gap: 1rem;\n}",
+          "$type": "app.offprint.block.codeBlock",
+          "language": "css"
+        },
+        {
+          "$type": "app.offprint.block.horizontalRule"
+        },
+        {
+          "$type": "app.offprint.block.heading",
+          "level": 2,
+          "plaintext": "Closing"
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": "This article is intentionally boring in content and rich in formatting. Its job is to be copied, poked, broken, and used as a reference when testing renderers."
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "facets": [
+            {
+              "index": {
+                "byteEnd": 75,
+                "byteStart": 67
+              },
+              "features": [
+                {
+                  "did": "did:plc:eob75vcjtmbaef2tn4evc4sl",
+                  "$type": "app.offprint.richtext.facet#mention",
+                  "handle": "aka.dad"
+                }
+              ]
+            }
+          ],
+          "plaintext": "If it looks good everywhere, you\u2019re probably in great shape. Let @aka.dad know if you need any help implementing anything in your own renderers/readers."
+        },
+        {
+          "$type": "app.offprint.block.text",
+          "plaintext": ""
+        }
+      ]
+    },
+    "description": "This is a document with all blocks available on Offprint, last updated February 5th 2026.",
+    "publishedAt": "2026-02-05T10:40:12-07:00",
+    "textContent": "This article exists to demonstrate every supported formatting option in one place. Each block is intentionally obvious so you can scan, copy, and verify behavior.\n\ud83d\udde3\ufe0f All text formatting options can be mixed and combined in any way and should be supported. This is an example of a callout.\n\n---\nInline text styles\nThis paragraph shows basic inline styles working together:\n- Bold text for emphasis, italic text for tone, underlined text for callouts, and strikethrough text for edits\n- Inline code like const example = true;\n- Combined examples such as bold + italic or bold + strikethrough\n\n\n---\nText alignment\nThis section demonstrates paragraph-level alignment options.\nText left aligned.\nText center aligned.\nText right aligned.\n\n---\nSubscript and superscript\nUse these for formulas, footnotes, or precise notation:\n- Chemical formula: H2O\n- Mathematical exponent: x2 + y2\n- Footnote-style reference: Example text[1]\n\n\n---\nText colors + highlights\nEach example below pairs a text color with a matching highlight to demonstrate stacking without wasting space.\n- Grey text and highlight: Subtle, secondary information\n- Brown text and highlight: Warm, muted annotation\n- Orange text and highlight: Warnings or attention cues\n- Yellow text and highlight: Notes and callouts\n- Green text and highlight: Success or positive state\n- Blue text and highlight: Informational or link-adjacent text\n- Purple text and highlight: Creative or special emphasis\n- Pink text and highlight: Playful or expressive tone\n- Red text and highlight: Errors or critical warnings\n\n\n---\nHeading Level 1\nUse H1 for the article title or major sections. There should usually be only one H1 per article.\nHeading Level 2\nLists\nUse H2 for main sections. This is where most structure lives in longer writing.\nHeading Level 3\nUse H3 for subsections, clarifications, or grouped ideas under an H2.\nThis paragraph exists purely as filler content to show how normal body text looks beneath a third-level heading. It should feel readable, balanced, and not visually overwhelming.\n\n---\nMixed formatting example\nHere\u2019s a realistic paragraph combining everything:\n> Note: This sentence is important, contains inline code, emphasized ideas, and highlighted phrases to draw attention. If something changes later, you might strike it out and replace it.\nBulleted list\n- First unordered item\n- Second unordered item\n- Third unordered item with bold and inline code\n\nNumbered list\n- First ordered item\n- Second ordered item\n- Third ordered item\n\nTodo list\n[x] First todo item\n[ ] Second todo item\n[ ] Third todo item\n\n\n---\nMedia blocks\nSingle images\nSingle image blocks can be resized (minimum 25%) and aligned to the left, center or right.\nThey could also take the full width of the container.\nImage grid\nImage grids can be mosaic grid, displaying the images original aspect ratio.\nThey can be locked to 3:2, 2:3 or 1:1 ratios.\nThey can also be 1 or 2 rows, but require a minimum of 2 images and a max of 6 currently.\nImage carousel\nImage carousels also require a minimum of 2 images and a max of 6 currently\nImage comparison\nImage comparisons can also be resized (minimum 25%) and aligned to the left, center or right.\nThey could also take the full width of the container. These are limited to exactly 2 images.\n\n---\nLinks and embeds\nThis is a regular link, and so is this: https://example.com/ but we could also add a web mention  for richer content.\nWeb bookmark\nWeb embed\nWeb embeds can also be resized (minimum 50%) and aligned to the left, center or right.\nThey could also take the full width of the container.\n\n---\nCode blocks\n// Example JavaScript code block\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n\nconsole.log(greet('world'));\n\n---\n/* Example CSS code block */\n.container {\n  display: grid;\n  gap: 1rem;\n}\n\n---\nClosing\nThis article is intentionally boring in content and rich in formatting. Its job is to be copied, poked, broken, and used as a reference when testing renderers.\nIf it looks good everywhere, you\u2019re probably in great shape. Let @aka.dad know if you need any help implementing anything in your own renderers/readers."
+  }
+}

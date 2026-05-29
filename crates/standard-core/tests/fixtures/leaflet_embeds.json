@@ -1,0 +1,765 @@
+{
+  "uri": "at://did:plc:rnpkyqnmsw4ipey6eotbdnnf/site.standard.document/3m7ttuppfzc23",
+  "cid": "bafyreidjqejmpwqlq44pljcg7wyh3tnhhv2zlk63esxmj5ldg3xr35uqxi",
+  "value": {
+    "path": "/3m7ttuppfzc23",
+    "site": "at://did:plc:rnpkyqnmsw4ipey6eotbdnnf/site.standard.publication/3lxn3sgnjpc2a",
+    "tags": [
+      "atproto",
+      "tapping in"
+    ],
+    "$type": "site.standard.document",
+    "title": "Quick getting started notes on tap ",
+    "content": {
+      "$type": "pub.leaflet.content",
+      "pages": [
+        {
+          "id": "019b14c8-ecbf-799b-96b0-2fe696b14ef6",
+          "$type": "pub.leaflet.pages.linearDocument",
+          "blocks": [
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 6,
+                      "byteStart": 3
+                    },
+                    "features": [
+                      {
+                        "uri": "https://github.com/bluesky-social/indigo/blob/main/cmd/tap/README.md",
+                        "$type": "pub.leaflet.richtext.facet#link"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 352,
+                      "byteStart": 340
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "So Tap does a lot of things, but I wanted to write some quick notes on how I've been playing around with it today to help others to get going with it, cause there's a lot to it. My use case, back filling custom lexicons and filtering by that from the firehose. Example: let's say you're building an atproto app with the collection nsids in xyz.atpoke.*. I want the historical records across the atmosphere and any future ones made, along with proof it was really that user who made that record (the authenticated part of atproto). Tap solves that for you easily and quickly."
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.bskyPost",
+                "postRef": {
+                  "cid": "bafyreifcomhrq6466wmvovzzlznxqqg34glygktglootblzjqaoueyhyiy",
+                  "uri": "at://did:plc:yk4dd2qkboz2yv6tpubpc6co/app.bsky.feed.post/3m7ssh5vijk22"
+                }
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 142,
+                      "byteStart": 0
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#italic"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "These are just some quick notes to help you get going and may or may not be best practice and things I wrote as I was playing with it tonight."
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 57,
+                      "byteStart": 39
+                    },
+                    "features": [
+                      {
+                        "uri": "https://go.dev/doc/install",
+                        "$type": "pub.leaflet.richtext.facet#link"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "1. Download go if you haven't already. Install directions"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 78,
+                      "byteStart": 20
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 127,
+                      "byteStart": 124
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 238,
+                      "byteStart": 230
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "2. Install Tap with go install github.com/bluesky-social/indigo/cmd/tap@latest this should now give you an executable named tap you can run. If not may want to check your go install directory and the bin folder there. Mine was at ~/go/bin"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": "3. Run tap with "
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.code",
+                "language": "shellscript",
+                "plaintext": "TAP_SIGNAL_COLLECTION=xyz.atpoke.graph.poke TAP_COLLECTION_FILTERS=xyz.atpoke.graph.poke,xyz.atpoke.* tap run"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": "A break down on those env variables"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.unorderedList",
+                "children": [
+                  {
+                    "$type": "pub.leaflet.blocks.unorderedList#listItem",
+                    "content": {
+                      "$type": "pub.leaflet.blocks.text",
+                      "facets": [
+                        {
+                          "index": {
+                            "byteEnd": 21,
+                            "byteStart": 0
+                          },
+                          "features": [
+                            {
+                              "$type": "pub.leaflet.richtext.facet#code"
+                            }
+                          ]
+                        },
+                        {
+                          "index": {
+                            "byteEnd": 145,
+                            "byteStart": 124
+                          },
+                          "features": [
+                            {
+                              "$type": "pub.leaflet.richtext.facet#code"
+                            }
+                          ]
+                        }
+                      ],
+                      "plaintext": "TAP_SIGNAL_COLLECTION - An env variable. Tells Tap to find every repo on the atmosphere from a relay with the collection of xyz.atpoke.graph.poke, if it finds a repo with that, then add that repo to the list to be synced and backfill on run of those collections. You want to pick a record you think everyone who has used the atproto app has. Like a profile record on sign up."
+                    },
+                    "children": []
+                  },
+                  {
+                    "$type": "pub.leaflet.blocks.unorderedList#listItem",
+                    "content": {
+                      "$type": "pub.leaflet.blocks.text",
+                      "facets": [
+                        {
+                          "index": {
+                            "byteEnd": 22,
+                            "byteStart": 0
+                          },
+                          "features": [
+                            {
+                              "$type": "pub.leaflet.richtext.facet#code"
+                            }
+                          ]
+                        }
+                      ],
+                      "plaintext": "TAP_COLLECTION_FILTERS -An env variable. Tells tap to filter by repo when finding collections to backfill or watch for in the future from the firehose. You want to use the nsid "
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 110,
+                      "byteStart": 104
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "And that's it. It will take a while and spit out a lot of stuff while it backfills to a sqlite db named tap.db "
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 77,
+                      "byteStart": 62
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 216,
+                      "byteStart": 212
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "To consume this backfill/live events you want to either set a TAP_WEBHOOK_URL env variable where it sends a POST request to for each or connect to a jetstream like web socket interface. Each of these will have a live flag showing whether it was from a backfill or from the firehose."
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 32,
+                      "byteStart": 20
+                    },
+                    "features": [
+                      {
+                        "uri": "https://github.com/bluesky-social/atproto/blob/main/packages/tap/README.md",
+                        "$type": "pub.leaflet.richtext.facet#link"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "You can use the new @atproto/tap typescript library to consume the websocket, but be prepared. Once the events play through and they are acknowledged, they will not again. I put a hack in this example to show where you can set the ack method to a void function so you can rerun it while developing. "
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.code",
+                "language": "javascript",
+                "plaintext": "import { Tap, SimpleIndexer } from '@atproto/tap'\n\nconst tap = new Tap('http://localhost:2480')\n\nconst indexer = new SimpleIndexer()\n\nindexer.identity(async (evt) => {\n    console.log(`${evt.did} updated identity: ${evt.handle} (${evt.status})`)\n})\n\n\nindexer.record(async (evt, opts) => {\n\n    const uri = `at://${evt.did}/${evt.collection}/${evt.rkey}`\n    if (evt.action === 'create' || evt.action === 'update') {\n        console.log(`${evt.action}: ${uri}`)\n    } else {\n        console.log(`deleted: ${uri}`)\n    }\n    //Uncomment to NOT acknowledge the event from the tap server so you can re run the script during development\n    // opts.ack = () => console.log('\"acknowledged\"')\n})\n\n\nindexer.error((err) => console.error(err))\n\nconst channel = tap.channel(indexer)\nchannel.start()"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.header",
+                "level": 2,
+                "facets": [],
+                "plaintext": "In plain language, what we did above"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 101,
+                      "byteStart": 77
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 132,
+                      "byteStart": 111
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "1. We give Tap a lexicon we know everyone who uses our atproto app has. like sh.tangled.actor.profile. This is TAP_SIGNAL_COLLECTION."
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 51,
+                      "byteStart": 13
+                    },
+                    "features": [
+                      {
+                        "uri": "https://docs.bsky.app/docs/api/com-atproto-sync-list-repos-by-collection",
+                        "$type": "pub.leaflet.richtext.facet#link"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "2. Tap calls com.atproto.sync.listReposByCollection on a relay to get a list of repos with those records"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 223,
+                      "byteStart": 201
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 263,
+                      "byteStart": 251
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 503,
+                      "byteStart": 487
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "3. Tap downloads the repos export (their .cars) and starts reading through the repo recording and saving any record in that collection. Also while reading the export it also finds what you have set in TAP_COLLECTION_FILTERS. For instance, if you have sh.tangled.* set it will backfill every single collection's records it found in the repo with that nsid prefix. This is all saved into a local db, which is sqlite by default but can change to something else like postgres by setting the TAP_DATABASE_URL variable"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": "4. While that is happening, the firehose is also listening for new records."
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": "Some notes on the firehose part:"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.unorderedList",
+                "children": [
+                  {
+                    "$type": "pub.leaflet.blocks.unorderedList#listItem",
+                    "content": {
+                      "$type": "pub.leaflet.blocks.text",
+                      "facets": [
+                        {
+                          "index": {
+                            "byteEnd": 143,
+                            "byteStart": 133
+                          },
+                          "features": [
+                            {
+                              "$type": "pub.leaflet.richtext.facet#code"
+                            }
+                          ]
+                        }
+                      ],
+                      "plaintext": "Tap saves and sends events by repo, as in the user's did. Which you can set to do that manually by doing a POST to tap's endpoint at /repos/add this will also trigger a backfill from your previously set env variables"
+                    },
+                    "children": []
+                  },
+                  {
+                    "$type": "pub.leaflet.blocks.unorderedList#listItem",
+                    "content": {
+                      "$type": "pub.leaflet.blocks.text",
+                      "facets": [
+                        {
+                          "index": {
+                            "byteEnd": 55,
+                            "byteStart": 34
+                          },
+                          "features": [
+                            {
+                              "$type": "pub.leaflet.richtext.facet#code"
+                            }
+                          ]
+                        },
+                        {
+                          "index": {
+                            "byteEnd": 159,
+                            "byteStart": 137
+                          },
+                          "features": [
+                            {
+                              "$type": "pub.leaflet.richtext.facet#code"
+                            }
+                          ]
+                        }
+                      ],
+                      "plaintext": "If it sees a new record go by for TAP_SIGNAL_COLLECTION and is not tracking that user it will send it along and start tracking them. NOT TAG_COLLECTION_FILTERS for those it still saves those lexicons as long as the repo is being \"tracked\" as previously mentioned."
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 110,
+                      "byteStart": 104
+                    },
+                    "features": [
+                      {
+                        "uri": "https://github.com/bluesky-social/indigo/blob/main/cmd/tap/README.md",
+                        "$type": "pub.leaflet.richtext.facet#link"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "There's some other really cool things as well about tap, like identity stuff. Which you can find on the readme"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.header",
+                "level": 1,
+                "facets": [],
+                "plaintext": "Railway template"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 11,
+                      "byteStart": 0
+                    },
+                    "features": [
+                      {
+                        "did": "did:plc:yk4dd2qkboz2yv6tpubpc6co",
+                        "$type": "pub.leaflet.richtext.facet#didMention"
+                      }
+                    ]
+                  },
+                  {
+                    "index": {
+                      "byteEnd": 32,
+                      "byteStart": 17
+                    },
+                    "features": [
+                      {
+                        "uri": "https://github.com/bluesky-social/indigo/blob/main/cmd/tap/RAILWAY_DEPLOY.md",
+                        "$type": "pub.leaflet.richtext.facet#link"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "@dholms.xyz made some directions on how to deploy with Railway, I took those further and made a template so ideally you just have to set the collections you want to filter, password, and setup the domain and you are good to go! This example also uses postgres as the DB so you can connect and explore that. "
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "url": "https://railway.com/deploy/atproto-tap-example?referralCode=z49xDi",
+                "text": "Deploy on Railway",
+                "$type": "pub.leaflet.blocks.button"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 384,
+                      "byteStart": 192
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#bold"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "Railway is a paid service, but the above \"Deploy on Railway\" button should give you $20 in credits with my referral code. This also gives me 15% if you end up spending anything in the future. It should also be noted. That tap runs with the full firehose and downloads repo exports. This can be network intensive, and railway does charge for egress. You will want to watch your usage. I backfilled 75 repos, and 50k records while streaming them to my computer, and it cost me $0.10. Mileage may vary and grow a lot depending on what you are backfilling. So please take note and watch your usage and set usage limits, because this can be a lot if you try to backfill something like Bluesky."
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": "Example showing what you need to set following what we did above"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.image",
+                "image": {
+                  "ref": {
+                    "$link": "bafkreihj5e6j35yrxtowszsacexybcrlx6btwqx3ze3uw3fag5s4kyiiam"
+                  },
+                  "size": 215896,
+                  "$type": "blob",
+                  "mimeType": "image/png"
+                },
+                "aspectRatio": {
+                  "width": 1292,
+                  "height": 1700
+                }
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [
+                  {
+                    "index": {
+                      "byteEnd": 136,
+                      "byteStart": 132
+                    },
+                    "features": [
+                      {
+                        "$type": "pub.leaflet.richtext.facet#code"
+                      }
+                    ]
+                  }
+                ],
+                "plaintext": "On deploy, you may have to click on the tap service, go to settings and make sure the public network domain has the correct port of 2480 and has a generated domain or can do a custom domain"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.image",
+                "image": {
+                  "ref": {
+                    "$link": "bafkreifzg2iaoirxrte5rpwdnhdxbbkmmtqed74wvnhahnad5cp7qmppk4"
+                  },
+                  "size": 132280,
+                  "$type": "blob",
+                  "mimeType": "image/png"
+                },
+                "aspectRatio": {
+                  "width": 1360,
+                  "height": 1058
+                }
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": "The setup for tap is a bit different since it has a password"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.code",
+                "language": "javascript",
+                "plaintext": "const tap = new Tap('https://{your tap service public domain}', {adminPassword: 'topsecret'})\n"
+              }
+            },
+            {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "facets": [],
+                "plaintext": ""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "bskyPostRef": {
+      "cid": "bafyreigo6pckyuocnaphxpxc2v6xn3v43oupkltcd6cvkvwvxtpe4dtjb4",
+      "uri": "at://did:plc:rnpkyqnmsw4ipey6eotbdnnf/app.bsky.feed.post/3m7ttuw4cns23",
+      "commit": {
+        "cid": "bafyreigx5t54lm6ikslb6nvrry5fz22ag3uft3q3eog57xxlpxqxmjhdmy",
+        "rev": "3m7ttuw7ibg2b"
+      },
+      "validationStatus": "valid"
+    },
+    "description": "Bluesky released a new backfill/firehose tool today called Tap. These are some quick notes on trying it out to make it easier for anyone to give it a go. ",
+    "publishedAt": "2025-12-13T05:14:54.721Z"
+  }
+}

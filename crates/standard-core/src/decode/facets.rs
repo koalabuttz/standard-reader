@@ -17,6 +17,7 @@ pub enum FacetKind {
     Emphasis,
     Strike,
     Underline,
+    Highlight,
     Code,
     Link(String),
 }
@@ -40,8 +41,17 @@ pub fn default_facet_kind(feature: &Value) -> Option<FacetKind> {
         "italic" => FacetKind::Emphasis,
         "strikethrough" | "strike" => FacetKind::Strike,
         "underline" => FacetKind::Underline,
+        "highlight" => FacetKind::Highlight,
         "code" => FacetKind::Code,
         "link" => FacetKind::Link(feature.get("uri")?.as_str()?.to_string()),
+        // A mention of an atproto identity (Offprint `#mention`, Leaflet `#didMention`) carries a
+        // `did`; link it to the account's Bluesky profile. A `#webMention` carries a `uri` like a
+        // plain link. Either way the mention's text stays readable; only the target is synthesized.
+        "mention" | "didMention" => FacetKind::Link(format!(
+            "https://bsky.app/profile/{}",
+            feature.get("did")?.as_str()?
+        )),
+        "webMention" => FacetKind::Link(feature.get("uri")?.as_str()?.to_string()),
         _ => return None,
     })
 }
@@ -137,6 +147,7 @@ fn apply_kind(kind: &FacetKind, content: Vec<Inline>) -> Inline {
         FacetKind::Emphasis => Inline::Emphasis(content),
         FacetKind::Strike => Inline::Strike(content),
         FacetKind::Underline => Inline::Underline(content),
+        FacetKind::Highlight => Inline::Highlight(content),
         FacetKind::Code => Inline::Code(flatten_text(&content)),
         FacetKind::Link(href) => Inline::Link {
             href: href.clone(),
@@ -156,9 +167,11 @@ fn collect_text(inlines: &[Inline], out: &mut String) {
     for i in inlines {
         match i {
             Inline::Text(t) | Inline::Code(t) => out.push_str(t),
-            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strike(c) | Inline::Underline(c) => {
-                collect_text(c, out)
-            }
+            Inline::Strong(c)
+            | Inline::Emphasis(c)
+            | Inline::Strike(c)
+            | Inline::Underline(c)
+            | Inline::Highlight(c) => collect_text(c, out),
             Inline::Link { content, .. } => collect_text(content, out),
             Inline::LineBreak => out.push('\n'),
             Inline::Image(_) => {}
@@ -228,6 +241,64 @@ mod tests {
         // byteEnd 1 lands inside the 3-byte '€' — must be dropped, not panic.
         let block = serde_json::json!({ "plaintext": "€", "facets": [bold(0, 1)] });
         assert_eq!(text_block_inlines(&block), vec![Inline::Text("€".into())]);
+    }
+
+    #[test]
+    fn highlight_facet_maps_to_inline_highlight() {
+        let block = serde_json::json!({
+            "plaintext": "look here",
+            "facets": [{
+                "index": { "byteStart": 5, "byteEnd": 9 },
+                "features": [{ "$type": "app.offprint.richtext.facet#highlight", "color": "rgb(1 2 3)" }]
+            }]
+        });
+        assert_eq!(
+            text_block_inlines(&block),
+            vec![
+                Inline::Text("look ".into()),
+                Inline::Highlight(vec![Inline::Text("here".into())]),
+            ]
+        );
+    }
+
+    #[test]
+    fn mention_links_to_the_bsky_profile_and_webmention_to_its_uri() {
+        // A `#mention`/`#didMention` carries a `did` → a Bluesky profile link.
+        let block = serde_json::json!({
+            "plaintext": "hi @x",
+            "facets": [{
+                "index": { "byteStart": 3, "byteEnd": 5 },
+                "features": [{ "$type": "app.offprint.richtext.facet#mention", "did": "did:plc:abc", "handle": "x" }]
+            }]
+        });
+        assert_eq!(
+            text_block_inlines(&block),
+            vec![
+                Inline::Text("hi ".into()),
+                Inline::Link {
+                    href: "https://bsky.app/profile/did:plc:abc".into(),
+                    content: vec![Inline::Text("@x".into())]
+                },
+            ]
+        );
+        // A `#webMention` carries a `uri` → a plain link.
+        let block = serde_json::json!({
+            "plaintext": "see it",
+            "facets": [{
+                "index": { "byteStart": 4, "byteEnd": 6 },
+                "features": [{ "$type": "app.offprint.richtext.facet#webMention", "uri": "https://example.com/" }]
+            }]
+        });
+        assert_eq!(
+            text_block_inlines(&block),
+            vec![
+                Inline::Text("see ".into()),
+                Inline::Link {
+                    href: "https://example.com/".into(),
+                    content: vec![Inline::Text("it".into())]
+                },
+            ]
+        );
     }
 
     #[test]

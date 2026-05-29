@@ -422,6 +422,7 @@ fn inlines(spans: &[Inline]) -> String {
             Inline::Emphasis(c) => out.push_str(&format!("_{}_", inlines(c))),
             Inline::Strike(c) => out.push_str(&format!("~~{}~~", inlines(c))),
             Inline::Underline(c) => out.push_str(&format!("__{}__", inlines(c))),
+            Inline::Highlight(c) => out.push_str(&format!("=={}==", inlines(c))),
             Inline::Code(t) => out.push_str(&format!("`{t}`")),
             Inline::Link { href, content } => {
                 out.push_str(&format!("[{}]({href})", inlines(content)))

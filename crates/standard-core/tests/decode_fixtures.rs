@@ -229,3 +229,136 @@ fn contains_image_url(blocks: &[Block], needle: &str) -> bool {
         _ => false,
     })
 }
+
+/// Every link href anywhere in the blocks (recursing through styled spans + containers).
+fn link_hrefs(blocks: &[Block]) -> Vec<String> {
+    fn from_inlines(inlines: &[Inline], out: &mut Vec<String>) {
+        for i in inlines {
+            match i {
+                Inline::Link { href, content } => {
+                    out.push(href.clone());
+                    from_inlines(content, out);
+                }
+                Inline::Strong(c)
+                | Inline::Emphasis(c)
+                | Inline::Strike(c)
+                | Inline::Underline(c)
+                | Inline::Highlight(c) => from_inlines(c, out),
+                _ => {}
+            }
+        }
+    }
+    fn walk(blocks: &[Block], out: &mut Vec<String>) {
+        for b in blocks {
+            match b {
+                Block::Paragraph(c) | Block::Heading { content: c, .. } => from_inlines(c, out),
+                Block::Callout { content, .. } => from_inlines(content, out),
+                Block::Quote(bs) => walk(bs, out),
+                Block::List { items, .. } => items.iter().for_each(|it| walk(it, out)),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(blocks, &mut out);
+    out
+}
+
+/// Whether any inline anywhere is an `Inline::Highlight`.
+fn has_highlight(blocks: &[Block]) -> bool {
+    fn in_inlines(inlines: &[Inline]) -> bool {
+        inlines.iter().any(|i| match i {
+            Inline::Highlight(_) => true,
+            Inline::Strong(c)
+            | Inline::Emphasis(c)
+            | Inline::Strike(c)
+            | Inline::Underline(c)
+            | Inline::Link { content: c, .. } => in_inlines(c),
+            _ => false,
+        })
+    }
+    fn walk(blocks: &[Block]) -> bool {
+        blocks.iter().any(|b| match b {
+            Block::Paragraph(c) | Block::Heading { content: c, .. } => in_inlines(c),
+            Block::Callout { content, .. } => in_inlines(content),
+            Block::Quote(bs) => walk(bs),
+            Block::List { items, .. } => items.iter().any(|it| walk(it)),
+            _ => false,
+        })
+    }
+    walk(blocks)
+}
+
+/// The Offprint "all available blocks" reference doc: every block + facet type must survive,
+/// not just the 7/15 we handled before. (Validated live against blog.aka.dad.)
+#[test]
+fn offprint_all_blocks_and_facets_are_covered() {
+    let doc = decode_fixture("offprint_allblocks.json");
+    let b = &doc.blocks;
+
+    assert!(b.iter().any(|x| matches!(x, Block::Quote(_))), "blockquote");
+    assert!(
+        b.iter().any(|x| matches!(x, Block::Code { .. })),
+        "codeBlock"
+    );
+    assert!(
+        b.iter()
+            .any(|x| matches!(x, Block::List { ordered: true, .. })),
+        "orderedList"
+    );
+    // Task-list items carry a checkbox glyph (the model has no checked field).
+    assert!(
+        b.iter().any(|x| matches!(x, Block::List { items, .. }
+            if items.iter().flatten().any(|blk| matches!(blk, Block::Paragraph(c)
+                if c.iter().any(|i| matches!(i, Inline::Text(t) if t.starts_with("☐ ") || t.starts_with("☑ "))))))),
+        "taskList checkboxes"
+    );
+    // imageGrid + imageCarousel + imageDiff all collapse to ImageGrid (≥3 across the doc).
+    assert!(
+        b.iter()
+            .filter(|x| matches!(x, Block::ImageGrid(_)))
+            .count()
+            >= 3,
+        "carousel/grid/diff → ImageGrid"
+    );
+
+    let hrefs = link_hrefs(b);
+    assert!(
+        hrefs.iter().any(|h| h.contains("example.com")),
+        "webEmbed/webMention → link"
+    );
+    assert!(
+        hrefs.iter().any(|h| h.contains("raycast.com")),
+        "webBookmark → link"
+    );
+    assert!(
+        hrefs
+            .iter()
+            .any(|h| h.starts_with("https://bsky.app/profile/")),
+        "mention facet → bsky profile link"
+    );
+    assert!(has_highlight(b), "highlight facet → Inline::Highlight");
+}
+
+/// Leaflet's catch-all used to drop lists and embeds; now they decode (validated against a live
+/// retrobailey.leaflet.pub record covering unorderedList + bskyPost + button).
+#[test]
+fn leaflet_lists_and_embeds_are_not_dropped() {
+    let doc = decode_fixture("leaflet_embeds.json");
+    let b = &doc.blocks;
+
+    assert!(b.iter().any(|x| matches!(x, Block::List { .. })), "list");
+    let hrefs = link_hrefs(b);
+    assert!(
+        hrefs
+            .iter()
+            .any(|h| h.starts_with("https://bsky.app/profile/")),
+        "bskyPost → bsky.app link"
+    );
+    assert!(
+        hrefs
+            .iter()
+            .any(|h| !h.starts_with("https://bsky.app/profile/")),
+        "button/website → link"
+    );
+}

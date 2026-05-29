@@ -17,6 +17,7 @@ use standard_core::read;
 use standard_core::store::Store;
 
 use crate::auth::{Account, Auth};
+use crate::prefs::Prefs;
 use crate::store::RedbStore;
 use crate::transport::ReqwestTransport;
 
@@ -35,6 +36,8 @@ pub enum ToWorker {
         source: ImageSource,
     },
     SetShowImages(bool),
+    /// Persist the user's preferences (layout/theme/per-blog overrides) to `prefs.toml`.
+    SavePrefs(Prefs),
     /// Sign in via OAuth using a handle or DID.
     Login(String),
     /// Sign out: revoke + forget the session.
@@ -94,6 +97,7 @@ fn run(
             return;
         }
     };
+    let prefs_path = config_dir.join("prefs.toml");
     let log_path = config_dir.join("sr.log");
     // Fresh log per run, so it stays small and shows only the current session (it's a debug
     // log, not a persistent record). Truncate-on-start beats unbounded append.
@@ -117,6 +121,7 @@ fn run(
         pds_cache: HashMap::new(),
         account: None,
         auth,
+        prefs_path,
         log_path,
         tx: evt_tx,
     };
@@ -190,6 +195,8 @@ struct Ctx {
     account: Option<Account>,
     /// The OAuth runtime + client, or `None` if auth couldn't be initialized.
     auth: Option<AuthCtx>,
+    /// Where the human-editable preferences file lives (`<config>/prefs.toml`).
+    prefs_path: PathBuf,
     /// A debug log (`<config>/sr.log`) — the TUI owns the terminal, so progress/errors that
     /// can't fit the status line go here. `tail -f` it to watch the sign-in flow.
     log_path: PathBuf,
@@ -246,11 +253,19 @@ impl Ctx {
             ToWorker::Unfollow(uri) => self.unfollow(&uri),
             ToWorker::LoadImage { key, source } => self.load_image(key, source),
             ToWorker::SetShowImages(on) => Ok(self.store.set_show_images(on)?),
+            ToWorker::SavePrefs(prefs) => self.save_prefs(&prefs),
             ToWorker::Login(ident) => self.login(&ident),
             ToWorker::Logout => self.logout(),
             ToWorker::SubscribeLocal(uris) => self.subscribe_local(uris),
             ToWorker::Quit => Ok(()),
         }
+    }
+
+    /// Persist preferences to the human-editable `prefs.toml`. Best-effort surfacing of write
+    /// errors to the status line; not secret, so a plain (non-`0600`) write is fine.
+    fn save_prefs(&self, prefs: &Prefs) -> Done {
+        std::fs::write(&self.prefs_path, prefs.to_toml())?;
+        Ok(())
     }
 
     /// Followed publications, straight from the cache.

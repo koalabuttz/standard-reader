@@ -14,6 +14,8 @@ use ratatui_image::sliced::SlicedProtocol;
 use standard_core::model::{Block, Document, ImageSource, Inline, Publication, RichDoc};
 
 use crate::auth::Account;
+use crate::prefs::{LayoutKind, PANE_MAX, PANE_MIN, Prefs};
+use crate::ui::theme::{PRESETS, Theme, ThemeColors};
 use crate::worker::{FromWorker, ToWorker};
 
 /// Stable cache key for an image source (the blob CID, or the URL).
@@ -35,9 +37,13 @@ pub struct LoadedImage {
     pub sliced_size: (u16, u16),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Focus {
+    /// The feed list.
     Sidebar,
+    /// The post list (a distinct focus once feeds and posts can be visible at once).
+    Posts,
+    /// The reader body.
     Reader,
 }
 
@@ -53,6 +59,31 @@ pub enum Mode {
     SignIn,
     /// Reconcile local-only follows against the account's atproto subscriptions.
     SyncPrompt,
+    /// Pick a colour theme (built-in presets + "custom").
+    ThemePicker,
+    /// Edit the custom theme's colours (an RGB picker), with live preview.
+    ThemeEditor,
+    /// Pick a layout (one / two / three-pane / drill-down).
+    LayoutPicker,
+    /// Per-blog customization menu (theme / layout / use-global) for one publication.
+    BlogMenu,
+}
+
+/// Which pane-width field a resize targets (see [`App::focused_pane_width`]).
+enum PaneWidth {
+    Sidebar,
+    Posts,
+}
+
+/// The in-app colour editor's transient state: a working palette plus which slot/channel is
+/// selected. Lives on `App` while [`Mode::ThemeEditor`] is active; committed to `prefs.custom`
+/// on Enter, discarded on Esc.
+pub struct ThemeEditor {
+    pub draft: ThemeColors,
+    /// Selected slot, 0..7 (indexes [`theme::SLOTS`](crate::ui::theme::SLOTS)).
+    pub slot: usize,
+    /// Selected RGB channel, 0..3 (R, G, B).
+    pub channel: usize,
 }
 
 /// Palette actions (also reachable by their direct keys).
@@ -62,6 +93,8 @@ pub enum Action {
     Search,
     Refresh,
     MarkRead,
+    Theme,
+    Layout,
     SignIn,
     SignOut,
     Help,
@@ -69,11 +102,13 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 8] = [
+    pub const ALL: [Action; 10] = [
         Self::AddFeed,
         Self::Search,
         Self::Refresh,
         Self::MarkRead,
+        Self::Theme,
+        Self::Layout,
         Self::SignIn,
         Self::SignOut,
         Self::Help,
@@ -86,6 +121,8 @@ impl Action {
             Action::Search => "Search",
             Action::Refresh => "Refresh feed",
             Action::MarkRead => "Mark read",
+            Action::Theme => "Theme…",
+            Action::Layout => "Layout…",
             Action::SignIn => "Log in",
             Action::SignOut => "Log out",
             Action::Help => "Help",
@@ -94,11 +131,13 @@ impl Action {
     }
 }
 
-/// Pane rectangles from the last render, for mouse hit-testing.
+/// Pane rectangles from the last render, for mouse hit-testing. Reset to `default()` (zero-area)
+/// at the top of every draw, then set only for the panes that layout actually shows — so a click
+/// is tested against all three and absent panes (zero-area) never match.
 #[derive(Default, Clone, Copy)]
 pub struct Rects {
     pub sidebar: Rect,
-    pub list: Rect,
+    pub posts: Rect,
     pub reader: Rect,
 }
 
@@ -156,12 +195,30 @@ pub struct App {
     pub scroll_to_focused: bool,
     /// Link rectangles from the last render, for click hit-testing (filled by the reader).
     pub link_rects: Vec<LinkRect>,
+    /// Persisted user preferences (layout / theme / per-blog overrides). The canonical copy;
+    /// mutated on user action and written back via `ToWorker::SavePrefs`.
+    pub prefs: Prefs,
+    /// The *resolved, effective* theme for the current view (per-blog override else global, or
+    /// the editor's live draft). Recomputed each draw by [`App::recompute_appearance`].
+    pub theme: Theme,
+    /// The *resolved, effective* layout for the current view (per-blog override else global).
+    pub layout: LayoutKind,
+    /// Open colour editor, while [`Mode::ThemeEditor`] is active (drives live preview).
+    pub theme_editor: Option<ThemeEditor>,
+    /// Selection index for the list-style pickers (theme / layout / per-blog).
+    pub menu_sel: usize,
+    /// When a theme/layout picker targets a specific publication (per-blog override), its AT-URI;
+    /// `None` means the picker edits the global default.
+    pub menu_target: Option<String>,
+    /// True during the first-launch flow (layout picker → theme picker), so each picker advances
+    /// to the next step instead of returning to the reader.
+    pub onboarding: bool,
     tx: Sender<ToWorker>,
 }
 
 impl App {
-    pub fn new(tx: Sender<ToWorker>, picker: Picker) -> Self {
-        let app = Self {
+    pub fn new(tx: Sender<ToWorker>, picker: Picker, prefs: Prefs) -> Self {
+        let mut app = Self {
             mode: Mode::Browse,
             focus: Focus::Sidebar,
             feeds: Vec::new(),
@@ -190,10 +247,71 @@ impl App {
             focused_link: None,
             scroll_to_focused: false,
             link_rects: Vec::new(),
+            theme: Theme::modern_dark(),
+            layout: prefs.layout,
+            theme_editor: None,
+            menu_sel: 0,
+            menu_target: None,
+            onboarding: false,
+            prefs,
             tx,
         };
+        app.recompute_appearance();
         app.send(ToWorker::LoadHome);
+        if !app.prefs.onboarded {
+            app.start_onboarding();
+        }
         app
+    }
+
+    /// Resolve the effective theme + layout into [`Self::theme`]/[`Self::layout`]. Cheap; called
+    /// at the top of every draw so the rendered appearance always matches the current state.
+    /// Resolution: a per-blog override (for the active publication) wins over the global setting.
+    /// While the theme editor is open, the live draft palette wins (so edits preview instantly).
+    pub fn recompute_appearance(&mut self) {
+        self.layout = self.effective_layout();
+        let colors = match &self.theme_editor {
+            Some(ed) => ed.draft.clone(), // live preview while editing
+            None => self.effective_colors(),
+        };
+        self.theme = Theme::from(&colors);
+    }
+
+    /// The effective palette (per-blog override else global), ignoring any open editor.
+    fn effective_colors(&self) -> ThemeColors {
+        let name = self.effective_theme_name();
+        if name == "custom" {
+            self.prefs.custom.clone()
+        } else {
+            ThemeColors::preset(&name).unwrap_or_else(ThemeColors::modern_dark)
+        }
+    }
+
+    /// The publication whose appearance is active: the feed you've opened (`open_pub`), else
+    /// `None` (→ global) on the home screen and for search results. Set by `open_feed`/`refresh`,
+    /// cleared on search and on returning home — so merely moving the sidebar highlight doesn't
+    /// reshuffle anything.
+    fn active_pub(&self) -> Option<&str> {
+        self.open_pub.as_deref()
+    }
+
+    fn effective_theme_name(&self) -> String {
+        self.active_pub()
+            .and_then(|uri| self.prefs.blog(uri))
+            .and_then(|ov| ov.theme.clone())
+            .unwrap_or_else(|| self.prefs.theme.clone())
+    }
+
+    fn effective_layout(&self) -> LayoutKind {
+        self.active_pub()
+            .and_then(|uri| self.prefs.blog(uri))
+            .and_then(|ov| ov.layout)
+            .unwrap_or(self.prefs.layout)
+    }
+
+    /// Persist the current preferences (sent to the worker, which writes `prefs.toml`).
+    fn persist_prefs(&self) {
+        self.send(ToWorker::SavePrefs(self.prefs.clone()));
     }
 
     fn send(&self, msg: ToWorker) {
@@ -292,6 +410,10 @@ impl App {
             Mode::Palette => self.palette_key(key),
             Mode::Help => self.mode = Mode::Browse,
             Mode::SyncPrompt => self.sync_prompt_key(key),
+            Mode::ThemePicker => self.theme_picker_key(key),
+            Mode::ThemeEditor => self.theme_editor_key(key),
+            Mode::LayoutPicker => self.layout_picker_key(key),
+            Mode::BlogMenu => self.blog_menu_key(key),
             Mode::DocList => self.doclist_key(key),
             Mode::Browse => self.browse_key(key),
         }
@@ -311,11 +433,18 @@ impl App {
             KeyCode::Char('m') => self.mark_read(),
             KeyCode::Char('o') => self.open_in_browser(),
             KeyCode::Char('i') => self.toggle_images(),
+            KeyCode::Char('t') => self.open_theme_picker(),
+            KeyCode::Char('b') => self.open_blog_menu(),
+            KeyCode::Char('\\') => self.cycle_layout(),
+            KeyCode::Char('<') => self.adjust_pane(-2),
+            KeyCode::Char('>') => self.adjust_pane(2),
             KeyCode::Char('L') => self.toggle_account(),
-            KeyCode::Tab => self.toggle_focus(),
+            KeyCode::Tab => self.cycle_focus(),
+            KeyCode::Esc => self.escape_focus(),
             KeyCode::Char('n') => self.focus_link(1),
             KeyCode::Char('N') => self.focus_link(-1),
             KeyCode::Enter if self.focus == Focus::Sidebar => self.open_feed(),
+            KeyCode::Enter if self.focus == Focus::Posts => self.open_doc(),
             KeyCode::Enter => self.open_focused_link(),
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
             KeyCode::Up | KeyCode::Char('k') => self.move_up(),
@@ -332,6 +461,7 @@ impl App {
             KeyCode::Esc => {
                 self.mode = Mode::Browse;
                 self.focus = Focus::Sidebar;
+                self.open_pub = None; // back home → global appearance
             }
             KeyCode::Char('q') => self.quit(),
             KeyCode::Enter => self.open_doc(),
@@ -344,6 +474,7 @@ impl App {
             KeyCode::Char('/') => self.enter_input(Mode::Search),
             KeyCode::Char('o') => self.open_in_browser(),
             KeyCode::Char('i') => self.toggle_images(),
+            KeyCode::Char('b') => self.open_blog_menu(),
             KeyCode::Char('?') => self.mode = Mode::Help,
             _ => {}
         }
@@ -405,19 +536,20 @@ impl App {
                 }
             }
             MouseEventKind::Down(_) => {
-                if self.mode == Mode::DocList {
-                    if let Some(i) = hit(self.rects.list, ev.column, ev.row)
-                        && i < self.docs.len()
-                    {
+                // Test every pane by rect; absent panes are zero-area and never match, so this is
+                // correct for all layouts (including ones showing feeds + posts at once).
+                if let Some(i) = hit(self.rects.posts, ev.column, ev.row) {
+                    if i < self.docs.len() {
                         self.doc_sel = i;
+                        self.focus = Focus::Posts;
                         self.open_doc();
                     }
-                } else if let Some(i) = hit(self.rects.sidebar, ev.column, ev.row)
-                    && i < self.feeds.len()
-                {
-                    self.feed_sel = i;
-                    self.focus = Focus::Sidebar;
-                    self.open_feed();
+                } else if let Some(i) = hit(self.rects.sidebar, ev.column, ev.row) {
+                    if i < self.feeds.len() {
+                        self.feed_sel = i;
+                        self.focus = Focus::Sidebar;
+                        self.open_feed();
+                    }
                 } else if let Some(href) = self.link_at(ev.column, ev.row) {
                     self.open_link(&href);
                 }
@@ -446,6 +578,8 @@ impl App {
             Action::Search => self.enter_input(Mode::Search),
             Action::Refresh => self.refresh_current_feed(),
             Action::MarkRead => self.mark_read(),
+            Action::Theme => self.open_theme_picker(),
+            Action::Layout => self.open_layout_picker(),
             Action::SignIn => self.enter_input(Mode::SignIn),
             Action::SignOut => {
                 self.status = "logging out…".into();
@@ -534,16 +668,404 @@ impl App {
         }
     }
 
-    fn open_feed(&mut self) {
-        if let Some(p) = self.feeds.get(self.feed_sel) {
-            self.list_title = p.name.clone();
-            self.open_pub = Some(p.uri.clone());
-            self.docs.clear();
-            self.doc_sel = 0;
-            self.loading = true;
-            self.mode = Mode::DocList;
-            self.send(ToWorker::OpenFeed(p.uri.clone()));
+    // --- theme customization -----------------------------------------------------
+
+    /// Entries in the theme picker: each built-in preset, then "Custom" (opens the editor).
+    fn theme_entry_count(&self) -> usize {
+        PRESETS.len() + 1
+    }
+
+    /// Open the theme picker for the *global* default.
+    fn open_theme_picker(&mut self) {
+        self.menu_target = None;
+        self.show_theme_picker();
+    }
+
+    /// Show the theme picker, pre-selecting the current theme for whatever target is set
+    /// (`menu_target`: a publication for a per-blog override, or `None` for the global default).
+    fn show_theme_picker(&mut self) {
+        let current = self.target_theme_name();
+        self.menu_sel = match current.as_str() {
+            "custom" => PRESETS.len(),
+            name => PRESETS.iter().position(|&p| p == name).unwrap_or(0),
+        };
+        self.mode = Mode::ThemePicker;
+    }
+
+    /// The theme name in effect for the current picker target.
+    fn target_theme_name(&self) -> String {
+        match &self.menu_target {
+            Some(uri) => self
+                .prefs
+                .blog(uri)
+                .and_then(|o| o.theme.clone())
+                .unwrap_or_else(|| self.prefs.theme.clone()),
+            None => self.prefs.theme.clone(),
         }
+    }
+
+    fn theme_picker_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc if self.onboarding => self.finish_onboarding(),
+            KeyCode::Esc => self.mode = Mode::Browse,
+            KeyCode::Up | KeyCode::Char('k') => self.menu_sel = self.menu_sel.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.menu_sel = (self.menu_sel + 1).min(self.theme_entry_count() - 1)
+            }
+            KeyCode::Enter => self.choose_theme_entry(self.menu_sel),
+            _ => {}
+        }
+    }
+
+    /// Apply the selected theme picker entry. For the global target a preset commits immediately
+    /// and the trailing "Custom" entry opens the RGB editor; for a per-blog target the entry
+    /// (preset or "custom") is stored as that publication's override — the editor stays global.
+    fn choose_theme_entry(&mut self, i: usize) {
+        let preset = PRESETS.get(i).map(|s| s.to_string());
+        match self.menu_target.take() {
+            Some(uri) => {
+                let name = preset.unwrap_or_else(|| "custom".to_string());
+                let n = name.clone();
+                self.prefs.edit_blog(&uri, |o| o.theme = Some(n));
+                self.persist_prefs();
+                self.mode = Mode::Browse;
+                self.status = format!("theme for this blog: {name}");
+            }
+            None => match preset {
+                Some(name) => {
+                    self.prefs.theme = name.clone();
+                    self.persist_prefs();
+                    self.status = format!("theme: {name}");
+                    if self.onboarding {
+                        self.finish_onboarding();
+                    } else {
+                        self.mode = Mode::Browse;
+                    }
+                }
+                None => self.open_theme_editor(), // "Custom" → editor (onboarding finishes on save)
+            },
+        }
+    }
+
+    /// Open the colour editor, seeded from whatever palette is currently in effect.
+    fn open_theme_editor(&mut self) {
+        self.theme_editor = Some(ThemeEditor {
+            draft: self.effective_colors(),
+            slot: 0,
+            channel: 0,
+        });
+        self.mode = Mode::ThemeEditor;
+    }
+
+    fn theme_editor_key(&mut self, key: KeyEvent) {
+        if self.theme_editor.is_none() {
+            self.mode = Mode::Browse;
+            return;
+        }
+        match key.code {
+            // Esc discards the draft (recompute reverts to the saved palette next frame).
+            KeyCode::Esc => {
+                self.theme_editor = None;
+                self.status = "theme edit cancelled".into();
+                if self.onboarding {
+                    self.finish_onboarding();
+                } else {
+                    self.mode = Mode::Browse;
+                }
+            }
+            KeyCode::Enter => self.commit_theme_editor(),
+            KeyCode::Up | KeyCode::Char('k') => {
+                let ed = self.theme_editor.as_mut().unwrap();
+                ed.slot = ed.slot.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let ed = self.theme_editor.as_mut().unwrap();
+                ed.slot = (ed.slot + 1).min(6);
+            }
+            KeyCode::Left | KeyCode::Char('h') => {
+                let ed = self.theme_editor.as_mut().unwrap();
+                ed.channel = ed.channel.saturating_sub(1);
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                let ed = self.theme_editor.as_mut().unwrap();
+                ed.channel = (ed.channel + 1).min(2);
+            }
+            KeyCode::Char('-') => self.adjust_channel(-1),
+            KeyCode::Char('+') | KeyCode::Char('=') => self.adjust_channel(1),
+            KeyCode::Char('[') => self.adjust_channel(-16),
+            KeyCode::Char(']') => self.adjust_channel(16),
+            _ => {}
+        }
+    }
+
+    /// Nudge the selected slot's selected channel by `delta`, clamped to 0..=255.
+    fn adjust_channel(&mut self, delta: i32) {
+        if let Some(ed) = self.theme_editor.as_mut() {
+            let mut rgb = ed.draft.slot_rgb(ed.slot);
+            rgb[ed.channel] = (rgb[ed.channel] as i32 + delta).clamp(0, 255) as u8;
+            ed.draft.set_slot(ed.slot, rgb);
+        }
+    }
+
+    /// Commit the editor draft as the custom theme and select it.
+    fn commit_theme_editor(&mut self) {
+        if let Some(ed) = self.theme_editor.take() {
+            self.prefs.custom = ed.draft;
+            self.prefs.theme = "custom".into();
+            self.persist_prefs();
+            self.status = "custom theme saved".into();
+        }
+        if self.onboarding {
+            self.finish_onboarding();
+        } else {
+            self.mode = Mode::Browse;
+        }
+    }
+
+    // --- layout customization -----------------------------------------------------
+
+    /// Cycle the global layout (one → two → three → drill-down → …) and persist it. A per-blog
+    /// override, if any, still wins for the active feed (change it via the per-blog menu).
+    fn cycle_layout(&mut self) {
+        self.prefs.layout = self.prefs.layout.next();
+        self.persist_prefs();
+        self.status = format!("layout: {}", self.prefs.layout.label());
+    }
+
+    /// Open the layout picker for the *global* default.
+    fn open_layout_picker(&mut self) {
+        self.menu_target = None;
+        self.show_layout_picker();
+    }
+
+    fn show_layout_picker(&mut self) {
+        let current = match &self.menu_target {
+            Some(uri) => self
+                .prefs
+                .blog(uri)
+                .and_then(|o| o.layout)
+                .unwrap_or(self.prefs.layout),
+            None => self.prefs.layout,
+        };
+        self.menu_sel = LayoutKind::ALL
+            .iter()
+            .position(|&l| l == current)
+            .unwrap_or(1);
+        self.mode = Mode::LayoutPicker;
+    }
+
+    fn layout_picker_key(&mut self, key: KeyEvent) {
+        match key.code {
+            // During onboarding, skipping the layout step keeps the default and moves to the theme.
+            KeyCode::Esc if self.onboarding => self.show_theme_picker(),
+            KeyCode::Esc => self.mode = Mode::Browse,
+            KeyCode::Up | KeyCode::Char('k') => self.menu_sel = self.menu_sel.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.menu_sel = (self.menu_sel + 1).min(LayoutKind::ALL.len() - 1)
+            }
+            KeyCode::Enter => {
+                let layout = LayoutKind::ALL[self.menu_sel.min(LayoutKind::ALL.len() - 1)];
+                match self.menu_target.take() {
+                    Some(uri) => {
+                        self.prefs.edit_blog(&uri, |o| o.layout = Some(layout));
+                        self.status = format!("layout for this blog: {}", layout.label());
+                    }
+                    None => {
+                        self.prefs.layout = layout;
+                        self.status = format!("layout: {}", layout.label());
+                    }
+                }
+                self.persist_prefs();
+                if self.onboarding {
+                    self.show_theme_picker(); // step 2: pick a theme
+                } else {
+                    self.mode = Mode::Browse;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // --- first-launch onboarding --------------------------------------------------
+
+    /// Begin the first-launch flow: pick a layout, then a theme. Each picker advances to the
+    /// next step (see the `onboarding` branches in the picker handlers).
+    fn start_onboarding(&mut self) {
+        self.onboarding = true;
+        self.menu_target = None;
+        self.status = "welcome — choose a layout (esc to skip)".into();
+        self.show_layout_picker();
+    }
+
+    /// Finish onboarding: mark it done so it never shows again, and land in the reader.
+    fn finish_onboarding(&mut self) {
+        self.onboarding = false;
+        self.prefs.onboarded = true;
+        self.persist_prefs();
+        self.mode = Mode::Browse;
+        self.status = "all set — press a to add a blog, ? for help".into();
+    }
+
+    // --- per-blog overrides -------------------------------------------------------
+
+    /// The publication a per-blog edit targets: the open feed if any, else the selected feed.
+    fn target_pub(&self) -> Option<(String, String)> {
+        let uri = self
+            .open_pub
+            .clone()
+            .or_else(|| self.feeds.get(self.feed_sel).map(|p| p.uri.clone()))?;
+        let name = self
+            .feeds
+            .iter()
+            .find(|p| p.uri == uri)
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| uri.clone());
+        Some((uri, name))
+    }
+
+    /// Open the per-blog customization menu for the active/selected feed.
+    fn open_blog_menu(&mut self) {
+        match self.target_pub() {
+            Some((uri, _)) => {
+                self.menu_target = Some(uri);
+                self.menu_sel = 0;
+                self.mode = Mode::BlogMenu;
+            }
+            None => self.status = "select a feed first".into(),
+        }
+    }
+
+    fn blog_menu_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.menu_target = None;
+                self.mode = Mode::Browse;
+            }
+            KeyCode::Up | KeyCode::Char('k') => self.menu_sel = self.menu_sel.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => self.menu_sel = (self.menu_sel + 1).min(2),
+            KeyCode::Enter => match self.menu_sel {
+                0 => self.show_theme_picker(),  // keeps menu_target → per-blog
+                1 => self.show_layout_picker(), // keeps menu_target → per-blog
+                _ => {
+                    if let Some(uri) = self.menu_target.take() {
+                        self.prefs.per_blog.remove(&uri);
+                        self.persist_prefs();
+                        self.status = "this blog now uses the global appearance".into();
+                    }
+                    self.mode = Mode::Browse;
+                }
+            },
+            _ => {}
+        }
+    }
+
+    /// Which width the focused pane controls in the current layout (or `None` when the focused
+    /// pane has no fixed width to resize: the reader is always the flexible remainder, and a
+    /// one-pane / full-width list has no neighbour to trade space with).
+    fn focused_pane_width(&self) -> Option<(PaneWidth, &'static str)> {
+        match (self.layout, self.focus) {
+            (LayoutKind::OnePane, _) | (_, Focus::Reader) => None,
+            // Two-pane has a single left column (feeds or posts) → one width.
+            (LayoutKind::TwoPane, _) => Some((PaneWidth::Sidebar, "sidebar")),
+            (LayoutKind::ThreePane, Focus::Sidebar) => Some((PaneWidth::Sidebar, "feeds")),
+            (LayoutKind::ThreePane, Focus::Posts) => Some((PaneWidth::Posts, "posts")),
+            // Drill-down's only divider is the feeds column in the feeds+posts stage.
+            (LayoutKind::DrillDown, Focus::Posts) => Some((PaneWidth::Sidebar, "feeds")),
+            _ => None,
+        }
+    }
+
+    /// Widen/narrow the focused pane by `delta` (independently per pane), clamped, and persist.
+    fn adjust_pane(&mut self, delta: i16) {
+        let Some((which, label)) = self.focused_pane_width() else {
+            self.status = "this pane fills the available space".into();
+            return;
+        };
+        let cur = match which {
+            PaneWidth::Sidebar => self.prefs.sidebar_width,
+            PaneWidth::Posts => self.prefs.posts_width,
+        };
+        let new = (cur as i16 + delta).clamp(PANE_MIN as i16, PANE_MAX as i16) as u16;
+        if new != cur {
+            match which {
+                PaneWidth::Sidebar => self.prefs.sidebar_width = new,
+                PaneWidth::Posts => self.prefs.posts_width = new,
+            }
+            self.persist_prefs();
+            self.status = format!("{label} width: {new}");
+        }
+    }
+
+    /// The panes that can hold focus in the current layout, in cycle order. `Posts` is skipped
+    /// until a feed is opened (no posts to focus); `Reader` likewise needs an open document in
+    /// the drill-down layout.
+    fn focus_ring(&self) -> Vec<Focus> {
+        match self.layout {
+            LayoutKind::TwoPane => vec![Focus::Sidebar, Focus::Reader],
+            LayoutKind::ThreePane | LayoutKind::OnePane => {
+                let mut ring = vec![Focus::Sidebar];
+                if !self.docs.is_empty() {
+                    ring.push(Focus::Posts);
+                }
+                ring.push(Focus::Reader);
+                ring
+            }
+            LayoutKind::DrillDown => {
+                // A drill-down: feeds → feeds+posts → the post. Each level is reachable only once
+                // the previous one has something to open (`Tab` descends, `Esc` ascends).
+                let mut ring = vec![Focus::Sidebar];
+                if self.open_pub.is_some() {
+                    ring.push(Focus::Posts);
+                }
+                if self.reading.is_some() {
+                    ring.push(Focus::Reader);
+                }
+                ring
+            }
+        }
+    }
+
+    /// Move focus to the next pane the layout shows.
+    fn cycle_focus(&mut self) {
+        let ring = self.focus_ring();
+        let i = ring.iter().position(|&f| f == self.focus).unwrap_or(0);
+        self.focus = ring[(i + 1) % ring.len()];
+    }
+
+    /// Step focus back toward the start of the ring (`Esc`): reader → posts → feeds. Useful in
+    /// the single-pane / drill-down layouts where the reader otherwise hides the lists; in
+    /// two-pane it just returns focus from the reader to the sidebar.
+    fn escape_focus(&mut self) {
+        let ring = self.focus_ring();
+        if let Some(i) = ring.iter().position(|&f| f == self.focus)
+            && i > 0
+        {
+            self.focus = ring[i - 1];
+        }
+    }
+
+    fn open_feed(&mut self) {
+        let Some(p) = self.feeds.get(self.feed_sel) else {
+            return;
+        };
+        let (uri, name) = (p.uri.clone(), p.name.clone());
+        self.list_title = name;
+        self.open_pub = Some(uri.clone());
+        self.docs.clear();
+        self.doc_sel = 0;
+        self.loading = true;
+        // Resolve this feed's effective layout (it may carry a per-blog override) before deciding
+        // how to present it: in two-pane the post list *replaces* the sidebar (Mode::DocList);
+        // in the multi-pane layouts the post list is its own always-visible pane (stay in Browse,
+        // just move focus to it).
+        self.recompute_appearance();
+        self.mode = if self.layout == LayoutKind::TwoPane {
+            Mode::DocList
+        } else {
+            Mode::Browse
+        };
+        self.focus = Focus::Posts;
+        self.send(ToWorker::OpenFeed(uri));
     }
 
     fn open_doc(&mut self) {
@@ -729,17 +1251,13 @@ impl App {
         })
     }
 
-    fn toggle_focus(&mut self) {
-        self.focus = match self.focus {
-            Focus::Sidebar => Focus::Reader,
-            Focus::Reader => Focus::Sidebar,
-        };
-    }
-
     fn move_down(&mut self) {
         match self.focus {
             Focus::Sidebar => {
                 self.feed_sel = (self.feed_sel + 1).min(self.feeds.len().saturating_sub(1))
+            }
+            Focus::Posts => {
+                self.doc_sel = (self.doc_sel + 1).min(self.docs.len().saturating_sub(1))
             }
             Focus::Reader => self.scroll = self.scroll.saturating_add(1),
         }
@@ -748,6 +1266,7 @@ impl App {
     fn move_up(&mut self) {
         match self.focus {
             Focus::Sidebar => self.feed_sel = self.feed_sel.saturating_sub(1),
+            Focus::Posts => self.doc_sel = self.doc_sel.saturating_sub(1),
             Focus::Reader => self.scroll = self.scroll.saturating_sub(1),
         }
     }
@@ -755,13 +1274,16 @@ impl App {
     fn go_top(&mut self) {
         match self.focus {
             Focus::Sidebar => self.feed_sel = 0,
+            Focus::Posts => self.doc_sel = 0,
             Focus::Reader => self.scroll = 0,
         }
     }
 
     fn go_bottom(&mut self) {
-        if self.focus == Focus::Sidebar {
-            self.feed_sel = self.feeds.len().saturating_sub(1);
+        match self.focus {
+            Focus::Sidebar => self.feed_sel = self.feeds.len().saturating_sub(1),
+            Focus::Posts => self.doc_sel = self.docs.len().saturating_sub(1),
+            Focus::Reader => {}
         }
     }
 
@@ -847,8 +1369,12 @@ fn collect_inline_images(inlines: &[Inline], out: &mut Vec<ImageSource>) {
     }
 }
 
-/// Row index clicked inside a bordered list `rect` (None if outside / on the border).
+/// Row index clicked inside a bordered list `rect` (None if outside / on the border). A
+/// zero-area rect (an absent pane in the current layout) never matches.
 fn hit(rect: Rect, x: u16, y: u16) -> Option<usize> {
+    if rect.width == 0 || rect.height == 0 {
+        return None;
+    }
     let inside = x > rect.x
         && x < rect.right().saturating_sub(1)
         && y > rect.y
@@ -925,7 +1451,7 @@ mod tests {
         use std::sync::mpsc::channel;
 
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks());
+        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::default());
         app.rects.reader = Rect {
             x: 0,
             y: 0,
@@ -974,5 +1500,207 @@ mod tests {
         );
         // trailing slash on base + no leading slash on path both handled
         assert_eq!(web_url("https://x.test/", "post"), "https://x.test/post");
+    }
+
+    // --- customization (layout / theme / per-blog) --------------------------------
+
+    use super::{App, Focus, hit};
+    use crate::prefs::{LayoutKind, Prefs};
+    use ratatui_image::picker::Picker;
+    use standard_core::model::{Document, Publication};
+    use std::sync::mpsc::channel;
+
+    fn test_app(prefs: Prefs) -> App {
+        let (tx, _rx) = channel::<crate::worker::ToWorker>();
+        App::new(tx, Picker::halfblocks(), prefs)
+    }
+
+    fn feed(uri: &str) -> Publication {
+        Publication {
+            uri: uri.into(),
+            url: "https://x.test".into(),
+            name: "feed".into(),
+            description: None,
+            icon: None,
+        }
+    }
+
+    fn doc(uri: &str, publication: &str) -> Document {
+        Document {
+            uri: uri.into(),
+            title: "t".into(),
+            description: None,
+            publication: publication.into(),
+            published_at: "2026-01-01".into(),
+            updated_at: None,
+            cover_image: None,
+            text_content: None,
+            tags: vec![],
+            path: None,
+        }
+    }
+
+    #[test]
+    fn per_blog_override_beats_global() {
+        let mut prefs = Prefs::for_test();
+        prefs.layout = LayoutKind::TwoPane;
+        prefs.theme = "modern-dark".into();
+        prefs.edit_blog("at://p/1", |o| {
+            o.layout = Some(LayoutKind::ThreePane);
+            o.theme = Some("light".into());
+        });
+        let mut app = test_app(prefs);
+
+        // Home (no feed open) → global.
+        app.open_pub = None;
+        app.recompute_appearance();
+        assert_eq!(app.layout, LayoutKind::TwoPane);
+        let dark = crate::ui::theme::Theme::modern_dark();
+        assert_eq!(app.theme.bg, dark.bg, "global theme on home");
+
+        // The overridden feed open → its layout + theme win.
+        app.open_pub = Some("at://p/1".into());
+        app.recompute_appearance();
+        assert_eq!(app.layout, LayoutKind::ThreePane);
+        let light = crate::ui::theme::Theme::from(&crate::ui::theme::ThemeColors::light());
+        assert_eq!(app.theme.bg, light.bg, "per-blog theme override applied");
+    }
+
+    #[test]
+    fn focus_cycle_skips_posts_until_a_feed_is_open() {
+        let mut prefs = Prefs::for_test();
+        prefs.layout = LayoutKind::ThreePane;
+        let mut app = test_app(prefs);
+        app.recompute_appearance();
+
+        // No docs yet: Posts is not focusable.
+        app.docs.clear();
+        app.focus = Focus::Sidebar;
+        app.cycle_focus();
+        assert_eq!(app.focus, Focus::Reader, "Posts skipped when empty");
+        app.cycle_focus();
+        assert_eq!(app.focus, Focus::Sidebar);
+
+        // With a doc, Posts joins the ring.
+        app.docs = vec![doc("at://d/1", "at://p/1")];
+        app.focus = Focus::Sidebar;
+        app.cycle_focus();
+        assert_eq!(app.focus, Focus::Posts);
+    }
+
+    #[test]
+    fn escape_focus_steps_back_through_the_ring() {
+        let mut prefs = Prefs::for_test();
+        prefs.layout = LayoutKind::ThreePane;
+        let mut app = test_app(prefs);
+        app.recompute_appearance();
+        app.docs = vec![doc("at://d/1", "at://p/1")];
+        app.focus = Focus::Reader;
+        app.escape_focus(); // Reader → Posts
+        assert_eq!(app.focus, Focus::Posts);
+        app.escape_focus(); // Posts → Sidebar
+        assert_eq!(app.focus, Focus::Sidebar);
+        app.escape_focus(); // already first → stays
+        assert_eq!(app.focus, Focus::Sidebar);
+    }
+
+    #[test]
+    fn theme_editor_adjusts_and_commits_custom() {
+        let mut app = test_app(Prefs::for_test());
+        app.open_theme_editor();
+        let ed = app.theme_editor.as_mut().expect("editor open");
+        ed.slot = 4; // accent
+        ed.channel = 0; // R
+        let before = ed.draft.slot_rgb(4)[0];
+        app.adjust_channel(10);
+        let after = app.theme_editor.as_ref().unwrap().draft.slot_rgb(4)[0];
+        assert_eq!(after, (before as i32 + 10).clamp(0, 255) as u8);
+        app.commit_theme_editor();
+        assert_eq!(app.prefs.theme, "custom");
+        assert!(app.theme_editor.is_none());
+    }
+
+    #[test]
+    fn hit_rejects_zero_area_panes() {
+        use ratatui::layout::Rect;
+        assert_eq!(
+            hit(Rect::default(), 5, 5),
+            None,
+            "absent pane never matches"
+        );
+        let r = Rect {
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+        };
+        assert_eq!(hit(r, 3, 3), Some(2), "row inside a present pane");
+    }
+
+    #[test]
+    fn click_selects_in_the_pane_under_the_cursor() {
+        use ratatui::crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+        use ratatui::layout::Rect;
+        let mut prefs = Prefs::for_test();
+        prefs.layout = LayoutKind::ThreePane;
+        let mut app = test_app(prefs);
+        app.feeds = vec![feed("at://p/1")];
+        app.docs = vec![doc("at://d/1", "at://p/1"), doc("at://d/2", "at://p/1")];
+        // Sidebar on the left, posts beside it (both visible in three-pane).
+        app.rects.sidebar = Rect {
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 10,
+        };
+        app.rects.posts = Rect {
+            x: 20,
+            y: 0,
+            width: 20,
+            height: 10,
+        };
+        let click = |x, y| MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: x,
+            row: y,
+            modifiers: ratatui::crossterm::event::KeyModifiers::NONE,
+        };
+        // A click in the posts pane (not the sidebar) selects that row's document and opens it,
+        // even though the sidebar is visible too — proving the click hit the right pane.
+        app.on_mouse(click(22, 2)); // posts pane, inner row 1 → docs[1]
+        assert_eq!(app.doc_sel, 1);
+        assert_eq!(
+            app.reading_uri.as_deref(),
+            Some("at://d/2"),
+            "opened the clicked post"
+        );
+    }
+
+    #[test]
+    fn pane_resize_targets_only_the_focused_pane() {
+        let mut prefs = Prefs::for_test();
+        prefs.layout = LayoutKind::ThreePane;
+        prefs.sidebar_width = 30;
+        prefs.posts_width = 36;
+        let mut app = test_app(prefs);
+        app.recompute_appearance();
+        app.docs = vec![doc("at://d/1", "at://p/1")];
+
+        // Feeds focused → only the sidebar width moves.
+        app.focus = Focus::Sidebar;
+        app.adjust_pane(2);
+        assert_eq!(app.prefs.sidebar_width, 32);
+        assert_eq!(app.prefs.posts_width, 36, "posts width untouched");
+
+        // Posts focused → only the posts width moves.
+        app.focus = Focus::Posts;
+        app.adjust_pane(-4);
+        assert_eq!(app.prefs.posts_width, 32);
+        assert_eq!(app.prefs.sidebar_width, 32, "sidebar width untouched");
+
+        // Reader is the flexible remainder — nothing to resize.
+        app.focus = Focus::Reader;
+        app.adjust_pane(2);
+        assert_eq!((app.prefs.sidebar_width, app.prefs.posts_width), (32, 32));
     }
 }

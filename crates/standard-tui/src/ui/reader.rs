@@ -26,7 +26,7 @@ const MAX_IMAGE_ROWS: u16 = 20;
 
 use super::doc;
 use super::theme::Theme;
-use crate::app::{App, Focus, Mode, image_key};
+use crate::app::{App, Focus, image_key};
 
 const GAP: u16 = 1; // blank row between segments
 
@@ -93,7 +93,7 @@ impl Segment {
 
 /// Draw the reader pane (bordered panel + scrolled block-flow body).
 pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
-    let focused = app.focus == Focus::Reader && app.mode == Mode::Browse;
+    let focused = app.focus == Focus::Reader;
     let title = if app.reading_title.is_empty() {
         "Reader".to_string()
     } else {
@@ -931,7 +931,7 @@ mod tests {
 
     fn app_with(doc: RichDoc) -> App {
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks());
+        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::default());
         app.reading = Some(doc);
         app
     }
@@ -996,7 +996,7 @@ mod tests {
         use ratatui::{Terminal, backend::TestBackend};
 
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks());
+        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
         let source = ImageSource::Url("https://i.test/a.png".into());
         let key = image_key(&source);
         let image = image::DynamicImage::ImageRgba8(image::RgbaImage::new(4, 4));
@@ -1022,12 +1022,9 @@ mod tests {
         });
         app.loading = false;
 
-        let theme = Theme::modern_dark();
         let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
         // The block-flow reader (incl. the StatefulImage path) must render without panicking.
-        terminal
-            .draw(|f| crate::ui::draw(f, &mut app, &theme))
-            .unwrap();
+        terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -1165,7 +1162,7 @@ mod tests {
     fn reader_records_a_link_rect() {
         use ratatui::{Terminal, backend::TestBackend};
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks());
+        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
         app.reading = Some(RichDoc {
             blocks: vec![DocBlock::Paragraph(vec![
                 Inline::Text("go ".into()),
@@ -1177,11 +1174,8 @@ mod tests {
         });
         app.links = vec!["https://example.com".into()];
         app.loading = false;
-        let theme = Theme::modern_dark();
         let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
-        terminal
-            .draw(|f| crate::ui::draw(f, &mut app, &theme))
-            .unwrap();
+        terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
         assert_eq!(app.link_rects.len(), 1, "one link rect recorded");
         assert_eq!(app.link_rects[0].idx, 0);
     }

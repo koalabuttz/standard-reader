@@ -10,6 +10,7 @@
 
 mod app;
 mod auth;
+mod prefs;
 mod store;
 mod transport;
 mod ui;
@@ -35,7 +36,6 @@ use standard_core::store::Store;
 use app::App;
 use store::RedbStore;
 use transport::ReqwestTransport;
-use ui::theme::Theme;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -77,22 +77,24 @@ fn print_usage() {
 // --- the interactive reader -------------------------------------------------------
 
 fn run_tui() -> Result<(), Box<dyn Error>> {
-    let (tx, rx) = worker::spawn(cache_path()?, config_dir()?);
+    let config_dir = config_dir()?;
+    let (tx, rx) = worker::spawn(cache_path()?, config_dir.clone());
     let mut terminal = ratatui::init();
     // Detect the terminal graphics protocol + font size (before mouse capture, so the
     // query's stdin replies aren't interleaved with mouse reports). Fall back to halfblocks.
     let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
     execute!(stdout(), EnableMouseCapture)?;
 
-    let theme = Theme::modern_dark();
-    let mut app = App::new(tx, picker);
+    // User preferences (layout/theme/per-blog overrides); defaults on first launch.
+    let prefs = prefs::Prefs::load(&config_dir.join("prefs.toml"));
+    let mut app = App::new(tx, picker, prefs);
 
     // Render only when something changes. Terminal image protocols re-emit on every draw,
     // so redrawing on a timer would make images flicker constantly; this draws once, then
     // only after a real input or worker update — and coalesces a burst of (e.g. scroll)
     // events into a single redraw, minimizing image re-emits while scrolling.
     let outcome = (|| -> Result<(), Box<dyn Error>> {
-        terminal.draw(|f| ui::draw(f, &mut app, &theme))?;
+        terminal.draw(|f| ui::draw(f, &mut app))?;
         loop {
             let mut dirty = false;
 
@@ -125,7 +127,7 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
                 break;
             }
             if dirty {
-                terminal.draw(|f| ui::draw(f, &mut app, &theme))?;
+                terminal.draw(|f| ui::draw(f, &mut app))?;
             }
         }
         Ok(())

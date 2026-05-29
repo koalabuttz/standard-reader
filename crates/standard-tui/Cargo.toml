@@ -43,3 +43,6 @@ atrium-xrpc = "0.12"
 atrium-common = "0.1"
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "sync"] }
 unicode-width = "0.2.2"
+# Human-editable preferences file (layout/theme/per-blog overrides). Pure-Rust; chosen over
+# JSON so `prefs.toml` reads and hand-edits cleanly. Default features only (serde via derive).
+toml = "0.8"

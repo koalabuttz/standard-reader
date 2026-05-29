@@ -21,6 +21,10 @@ pull your subscriptions, and read — with images and real formatting, online or
   degrades to typeset `textContent` rather than failing.
 - **Full-text search** across the cache (a hand-rolled inverted index over the spec's
   `textContent` field).
+- **Make it yours.** Cycle layouts (one / two / three-pane, or a drill-down) and resize
+  the sidebar; pick a built-in colour theme or hand-tune one in an in-app RGB editor; and
+  **override layout or theme per blog**. A first-launch picker sets your defaults; everything
+  persists to a human-editable `prefs.toml`.
 - **Keyboard-first**, with a command palette, `?` help, vim/arrow navigation, and mouse.
   In-post hyperlinks are navigable too — cycle them with `n`/`N` and open with `Enter`, or
   click them straight from the rendered text.
@@ -49,13 +53,15 @@ Keys in the reader:
 
 | key | action | key | action |
 | --- | ------ | --- | ------ |
-| `a` | add a feed (handle / DID / URL) | `Enter` | open feed, then open a post |
-| `/` | search across feeds | `Tab` | switch focus sidebar ↔ reader |
+| `a` | add a feed (handle / DID / URL) | `Enter` | open feed / post / focused link |
+| `/` | search across feeds | `Tab` / `Esc` | cycle / step back pane focus |
 | `:` / `Ctrl-P` | command palette | `j`/`k`, `↑`/`↓` | move selection / scroll |
 | `r` | refresh the selected feed | `g` / `G` | top / bottom |
 | `d` | unfollow the selected feed | `PgUp`/`PgDn` | scroll ±10 |
 | `m` | mark the open post read | `o` | open the post in a browser |
-| `n` / `N` | focus next / prev link | `Enter` / click | open focused / clicked link |
+| `n` / `N` | focus next / prev link | click | open link / select a row |
+| `t` | theme (presets + RGB editor) | `\` | cycle layout (1/2/3-pane, drill-down) |
+| `b` | customize this blog | `<` / `>` | narrow / widen the focused pane |
 | `i` | toggle images (text-only) | `L` | sign in / out (atproto OAuth) |
 | `?` | help | `q` | quit |
 
@@ -107,15 +113,16 @@ the `#contentRef` names an AT-URI the frontend fetches and re-decodes (the same 
 block granularity, resolves Pckt galleries). Adding a platform is one new `ContentDecoder`
 plus one line in the registry; decoders are pure and never panic on partial input.
 
-Two render modes are planned: **uniform** (the reader's own consistent theme — what ships
-today) and **author's** (honoring each publication's `basicTheme`). Both decode the same
-structure; the mode only changes theming.
+Styling is the reader's own, and **yours to customize**: pick a layout (one/two/three-pane
+or a drill-down, with independently resizable panes), pick or hand-edit a colour theme
+(built-in presets plus an in-app RGB editor), and override either per blog — all decode the
+same structure, so customization only changes presentation.
 
 ## Build
 
 ```
 cargo build
-cargo test                     # the full suite (78 tests across both crates)
+cargo test                     # the full suite (118 tests across both crates)
 cargo test -p standard-core    # just the engine
 cargo run -p standard-reader   # runs the `sr` binary
 ```

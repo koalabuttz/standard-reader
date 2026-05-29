@@ -5,11 +5,11 @@ writing published to the AT Protocol (Leaflet, Pckt, Offprint, GreenGale, and an
 blog that publishes `site.standard.*` records). Sign in with your atproto account,
 pull your subscriptions, and read — with images and real formatting, online or off.
 
-> Status: **a working interactive reader.** Add a blog by handle, browse the sidebar →
-> document list → reader, and read a block-flow with inline + cover images, search, and a
-> command palette — all over an offline cache. Reading needs no auth; signing in mirrors
-> your follow-list to atproto subscriptions. No build step beyond `cargo`, no runtime
-> services. (RSS support is a later goal.)
+> Status: **1.0 — a complete, polished reader.** Add a blog by handle, browse the sidebar →
+> document list → reader, and read a block-flow with inline + cover images, search, a command
+> palette, and full layout/theme customization — all over an offline cache. Reading needs no
+> auth; signing in mirrors your follow-list to atproto subscriptions. No build step beyond
+> `cargo`, no runtime services. (RSS support is a later goal.)
 
 ## Features
 
@@ -37,10 +37,23 @@ pull your subscriptions, and read — with images and real formatting, online or
 - **A portable core.** The engine has zero platform dependencies — a **PS Vita** frontend is
   a stated future goal, reusing all of it.
 
+## Install
+
+**Prebuilt binaries** (no toolchain needed) — grab the archive for your OS from the
+[latest release](https://github.com/koalabuttz/standard-reader/releases/latest), unpack, and put
+`sr` on your `PATH`. Builds are published for Linux (x86_64 + aarch64), macOS (Apple Silicon),
+and Windows (x86_64).
+
+**From source** (needs Rust 1.87+):
+
+```
+cargo install --git https://github.com/koalabuttz/standard-reader
+```
+
 ## Usage
 
 ```
-cargo run -p standard-reader            # launches the reader (binary: sr)
+cargo run -p standard-reader            # run from a clone (binary: sr)
 ```
 
 ```

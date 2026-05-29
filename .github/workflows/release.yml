@@ -1,0 +1,91 @@
+name: Release
+
+# Builds the `sr` binary for the three main OSes and attaches the archives to the GitHub release
+# on a `v*` tag. `workflow_dispatch` lets the matrix be dry-run (build + headless smoke, no upload)
+# before cutting the real tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked -p standard-reader --target ${{ matrix.target }}
+
+      # Headless smoke: `sr help` (arg parsing) + `sr cached` (exercises the cross-platform
+      # config/cache dir resolution + redb open, no TTY needed). The interactive TUI can't run here.
+      - name: Smoke
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/sr"
+          [ "${{ runner.os }}" = "Windows" ] && bin="${bin}.exe"
+          "$bin" help
+          "$bin" cached
+
+      - name: Package
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME:-dev}"
+          name="sr-${tag}-${{ matrix.target }}"
+          mkdir -p "$name"
+          cp README.md LICENSE CHANGELOG.md "$name"/
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/release/sr.exe" "$name"/
+            7z a "${name}.zip" "$name" >/dev/null
+            echo "ASSET=${name}.zip" >> "$GITHUB_ENV"
+          else
+            cp "target/${{ matrix.target }}/release/sr" "$name"/
+            tar -czf "${name}.tar.gz" "$name"
+            echo "ASSET=${name}.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.ASSET }}
+
+      # Release notes = the matching CHANGELOG section. Only on a real tag.
+      - name: Extract release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          awk '/^## \[/{ if (seen) exit; if ($0 ~ /\['"${GITHUB_REF_NAME#v}"'\]/) seen=1 } seen' \
+            CHANGELOG.md > RELEASE_NOTES.md
+          test -s RELEASE_NOTES.md || echo "${GITHUB_REF_NAME}" > RELEASE_NOTES.md
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET }}
+          body_path: RELEASE_NOTES.md

@@ -2,7 +2,7 @@
 
 A lean TUI reader for [standard.site](https://standard.site) (long-form on the AT Protocol). The engine (`standard-core`) is portable by design so it can grow new frontends — a desktop `ratatui` TUI now, a **PS Vita** frontend later — without a rewrite. See `CLAUDE.md` for architecture.
 
-## Status — 2026-05-28: an interactive reader, with images and sign-in
+## Status — 2026-05-29: `sr` 1.0.0 (engine `standard-core` 0.2.0)
 
 Workspace builds; the suite is green (124 tests across both crates: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, the redb cache round-trip, and the TUI's renderer/state/`TestBackend` tests, the OAuth loopback parser, the subscription sync-diff, and the customization layer — theme/layout resolution, focus cycling, the prefs `toml` round-trip). `sr` launches a **`ratatui` reader** — add a blog by handle (a local follow-list persisted in redb), browse the sidebar → document list → reader, search, command palette, mouse. The reader is a **block-flow** that renders real inline + cover images (`ratatui-image`, iTerm2 graphics where supported), all over a worker thread with an offline cache. Reading needs no auth; **`L` signs in via OAuth** to mirror the follow-list to atproto subscriptions. **Fully customizable**: cycle layouts (`\`), resize panes independently (`< >`), pick/edit a colour theme (`t`), and override either per blog (`b`) — set on first launch and persisted to `prefs.toml`.
 
@@ -56,6 +56,20 @@ Sequenced so each step is runnable on top of the last:
 - [ ] `tantivy` search swap (only if ranked/fuzzy search is wanted).
 - [ ] **PS Vita frontend** — new `Transport` + `Store` impls + framebuffer renderer, reusing all of `standard-core`.
 
-## Immediate next step
+## 1.0 — released
 
-**v0.1 is complete** — customization landed (first-launch picker + in-app layout/theme controls + per-blog overrides; author-styling was dropped in favour of it). Next is v0.2: *automatic* background sync with unread badges in the list (incremental refresh itself now landed). Deferred polish: moving the one-time image encode off the UI thread (`ThreadProtocol`).
+`sr` **1.0.0** ships the thesis: a polished TUI reader for standard.site — all six decoders, the
+block-flow reader with images, the offline `redb` cache, search, OAuth + subscription sync, and
+full layout/theme customization. Distributed as prebuilt binaries (Linux x86_64/aarch64, macOS
+Apple Silicon, Windows x86_64) plus `cargo install --git`. The engine, **`standard-core`**, stays
+**0.2.0** — its `Transport`/`Store` API is deliberately unpromised (not on crates.io) until a
+second frontend (the PS Vita port) validates the seam. See `CHANGELOG.md`.
+
+## Post-1.0
+
+- [ ] *Automatic* background sync (timer-based, not just on `r`/open) + unread badges in the list.
+- [ ] RSS feed support (the original "like an RSS reader" stretch).
+- [ ] Embeds beyond Pckt iframes (Leaflet/Offprint), richer embed labels, recommends, bsky threads.
+- [ ] `tantivy` search swap (only if ranked/fuzzy is wanted).
+- [ ] **PS Vita frontend** — new `Transport` + `Store` impls + framebuffer renderer, reusing the core.
+- Deferred polish: moving the one-time image encode off the UI thread (`ThreadProtocol`).

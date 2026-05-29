@@ -236,12 +236,6 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect, focused: bo
 }
 
 fn draw_footer(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
-    let login_hint = if app.account.is_some() {
-        "L log out"
-    } else {
-        "L log in"
-    };
-    let _ = login_hint; // login is discoverable from the sidebar footer + help; keep this line short
     let hints: String = match app.mode {
         Mode::Browse => "a add · ⇥ focus · enter open · / search · : palette · ? help".into(),
         Mode::DocList => "↑↓ select · enter read · o browser · esc back · / search".into(),

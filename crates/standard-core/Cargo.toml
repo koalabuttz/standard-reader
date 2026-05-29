@@ -1,8 +1,13 @@
 [package]
 name = "standard-core"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+# Kept at 0.x (no semver API promise) until a second frontend validates the Transport/Store seam;
+# not published while it's pre-1.0.
+publish = false
 description = "UI- and I/O-agnostic engine for reading standard.site (atproto long-form) content."
 
 [dependencies]

@@ -515,7 +515,8 @@ impl Store<Did, Session> for FileSessionStore {
 
 impl SessionStore for FileSessionStore {}
 
-/// Write `bytes` to `path` with `0600` permissions (owner read/write only).
+/// Write `bytes` to `path` with owner-only permissions on unix (`0600`).
+#[cfg(unix)]
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::os::unix::fs::OpenOptionsExt;
     let mut file = fs::OpenOptions::new()
@@ -525,6 +526,13 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         .mode(0o600)
         .open(path)?;
     file.write_all(bytes)
+}
+
+/// Non-unix fallback: a plain write. These files live under the per-user profile directory
+/// (e.g. `%APPDATA%` on Windows), which default ACLs already scope to the current user.
+#[cfg(not(unix))]
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    fs::write(path, bytes)
 }
 
 // --- Loopback callback server ----------------------------------------------------

@@ -80,6 +80,16 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
     let config_dir = config_dir()?;
     let (tx, rx) = worker::spawn(cache_path()?, config_dir.clone());
     let mut terminal = ratatui::init();
+    // Restore the terminal on panic, not just on the normal return path below — otherwise a panic
+    // inside a draw would leave it in raw/alt-screen/mouse-reporting mode. `ratatui::init` handles
+    // the alt-screen + raw mode, but our extra mouse capture isn't covered, so chain a hook that
+    // also disables it (then run the previous hook to keep the panic message).
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(stdout(), DisableMouseCapture);
+        ratatui::restore();
+        prev_hook(info);
+    }));
     // Detect the terminal graphics protocol + font size (before mouse capture, so the
     // query's stdin replies aren't interleaved with mouse reports). Fall back to halfblocks.
     let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
@@ -248,26 +258,42 @@ fn run_cached() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// `$XDG_DATA_HOME` (or `~/.local/share`) + `standard-reader/cache.redb`.
+/// Resolve an OS-appropriate base directory: the XDG var on unix (falling back under `$HOME`),
+/// or the matching Windows known-folder var (falling back to `%USERPROFILE%`). Linux/macOS keep
+/// their existing XDG paths; Windows gets `%APPDATA%`/`%LOCALAPPDATA%`.
+fn os_base(xdg_var: &str, unix_fallback: &str, win_var: &str) -> Result<PathBuf, Box<dyn Error>> {
+    #[cfg(windows)]
+    {
+        let _ = (xdg_var, unix_fallback);
+        let base = std::env::var_os(win_var)
+            .filter(|v| !v.is_empty())
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .ok_or("neither the known-folder var nor USERPROFILE is set")?;
+        Ok(PathBuf::from(base))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = win_var;
+        Ok(match std::env::var_os(xdg_var) {
+            Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+            _ => PathBuf::from(std::env::var_os("HOME").ok_or("HOME not set")?).join(unix_fallback),
+        })
+    }
+}
+
+/// Cache file: `$XDG_DATA_HOME`/`~/.local/share` (unix) or `%LOCALAPPDATA%` (Windows), +
+/// `standard-reader/cache.redb`.
 fn cache_path() -> Result<PathBuf, Box<dyn Error>> {
-    let base = match std::env::var_os("XDG_DATA_HOME") {
-        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => PathBuf::from(std::env::var_os("HOME").ok_or("HOME not set")?).join(".local/share"),
-    };
-    let dir = base.join("standard-reader");
+    let dir = os_base("XDG_DATA_HOME", ".local/share", "LOCALAPPDATA")?.join("standard-reader");
     std::fs::create_dir_all(&dir)?;
     Ok(dir.join("cache.redb"))
 }
 
-/// The config directory (`$XDG_CONFIG_HOME/standard-reader`, else `~/.config/...`). Auth is
-/// *config*, not cache data, so the OAuth session/account files live here, separate from the
-/// re-fetchable `redb` cache under `$XDG_DATA_HOME`.
+/// The config directory (`$XDG_CONFIG_HOME`/`~/.config` on unix, `%APPDATA%` on Windows, +
+/// `standard-reader/`). Auth is *config*, not cache data, so the OAuth session/account files live
+/// here, separate from the re-fetchable `redb` cache.
 fn config_dir() -> Result<PathBuf, Box<dyn Error>> {
-    let base = match std::env::var_os("XDG_CONFIG_HOME") {
-        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => PathBuf::from(std::env::var_os("HOME").ok_or("HOME not set")?).join(".config"),
-    };
-    let dir = base.join("standard-reader");
+    let dir = os_base("XDG_CONFIG_HOME", ".config", "APPDATA")?.join("standard-reader");
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }

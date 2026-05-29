@@ -18,7 +18,7 @@ use serde_json::Value;
 use crate::atp::{AtUri, Transport, xrpc};
 use crate::decode::image::blob_image;
 use crate::decode::{DecodeCtx, Registry, content_ref, external_content_cid, gallery_images};
-use crate::model::{Block, Document, Image, Publication, RichDoc, Subscription};
+use crate::model::{Block, Document, Image, Inline, Publication, RichDoc, Subscription};
 
 /// A resolved repo: its DID and the PDS that hosts it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -500,7 +500,24 @@ pub fn get_document<T: Transport>(
     // `GalleryRef` placeholder; fetch each referenced record and splice in its images.
     let mut body = body;
     resolve_gallery_refs(t, &mut body.blocks, &doc_uri.did, pds);
+    let body = or_description(body, meta.description.as_deref());
     Ok((meta, body))
+}
+
+/// Fall back to the document's `description` blurb when the decoded body is empty. Some
+/// publications keep the full article on the web and publish only a metadata stub to atproto
+/// (e.g. `atproto.com/blog`): no `content`, no `textContent` — which would otherwise render as a
+/// blank post. The blurb at least gives the reader something; the full text is at the doc's web
+/// `path`. A non-empty body is returned unchanged.
+fn or_description(mut body: RichDoc, description: Option<&str>) -> RichDoc {
+    if body.blocks.is_empty()
+        && let Some(desc) = description
+        && !desc.trim().is_empty()
+    {
+        body.blocks
+            .push(Block::Paragraph(vec![Inline::Text(desc.to_string())]));
+    }
+    body
 }
 
 /// Replace each [`Block::GalleryRef`] (in `blocks`, recursing into `Quote`/`List` containers)
@@ -566,6 +583,29 @@ pub fn get_blob<T: Transport>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_body_falls_back_to_the_description_blurb() {
+        let para = |s: &str| Block::Paragraph(vec![Inline::Text(s.into())]);
+
+        // Metadata-only doc (no content/textContent → empty body): render the description.
+        let body = or_description(RichDoc::default(), Some("A short blurb."));
+        assert_eq!(body.blocks, vec![para("A short blurb.")]);
+
+        // A real body is left untouched.
+        let real = RichDoc {
+            blocks: vec![para("the actual post")],
+        };
+        assert_eq!(or_description(real.clone(), Some("blurb")), real);
+
+        // No (or blank) description → still empty, not a stray empty paragraph.
+        assert!(or_description(RichDoc::default(), None).blocks.is_empty());
+        assert!(
+            or_description(RichDoc::default(), Some("   "))
+                .blocks
+                .is_empty()
+        );
+    }
 
     #[test]
     fn parses_subscription_to_cross_repo_publication() {

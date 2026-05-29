@@ -99,6 +99,7 @@ fn block(item: &Value, ctx: &DecodeCtx) -> Vec<Block> {
         "orderedList" => vec![list(item, ctx, true)],
         "image" => image(item, ctx).into_iter().collect(),
         "horizontalRule" => vec![Block::Rule],
+        "iframe" => iframe(item).into_iter().collect(),
         "table" => vec![table(item)],
         // `gallery` carries only a `ref` to a separate `blog.pckt.gallery` record. The decoder
         // is pure (no I/O), so emit a placeholder; `read::get_document` fetches the record and
@@ -212,6 +213,34 @@ fn image(item: &Value, ctx: &DecodeCtx) -> Option<Block> {
     blob_image(attrs.get("blob")?, ctx.repo_did, alt).map(Block::Image)
 }
 
+/// An `iframe` embed → a paragraph holding one link, so it's clickable / keyboard-navigable in
+/// the reader (which can't host a live player). A YouTube `/embed/<id>` URL is rewritten to its
+/// `watch?v=<id>` page and labelled "▶ Watch on YouTube"; any other iframe links to its raw URL.
+fn iframe(item: &Value) -> Option<Block> {
+    let url = item.get("url").and_then(Value::as_str)?.trim();
+    if url.is_empty() {
+        return None;
+    }
+    let (href, label) = match youtube_watch_url(url) {
+        Some(watch) => (watch, "▶ Watch on YouTube".to_string()),
+        None => (url.to_string(), format!("🔗 {url}")),
+    };
+    Some(Block::Paragraph(vec![Inline::Link {
+        href,
+        content: vec![Inline::Text(label)],
+    }]))
+}
+
+/// A YouTube embed URL (`youtube.com/embed/<id>` or `youtube-nocookie.com/embed/<id>`, with any
+/// query) → the watchable `https://www.youtube.com/watch?v=<id>`. `None` for non-embed URLs.
+fn youtube_watch_url(url: &str) -> Option<String> {
+    if !(url.contains("youtube.com/embed/") || url.contains("youtube-nocookie.com/embed/")) {
+        return None;
+    }
+    let id = url.split("/embed/").nth(1)?.split(['?', '&', '/']).next()?;
+    (!id.is_empty()).then(|| format!("https://www.youtube.com/watch?v={id}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,6 +289,51 @@ mod tests {
         // A different publisher's content is never Pckt's blob.
         let other = serde_json::json!({ "$type": "pub.leaflet.content", "blob": { "ref": { "$link": "x" } } });
         assert_eq!(external_content_cid(&other), None);
+    }
+
+    #[test]
+    fn youtube_iframe_becomes_a_watch_link() {
+        // The shape in the bee doc: an embed URL with query params.
+        let content = serde_json::json!({
+            "$type": "blog.pckt.content",
+            "items": [{
+                "$type": "blog.pckt.block.iframe",
+                "url": "https://www.youtube.com/embed/QsGYNfagHlU?rel=0&hl=en-US"
+            }]
+        });
+        let blocks = Pckt.decode(&content, &CTX).unwrap().blocks;
+        assert_eq!(
+            blocks,
+            vec![Block::Paragraph(vec![Inline::Link {
+                href: "https://www.youtube.com/watch?v=QsGYNfagHlU".into(),
+                content: vec![Inline::Text("▶ Watch on YouTube".into())],
+            }])]
+        );
+    }
+
+    #[test]
+    fn generic_iframe_links_to_its_url() {
+        let content = serde_json::json!({
+            "$type": "blog.pckt.content",
+            "items": [{ "$type": "blog.pckt.block.iframe", "url": "https://example.com/widget" }]
+        });
+        let blocks = Pckt.decode(&content, &CTX).unwrap().blocks;
+        assert_eq!(
+            blocks,
+            vec![Block::Paragraph(vec![Inline::Link {
+                href: "https://example.com/widget".into(),
+                content: vec![Inline::Text("🔗 https://example.com/widget".into())],
+            }])]
+        );
+    }
+
+    #[test]
+    fn iframe_without_url_is_skipped() {
+        let content = serde_json::json!({
+            "$type": "blog.pckt.content",
+            "items": [{ "$type": "blog.pckt.block.iframe", "attrs": [] }]
+        });
+        assert!(Pckt.decode(&content, &CTX).unwrap().blocks.is_empty());
     }
 
     #[test]

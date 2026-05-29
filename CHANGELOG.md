@@ -14,7 +14,16 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
   publication now shows a checklist (Space to toggle, `a` all, `n` none, Enter to follow) instead
   of silently following every blog in the repo.
 - **Load older posts on demand** — press `↓` past the bottom of a feed's list to fetch the next
-  window of older posts.
+  window of older posts. The list shows an end-of-feed affordance (`↓ load older posts` when more
+  remain, `— end —` when exhausted), and the footer hints it.
+- **Unread badges.** Per-feed unread counts in the sidebar and an unread dot beside each unread
+  post (read posts dim); both update live as you read.
+- **Complete Offprint + Leaflet coverage.** Every Offprint block now decodes — blockquotes, code
+  blocks, ordered & task lists (with ☑/☐), image carousels and before/after diffs, and web
+  embeds/bookmarks — plus the `highlight`, `@mention`, and `webMention` text styles. Leaflet's
+  lists and embeds (website / Bluesky post / button / post reference), previously dropped, now
+  render too. Embeds a terminal can't host become clickable links (reusing the link machinery);
+  highlighted text renders with a tint, and `@mentions` link to the author's Bluesky profile.
 
 ### Changed
 - **Lazy, bounded fetching.** Following a blog no longer backfills its entire history up front (a

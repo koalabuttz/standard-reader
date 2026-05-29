@@ -4,7 +4,7 @@ A TUI reader for [standard.site](https://standard.site) (long-form on the AT Pro
 
 ## Status — 2026-05-29: `sr` 1.1.0 (engine `standard-core` 0.3.0)
 
-Workspace builds; the suite is green (124 tests across both crates: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, the redb cache round-trip, and the TUI's renderer/state/`TestBackend` tests, the OAuth loopback parser, the subscription sync-diff, and the customization layer — theme/layout resolution, focus cycling, the prefs `toml` round-trip). `sr` launches a **`ratatui` reader** — add a blog by handle (a local follow-list persisted in redb), browse the sidebar → document list → reader, search, command palette, mouse. The reader is a **block-flow** that renders real inline + cover images (`ratatui-image`, iTerm2 graphics where supported), all over a worker thread with an offline cache. Reading needs no auth; **`L` signs in via OAuth** to mirror the follow-list to atproto subscriptions. **Fully customizable**: cycle layouts (`\`), resize panes independently (`< >`), pick/edit a colour theme (`t`), and override either per blog (`b`) — set on first launch and persisted to `prefs.toml`. Feeds load **lazily** — adding a handle that publishes several blogs shows a **pick-which-to-follow** checklist, and opening a feed pulls a bounded recent window (older posts on demand via `↓`) rather than backfilling everything up front.
+Workspace builds; the suite is green (140 tests across both crates: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, full Offprint/Leaflet block+facet coverage, the redb cache round-trip, and the TUI's renderer/state/`TestBackend` tests, the OAuth loopback parser, the subscription sync-diff, unread/load-older plumbing, and the customization layer — theme/layout resolution, focus cycling, the prefs `toml` round-trip). `sr` launches a **`ratatui` reader** — add a blog by handle (a local follow-list persisted in redb), browse the sidebar → document list → reader, search, command palette, mouse. The reader is a **block-flow** that renders real inline + cover images (`ratatui-image`, iTerm2 graphics where supported), all over a worker thread with an offline cache. Reading needs no auth; **`L` signs in via OAuth** to mirror the follow-list to atproto subscriptions. **Fully customizable**: cycle layouts (`\`), resize panes independently (`< >`), pick/edit a colour theme (`t`), and override either per blog (`b`) — set on first launch and persisted to `prefs.toml`. Feeds load **lazily** — adding a handle that publishes several blogs shows a **pick-which-to-follow** checklist, and opening a feed pulls a bounded recent window (older posts on demand via `↓`) rather than backfilling everything up front.
 
 **Done (real & tested):**
 - [x] Cargo workspace + the portable core/frontend split
@@ -69,17 +69,23 @@ second frontend (the PS Vita port) validates the seam. See `CHANGELOG.md`.
 
 `sr` **1.1.0** (engine `standard-core` **0.3.0**) makes feeds lazy: following a blog no longer
 backfills its whole history (a prolific author with ~25 blogs in one repo used to lock the app up).
-First-open fetches a bounded recent window, with **load-older** on demand; adding a multi-publication
-handle/DID shows a **pick-which-blogs** checklist (select-all/none); the reader pane caches its
-computed layout so sidebar nav and scrolling stay snappy. Folds in the OS-keyring session store
-(macOS/Windows native; Linux Secret Service opt-in), the metadata-only-post `description` fallback,
-and the MSRV correction to 1.88. See `CHANGELOG.md`.
+First-open fetches a bounded recent window, with **load-older** on demand (an end-of-feed
+affordance shows when more remain); adding a multi-publication handle/DID shows a
+**pick-which-blogs** checklist (select-all/none); the reader pane caches its computed layout so
+sidebar nav and scrolling stay snappy. Adds **unread badges** (per-feed counts + per-post markers)
+and **completes Offprint + Leaflet coverage** — every Offprint block/facet now decodes (lists, code,
+blockquotes, image carousels/diffs, `highlight`/`@mention` text), and Leaflet's previously-dropped
+lists and embeds render, with embeds a terminal can't host degrading to clickable links. Folds in
+the OS-keyring session store (macOS/Windows native; Linux Secret Service opt-in), the
+metadata-only-post `description` fallback, and the MSRV correction to 1.88. See `CHANGELOG.md`.
 
 ## Post-1.0
 
-- [ ] *Automatic* background sync (timer-based, not just on `r`/open) + unread badges in the list.
+- [ ] *Automatic* background sync (timer-based, not just on `r`/open).
 - [ ] RSS feed support (the original "like an RSS reader" stretch).
-- [ ] Embeds beyond Pckt iframes (Leaflet/Offprint), richer embed labels, recommends, bsky threads.
+- [ ] **Richer embed labels.** Embeds now degrade to clickable links (1.1.0); resolve a friendlier
+  label for a Bluesky post / known host (author + snippet) instead of the raw URL. Plus recommends
+  (`site.standard.graph.recommend`) and the Bluesky comment thread.
 - [ ] `tantivy` search swap (only if ranked/fuzzy is wanted).
 - [ ] **PS Vita frontend** — new `Transport` + `Store` impls + framebuffer renderer, reusing the core.
 - Deferred polish: moving the one-time image encode off the UI thread (`ThreadProtocol`).

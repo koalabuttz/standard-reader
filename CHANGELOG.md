@@ -7,7 +7,22 @@ aims to follow [Semantic Versioning](https://semver.org/). Versions are per-crat
 binary (`standard-reader`) and the `standard-core` engine version independently — `standard-core`
 stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
 
-## [1.0.1] - 2026-05-29 — `sr`
+## [1.1.0] - 2026-05-29 — `sr` (with `standard-core` 0.3.0)
+
+### Added
+- **Pick which blogs to follow.** Adding a handle/DID that publishes more than one
+  publication now shows a checklist (Space to toggle, `a` all, `n` none, Enter to follow) instead
+  of silently following every blog in the repo.
+- **Load older posts on demand** — press `↓` past the bottom of a feed's list to fetch the next
+  window of older posts.
+
+### Changed
+- **Lazy, bounded fetching.** Following a blog no longer backfills its entire history up front (a
+  prolific author with many blogs could lock the app up while it pulled everything). Posts now load
+  in a bounded recent window when you first open a feed — like an RSS reader — with older posts via
+  load-older. Adding/importing many feeds stays responsive.
+- **Faster navigation.** The reader pane caches its computed layout, so scrolling and moving around
+  the sidebar no longer re-lay-out the open post every keystroke.
 
 ### Security
 - The OAuth session (DPoP key + tokens) is now stored in the **OS keyring** where a native
@@ -62,5 +77,5 @@ long-form writing on the AT Protocol — online or fully offline.
   customization above — one consistent, user-controlled render path.
 - Requires Rust 1.88+ to build from source.
 
-[1.0.1]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.0.1
+[1.1.0]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.1.0
 [1.0.0]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.0.0

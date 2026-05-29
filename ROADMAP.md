@@ -2,9 +2,9 @@
 
 A TUI reader for [standard.site](https://standard.site) (long-form on the AT Protocol). The engine (`standard-core`) is portable by design so it can grow new frontends — a desktop `ratatui` TUI now, a **PS Vita** frontend later — without a rewrite. See `CLAUDE.md` for architecture.
 
-## Status — 2026-05-29: `sr` 1.0.0 (engine `standard-core` 0.2.0)
+## Status — 2026-05-29: `sr` 1.1.0 (engine `standard-core` 0.3.0)
 
-Workspace builds; the suite is green (124 tests across both crates: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, the redb cache round-trip, and the TUI's renderer/state/`TestBackend` tests, the OAuth loopback parser, the subscription sync-diff, and the customization layer — theme/layout resolution, focus cycling, the prefs `toml` round-trip). `sr` launches a **`ratatui` reader** — add a blog by handle (a local follow-list persisted in redb), browse the sidebar → document list → reader, search, command palette, mouse. The reader is a **block-flow** that renders real inline + cover images (`ratatui-image`, iTerm2 graphics where supported), all over a worker thread with an offline cache. Reading needs no auth; **`L` signs in via OAuth** to mirror the follow-list to atproto subscriptions. **Fully customizable**: cycle layouts (`\`), resize panes independently (`< >`), pick/edit a colour theme (`t`), and override either per blog (`b`) — set on first launch and persisted to `prefs.toml`.
+Workspace builds; the suite is green (124 tests across both crates: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, the redb cache round-trip, and the TUI's renderer/state/`TestBackend` tests, the OAuth loopback parser, the subscription sync-diff, and the customization layer — theme/layout resolution, focus cycling, the prefs `toml` round-trip). `sr` launches a **`ratatui` reader** — add a blog by handle (a local follow-list persisted in redb), browse the sidebar → document list → reader, search, command palette, mouse. The reader is a **block-flow** that renders real inline + cover images (`ratatui-image`, iTerm2 graphics where supported), all over a worker thread with an offline cache. Reading needs no auth; **`L` signs in via OAuth** to mirror the follow-list to atproto subscriptions. **Fully customizable**: cycle layouts (`\`), resize panes independently (`< >`), pick/edit a colour theme (`t`), and override either per blog (`b`) — set on first launch and persisted to `prefs.toml`. Feeds load **lazily** — adding a handle that publishes several blogs shows a **pick-which-to-follow** checklist, and opening a feed pulls a bounded recent window (older posts on demand via `↓`) rather than backfilling everything up front.
 
 **Done (real & tested):**
 - [x] Cargo workspace + the portable core/frontend split
@@ -41,7 +41,7 @@ Sequenced so each step is runnable on top of the last:
 
 - [x] ~~Author `basicTheme` toggle (uniform vs. author's styling).~~ **Dropped** in favour of user-driven customization (see the v0.1 "Customization" item): one consistent, user-controlled render path is simpler than honouring each publication's styling, and is what a reader wants.
 - [x] Search UI over the `textContent` index (in the shell; `/` searches the redb inverted index).
-- [x] **Incremental refresh** — a feed backfills its full history on first fetch (`listRecords` paginated to exhaustion, no page cap), then refreshes walk newest-first and stop at already-cached records via the per-publication `sync_cursor` high-water mark. Plus live-path hardening: connect/request timeouts on both HTTP clients, and a transient restore failure no longer wipes the session.
+- [x] **Incremental refresh** — opening a feed for the first time fetches a **bounded recent window** (`list_documents_window`, ~3 `listRecords` pages) rather than backfilling its whole history up front; subsequent refreshes walk newest-first and stop at already-cached records via the per-publication `sync_cursor` high-water mark, and **load-older** (`↓` past the bottom) pulls the next window from a repo-DID-keyed older cursor. *(1.1.0 changed first-open from exhaustive backfill to this lazy bounded fetch — following a prolific author with many blogs no longer locks the app up.)* Plus live-path hardening: connect/request timeouts on both HTTP clients, and a transient restore failure no longer wipes the session.
 - [ ] *Automatic* background sync (periodic / on a timer, not just on `r`/open) + unread badges in the list (mark-read exists, on open + `m`).
 - [x] `Block::Table` (Pckt tables → box-drawing grid) and `Block::Callout` (Offprint callouts → a tinted box with the author's colour + emoji badge), both first-class in the model and reader.
 - [x] **Reader rendering polish** — interactive in-post hyperlinks (keyboard `n`/`N` to cycle + `Enter`, plus mouse click), code blocks framed with a left gutter + language label, and display-width-correct tables / full-width rules (`unicode-width`). Link rects are read back from a temp-buffer render of each line, so click targets match ratatui's actual word-wrap even when a link wraps across rows.
@@ -64,6 +64,16 @@ full layout/theme customization. Distributed as prebuilt binaries (Linux x86_64/
 Apple Silicon, Windows x86_64) plus `cargo install --git`. The engine, **`standard-core`**, stays
 **0.2.0** — its `Transport`/`Store` API is deliberately unpromised (not on crates.io) until a
 second frontend (the PS Vita port) validates the seam. See `CHANGELOG.md`.
+
+## 1.1 — released
+
+`sr` **1.1.0** (engine `standard-core` **0.3.0**) makes feeds lazy: following a blog no longer
+backfills its whole history (a prolific author with ~25 blogs in one repo used to lock the app up).
+First-open fetches a bounded recent window, with **load-older** on demand; adding a multi-publication
+handle/DID shows a **pick-which-blogs** checklist (select-all/none); the reader pane caches its
+computed layout so sidebar nav and scrolling stay snappy. Folds in the OS-keyring session store
+(macOS/Windows native; Linux Secret Service opt-in), the metadata-only-post `description` fallback,
+and the MSRV correction to 1.88. See `CHANGELOG.md`.
 
 ## Post-1.0
 

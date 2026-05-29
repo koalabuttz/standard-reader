@@ -47,7 +47,7 @@ pub enum Focus {
     Reader,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
     Browse,
     DocList,
@@ -67,6 +67,8 @@ pub enum Mode {
     LayoutPicker,
     /// Per-blog customization menu (theme / layout / use-global) for one publication.
     BlogMenu,
+    /// Show the full (untruncated) status line in a popup — opened by clicking the footer.
+    StatusDetail,
 }
 
 /// Which pane-width field a resize targets (see [`App::focused_pane_width`]).
@@ -139,6 +141,8 @@ pub struct Rects {
     pub sidebar: Rect,
     pub posts: Rect,
     pub reader: Rect,
+    /// The footer row, for click-to-expand the (possibly truncated) status.
+    pub footer: Rect,
 }
 
 /// One row of a hyperlink's on-screen footprint in the reader body, in *virtual* document
@@ -213,6 +217,9 @@ pub struct App {
     /// True during the first-launch flow (layout picker → theme picker), so each picker advances
     /// to the next step instead of returning to the reader.
     pub onboarding: bool,
+    /// Snapshot of the status text shown in the [`Mode::StatusDetail`] popup (taken on click, so
+    /// it doesn't change underneath the reader while open).
+    pub status_detail: String,
     tx: Sender<ToWorker>,
 }
 
@@ -253,6 +260,7 @@ impl App {
             menu_sel: 0,
             menu_target: None,
             onboarding: false,
+            status_detail: String::new(),
             prefs,
             tx,
         };
@@ -408,7 +416,7 @@ impl App {
         match self.mode {
             Mode::Search | Mode::AddFeed | Mode::SignIn => self.input_key(key),
             Mode::Palette => self.palette_key(key),
-            Mode::Help => self.mode = Mode::Browse,
+            Mode::Help | Mode::StatusDetail => self.mode = Mode::Browse,
             Mode::SyncPrompt => self.sync_prompt_key(key),
             Mode::ThemePicker => self.theme_picker_key(key),
             Mode::ThemeEditor => self.theme_editor_key(key),
@@ -536,6 +544,19 @@ impl App {
                 }
             }
             MouseEventKind::Down(_) => {
+                // A click anywhere dismisses the status popup.
+                if self.mode == Mode::StatusDetail {
+                    self.mode = Mode::Browse;
+                    return;
+                }
+                // Clicking the footer expands the (possibly truncated) status into a popup.
+                if in_rect(self.rects.footer, ev.column, ev.row) {
+                    if !self.status.is_empty() {
+                        self.status_detail = self.status.clone();
+                        self.mode = Mode::StatusDetail;
+                    }
+                    return;
+                }
                 // Test every pane by rect; absent panes are zero-area and never match, so this is
                 // correct for all layouts (including ones showing feeds + posts at once).
                 if let Some(i) = hit(self.rects.posts, ev.column, ev.row) {
@@ -1369,6 +1390,11 @@ fn collect_inline_images(inlines: &[Inline], out: &mut Vec<ImageSource>) {
     }
 }
 
+/// Whether a screen coordinate falls inside `rect` (a plain point-in-rect test; zero-area → no).
+fn in_rect(rect: Rect, x: u16, y: u16) -> bool {
+    x >= rect.x && x < rect.right() && y >= rect.y && y < rect.bottom()
+}
+
 /// Row index clicked inside a bordered list `rect` (None if outside / on the border). A
 /// zero-area rect (an absent pane in the current layout) never matches.
 fn hit(rect: Rect, x: u16, y: u16) -> Option<usize> {
@@ -1504,7 +1530,7 @@ mod tests {
 
     // --- customization (layout / theme / per-blog) --------------------------------
 
-    use super::{App, Focus, hit};
+    use super::{App, Focus, Mode, hit};
     use crate::prefs::{LayoutKind, Prefs};
     use ratatui_image::picker::Picker;
     use standard_core::model::{Document, Publication};
@@ -1702,5 +1728,34 @@ mod tests {
         app.focus = Focus::Reader;
         app.adjust_pane(2);
         assert_eq!((app.prefs.sidebar_width, app.prefs.posts_width), (32, 32));
+    }
+
+    #[test]
+    fn footer_click_opens_then_dismisses_status_detail() {
+        use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        use ratatui::layout::Rect;
+        let mut app = test_app(Prefs::for_test());
+        app.status = "a long error message worth reading in full".into();
+        app.rects.footer = Rect {
+            x: 0,
+            y: 23,
+            width: 80,
+            height: 1,
+        };
+        let click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 4,
+            row: 23,
+            modifiers: KeyModifiers::NONE,
+        };
+        app.on_mouse(click);
+        assert_eq!(app.mode, Mode::StatusDetail);
+        assert_eq!(
+            app.status_detail,
+            "a long error message worth reading in full"
+        );
+        // Any click dismisses it (without triggering a pane action behind it).
+        app.on_mouse(click);
+        assert_eq!(app.mode, Mode::Browse);
     }
 }

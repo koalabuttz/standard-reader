@@ -40,6 +40,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         LayoutKind::OnePane => draw_one_pane(f, app, theme, body),
         LayoutKind::DrillDown => draw_drill_down(f, app, theme, body),
     }
+    app.rects.footer = footer; // click target for expanding the status
     draw_footer(f, app, theme, footer);
 
     match app.mode {
@@ -53,6 +54,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         Mode::ThemeEditor => draw_theme_editor(f, app, theme, area),
         Mode::LayoutPicker => draw_layout_picker(f, app, theme, area),
         Mode::BlogMenu => draw_blog_menu(f, app, theme, area),
+        Mode::StatusDetail => draw_status_detail(f, app, theme, area),
         _ => {}
     }
 }
@@ -253,14 +255,29 @@ fn draw_footer(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
         Mode::ThemeEditor => {
             "↑↓ slot · ←→ channel · -/+ adjust · [ ] ±16 · enter save · esc cancel".into()
         }
-        Mode::Help => "any key to close".into(),
+        Mode::Help | Mode::StatusDetail => "any key / click to close".into(),
     };
-    // Hints take priority: clip the (left) status to whatever space the hints leave, so a long
-    // status can never push the control hints off the right edge.
-    let budget = (area.width as usize).saturating_sub(hints.width() + 4);
-    let status = truncate_width(&app.status, budget);
+    // Errors win: an `⚠` status shows in full (the hints yield space), since it's the message you
+    // actually need to read. Otherwise the hints win and a long status is clipped — either way,
+    // clicking the footer opens the full text. (Errors are the only statuses prefixed with `⚠`.)
+    let total = area.width as usize;
+    let is_error = app.status.starts_with('⚠');
+    let (status, hints) = if is_error {
+        let status = truncate_width(&app.status, total.saturating_sub(2));
+        let budget = total.saturating_sub(status.width() + 4);
+        (status, truncate_width(&hints, budget))
+    } else {
+        let budget = total.saturating_sub(hints.width() + 4);
+        (truncate_width(&app.status, budget), hints)
+    };
+    // Errors render in the foreground colour (the `⚠` already flags them); info stays dim.
+    let status_style = if is_error {
+        theme.body()
+    } else {
+        theme.dim_style()
+    };
     let line = Line::from(vec![
-        Span::styled(format!(" {status} "), theme.dim_style()),
+        Span::styled(format!(" {status} "), status_style),
         Span::styled("· ", Style::default().fg(theme.border)),
         Span::styled(hints, theme.accent_style()),
     ]);
@@ -364,6 +381,7 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
         ("b", "customize this blog (theme / layout)"),
         ("m", "mark the open post read"),
         ("L", "log in / out (atproto)"),
+        ("click status", "expand the full status line"),
         ("? ", "this help"),
         ("q", "quit"),
     ];
@@ -620,6 +638,37 @@ fn draw_blog_menu(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     f.render_stateful_widget(list, popup, &mut state);
 }
 
+/// The full status, wrapped in a popup — opened by clicking the footer, so a status that was
+/// clipped to fit the footer row can still be read in full.
+fn draw_status_detail(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
+    let text = if app.status_detail.is_empty() {
+        "(no status)"
+    } else {
+        app.status_detail.as_str()
+    };
+    let inner_w = 60.min(area.width.saturating_sub(4)).max(20);
+    let rows = (text.width() as u16)
+        .div_ceil(inner_w)
+        .clamp(1, area.height.saturating_sub(2).max(1));
+    let popup = centered(area, inner_w + 2, rows + 2);
+    f.render_widget(Clear, popup);
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(theme.accent_style())
+        .title(Span::styled(
+            " Status ",
+            theme.accent_style().add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().fg(theme.fg).bg(theme.panel));
+    f.render_widget(
+        Paragraph::new(text)
+            .block(block)
+            .wrap(Wrap { trim: false })
+            .style(theme.body()),
+        popup,
+    );
+}
+
 /// A centered rect of the given width/height, clamped to `area`.
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);
@@ -781,6 +830,40 @@ mod tests {
         let text = buffer_text(t.backend().buffer());
         assert!(text.contains("? help"), "control hints stay visible");
         assert!(text.contains('…'), "the status got truncated to make room");
+    }
+
+    #[test]
+    fn error_status_wins_over_hints() {
+        let (tx, _rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        app.status = "⚠ the publication record could not be fetched from the PDS".into();
+        let mut t = Terminal::new(TestBackend::new(80, 6)).unwrap();
+        t.draw(|f| draw(f, &mut app)).unwrap();
+        let text = buffer_text(t.backend().buffer());
+        assert!(
+            text.contains("could not be fetched from the PDS"),
+            "the error shows in full"
+        );
+        assert!(
+            !text.contains("? help"),
+            "the hints yielded space to the error"
+        );
+    }
+
+    #[test]
+    fn status_detail_popup_shows_the_full_text() {
+        let (tx, _rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        app.status_detail = "a fairly long status that would not fit on the footer row".into();
+        app.mode = crate::app::Mode::StatusDetail;
+        let mut t = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        t.draw(|f| draw(f, &mut app)).unwrap();
+        let text = buffer_text(t.backend().buffer());
+        assert!(text.contains("Status"), "the popup title");
+        assert!(
+            text.contains("would not fit on the footer row"),
+            "the full status is readable in the popup"
+        );
     }
 
     #[test]

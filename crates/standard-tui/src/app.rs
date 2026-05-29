@@ -2,7 +2,7 @@
 //! events into state transitions plus [`ToWorker`] commands, and folds [`FromWorker`]
 //! results back in. It owns no I/O (the worker does) and renders from this snapshot.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::Sender;
 
 use image::{DynamicImage, GenericImageView};
@@ -232,6 +232,14 @@ pub struct App {
     pub onboarding: bool,
     /// Candidates for the publication picker: `(uri, name, selected)`; drives `PublicationPicker`.
     pub publication_choices: Vec<(String, String, bool)>,
+    /// Which of the **current feed's** documents are read (drives the unread markers). Updated live
+    /// when a post is opened or marked read, and replaced wholesale on each `Docs` from the worker.
+    pub read_uris: HashSet<String>,
+    /// Per-feed unread count (publication uri → count) for the sidebar badges; from the worker, kept
+    /// live by local decrements as posts are read.
+    pub unread_counts: HashMap<String, usize>,
+    /// Whether the open feed has older posts left to load (drives the end-of-list affordance).
+    pub has_older: bool,
     /// Snapshot of the status text shown in the [`Mode::StatusDetail`] popup (taken on click, so
     /// it doesn't change underneath the reader while open).
     pub status_detail: String,
@@ -281,6 +289,9 @@ impl App {
             onboarding: false,
             status_detail: String::new(),
             publication_choices: Vec::new(),
+            read_uris: HashSet::new(),
+            unread_counts: HashMap::new(),
+            has_older: false,
             prefs,
             tx,
         };
@@ -350,8 +361,9 @@ impl App {
 
     pub fn apply(&mut self, evt: FromWorker) {
         match evt {
-            FromWorker::Feeds(feeds) => {
+            FromWorker::Feeds { feeds, unread } => {
                 self.feeds = feeds;
+                self.unread_counts = unread.into_iter().collect();
                 self.feed_sel = self.feed_sel.min(self.feeds.len().saturating_sub(1));
                 self.loading = false;
                 self.status = if self.feeds.is_empty() {
@@ -360,10 +372,17 @@ impl App {
                     format!("{} feed(s)", self.feeds.len())
                 };
             }
-            FromWorker::Docs { publication, docs } => {
+            FromWorker::Docs {
+                publication,
+                docs,
+                read_uris,
+                has_older,
+            } => {
                 // Ignore a late update for a feed we've since navigated away from.
                 if self.open_pub.as_deref() == Some(publication.as_str()) {
                     self.docs = docs;
+                    self.read_uris = read_uris.into_iter().collect();
+                    self.has_older = has_older;
                     self.doc_sel = self.doc_sel.min(self.docs.len().saturating_sub(1));
                     self.loading = false;
                 }
@@ -386,6 +405,7 @@ impl App {
                     self.reading = Some(body);
                     self.scroll = 0;
                     self.reading_version = self.reading_version.wrapping_add(1); // invalidate reader cache
+                    self.note_read(&uri); // opening a post auto-marks it read (mirror the worker)
                 }
                 self.loading = false;
             }
@@ -1288,9 +1308,22 @@ impl App {
     }
 
     fn mark_read(&mut self) {
-        if let Some(uri) = &self.reading_uri {
+        if let Some(uri) = self.reading_uri.clone() {
             self.send(ToWorker::SetRead(uri.clone(), true));
+            self.note_read(&uri);
             self.status = "marked read".into();
+        }
+    }
+
+    /// Reflect a post becoming read in local state so the unread marker + sidebar count update
+    /// immediately (the worker persists it; this keeps the UI live without a round-trip). Newly
+    /// read → decrement the open feed's unread count.
+    fn note_read(&mut self, uri: &str) {
+        if self.read_uris.insert(uri.to_string())
+            && let Some(pub_uri) = self.open_pub.clone()
+            && let Some(count) = self.unread_counts.get_mut(&pub_uri)
+        {
+            *count = count.saturating_sub(1);
         }
     }
 
@@ -1472,9 +1505,11 @@ fn collect_inline_links(inlines: &[Inline], out: &mut Vec<String>) {
                 out.push(href.clone());
                 collect_inline_links(content, out);
             }
-            Inline::Strong(c) | Inline::Emphasis(c) | Inline::Strike(c) | Inline::Underline(c) => {
-                collect_inline_links(c, out)
-            }
+            Inline::Strong(c)
+            | Inline::Emphasis(c)
+            | Inline::Strike(c)
+            | Inline::Underline(c)
+            | Inline::Highlight(c) => collect_inline_links(c, out),
             _ => {}
         }
     }
@@ -1489,6 +1524,7 @@ fn collect_inline_images(inlines: &[Inline], out: &mut Vec<ImageSource>) {
             | Inline::Emphasis(c)
             | Inline::Strike(c)
             | Inline::Underline(c)
+            | Inline::Highlight(c)
             | Inline::Link { content: c, .. } => collect_inline_images(c, out),
             _ => {}
         }
@@ -1940,5 +1976,49 @@ mod tests {
         }
         assert_eq!(app.mode, Mode::Browse);
         assert!(app.publication_choices.is_empty());
+    }
+
+    // --- unread badges + load-older state ----------------------------------------
+
+    #[test]
+    fn unread_counts_and_markers_fold_in_and_update_live() {
+        use crate::worker::FromWorker;
+        use standard_core::model::RichDoc;
+
+        let mut app = test_app(Prefs::for_test());
+        app.open_pub = Some("at://p/1".into());
+
+        // Feeds → per-feed unread counts for the sidebar.
+        app.apply(FromWorker::Feeds {
+            feeds: vec![feed("at://p/1")],
+            unread: vec![("at://p/1".to_string(), 2)],
+        });
+        assert_eq!(app.unread_counts.get("at://p/1").copied(), Some(2));
+
+        // Docs → the open feed's read-set + whether older posts remain.
+        app.apply(FromWorker::Docs {
+            publication: "at://p/1".into(),
+            docs: vec![doc("at://d/1", "at://p/1"), doc("at://d/2", "at://p/1")],
+            read_uris: vec!["at://d/1".to_string()],
+            has_older: true,
+        });
+        assert!(app.read_uris.contains("at://d/1"));
+        assert!(app.has_older);
+
+        // Opening the still-unread post marks it read locally and drops the count (2 → 1).
+        app.reading_uri = Some("at://d/2".into());
+        app.apply(FromWorker::Doc {
+            uri: "at://d/2".into(),
+            body: RichDoc::default(),
+        });
+        assert!(app.read_uris.contains("at://d/2"));
+        assert_eq!(app.unread_counts.get("at://p/1").copied(), Some(1));
+
+        // Re-applying the same doc must not double-decrement.
+        app.apply(FromWorker::Doc {
+            uri: "at://d/2".into(),
+            body: RichDoc::default(),
+        });
+        assert_eq!(app.unread_counts.get("at://p/1").copied(), Some(1));
     }
 }

@@ -178,7 +178,16 @@ fn draw_sidebar(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let items: Vec<ListItem> = app
         .feeds
         .iter()
-        .map(|p| ListItem::new(p.name.clone()))
+        .map(|p| {
+            // A trailing unread count (among fetched posts) when there is one.
+            match app.unread_counts.get(&p.uri).copied().unwrap_or(0) {
+                0 => ListItem::new(p.name.clone()),
+                n => ListItem::new(Line::from(vec![
+                    Span::styled(p.name.clone(), theme.body()),
+                    Span::styled(format!("  {n}"), theme.accent_style()),
+                ])),
+            }
+        })
         .collect();
     let list = List::new(items)
         .block(block)
@@ -211,7 +220,7 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect, focused: bo
         );
         return;
     }
-    let items: Vec<ListItem> = app
+    let mut items: Vec<ListItem> = app
         .docs
         .iter()
         .map(|d| {
@@ -221,12 +230,29 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect, focused: bo
                 &d.title
             };
             let date = d.published_at.get(..10).unwrap_or("");
+            // Unread posts get a leading dot + full-strength title; read ones dim to recede.
+            let (marker, title_style) = if app.read_uris.contains(&d.uri) {
+                ("  ", theme.dim_style())
+            } else {
+                ("● ", theme.body())
+            };
             ListItem::new(Line::from(vec![
-                Span::styled(title.to_string(), theme.body()),
+                Span::styled(marker, theme.accent_style()),
+                Span::styled(title.to_string(), title_style),
                 Span::styled(format!("  {date}"), theme.dim_style()),
             ]))
         })
         .collect();
+    // A trailing affordance: more to fetch (↓) vs the end of the feed. Never selectable —
+    // `posts_down` triggers load-older at the last real row rather than landing here.
+    items.push(ListItem::new(Span::styled(
+        if app.has_older {
+            "  ↓ load older posts"
+        } else {
+            "  — end —"
+        },
+        theme.dim_style(),
+    )));
     let list = List::new(items)
         .block(block)
         .highlight_style(theme.selected())
@@ -239,7 +265,9 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect, focused: bo
 fn draw_footer(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
     let hints: String = match app.mode {
         Mode::Browse => "a add · ⇥ focus · enter open · / search · : palette · ? help".into(),
-        Mode::DocList => "↑↓ select · enter read · o browser · esc back · / search".into(),
+        Mode::DocList => {
+            "↑↓ select · enter read · o browser · ↓ older · esc back · / search".into()
+        }
         Mode::Search | Mode::AddFeed | Mode::SignIn => "type · enter submit · esc cancel".into(),
         Mode::Palette => "↑↓ choose · enter run · esc cancel".into(),
         Mode::SyncPrompt => "s subscribe · r remove · esc dismiss".into(),

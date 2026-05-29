@@ -349,6 +349,38 @@ impl Store for RedbStore {
         Ok(out)
     }
 
+    fn read_uris(&self, publication_uri: &str) -> Result<Vec<String>> {
+        let r = self.db.begin_read()?;
+        let by_pub = r.open_multimap_table(DOCS_BY_PUB)?;
+        let docs = r.open_table(DOCUMENTS)?;
+        let mut out = Vec::new();
+        for entry in by_pub.get(publication_uri)? {
+            let uri = entry?;
+            if let Some(guard) = docs.get(uri.value())?
+                && from_bytes::<StoredDoc>(guard.value())?.read
+            {
+                out.push(uri.value().to_string());
+            }
+        }
+        Ok(out)
+    }
+
+    fn unread_count(&self, publication_uri: &str) -> Result<usize> {
+        let r = self.db.begin_read()?;
+        let by_pub = r.open_multimap_table(DOCS_BY_PUB)?;
+        let docs = r.open_table(DOCUMENTS)?;
+        let mut unread = 0;
+        for entry in by_pub.get(publication_uri)? {
+            let uri = entry?;
+            if let Some(guard) = docs.get(uri.value())?
+                && !from_bytes::<StoredDoc>(guard.value())?.read
+            {
+                unread += 1;
+            }
+        }
+        Ok(unread)
+    }
+
     fn set_read(&mut self, uri: &str, read: bool) -> Result<()> {
         let Some(mut doc) = self.read_doc(uri)? else {
             return Ok(()); // nothing cached to mark
@@ -555,6 +587,27 @@ mod tests {
         assert_eq!(s.older_cursor(did).unwrap().as_deref(), Some(""));
         // Keyed by repo DID, not publication — a different repo is independent.
         assert_eq!(s.older_cursor("did:plc:other").unwrap(), None);
+    }
+
+    #[test]
+    fn read_uris_and_unread_count_track_read_state() {
+        let mut s = RedbStore::in_memory().unwrap();
+        let p = "at://d/p/1";
+        for i in 1..=3 {
+            s.upsert_document(&doc(&format!("at://d/c/{i}"), p, "2026-01-01", "x"), None)
+                .unwrap();
+        }
+        // All unread to start.
+        assert_eq!(s.unread_count(p).unwrap(), 3);
+        assert!(s.read_uris(p).unwrap().is_empty());
+
+        // Marking one read moves it from the unread count into read_uris.
+        s.set_read("at://d/c/2", true).unwrap();
+        assert_eq!(s.unread_count(p).unwrap(), 2);
+        assert_eq!(s.read_uris(p).unwrap(), vec!["at://d/c/2".to_string()]);
+
+        // A different publication is independent (no cross-feed bleed).
+        assert_eq!(s.unread_count("at://d/p/other").unwrap(), 0);
     }
 
     #[test]

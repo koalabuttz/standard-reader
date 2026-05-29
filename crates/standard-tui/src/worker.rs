@@ -59,10 +59,18 @@ pub enum ToWorker {
 
 /// Results from the worker to the UI.
 pub enum FromWorker {
-    Feeds(Vec<Publication>),
+    Feeds {
+        feeds: Vec<Publication>,
+        /// Per-feed unread count (publication uri → count), for the sidebar badges.
+        unread: Vec<(String, usize)>,
+    },
     Docs {
         publication: String,
         docs: Vec<Document>,
+        /// Which of `docs` are already read (for the unread markers).
+        read_uris: Vec<String>,
+        /// Whether older posts remain to load (drives the end-of-list affordance).
+        has_older: bool,
     },
     Doc {
         uri: String,
@@ -288,16 +296,45 @@ impl Ctx {
         Ok(())
     }
 
-    /// Followed publications, straight from the cache.
+    /// Followed publications, straight from the cache, each with its unread count for the sidebar.
     fn load_home(&self) -> Done {
         let mut pubs = Vec::new();
+        let mut unread = Vec::new();
         for uri in self.store.follows()? {
             if let Some(p) = self.store.publication(&uri)? {
+                unread.push((p.uri.clone(), self.store.unread_count(&p.uri)?));
                 pubs.push(p);
             }
         }
-        self.send(FromWorker::Feeds(pubs));
+        self.send(FromWorker::Feeds {
+            feeds: pubs,
+            unread,
+        });
         Ok(())
+    }
+
+    /// Serve a feed's cached documents (newest-first) to the UI, with read-state for the unread
+    /// markers and whether older posts remain (the end-of-list affordance). The single emit point
+    /// for [`FromWorker::Docs`] so every path carries the same metadata.
+    fn serve_docs(&self, pub_uri: &str) -> Done {
+        let docs = self.store.documents_for(pub_uri)?;
+        let read_uris = self.store.read_uris(pub_uri)?;
+        self.send(FromWorker::Docs {
+            publication: pub_uri.to_string(),
+            docs,
+            read_uris,
+            has_older: self.has_older(pub_uri)?,
+        });
+        Ok(())
+    }
+
+    /// Whether the feed's repo has more *older* documents to load — i.e. its repo-wide older cursor
+    /// is set and non-empty (`""` = exhausted, absent = not yet windowed). Cheap: no network.
+    fn has_older(&self, pub_uri: &str) -> Result<bool, Box<dyn Error>> {
+        let did = AtUri::parse(pub_uri)
+            .ok_or("malformed publication AT-URI")?
+            .did;
+        Ok(matches!(self.store.older_cursor(&did)?, Some(c) if !c.is_empty()))
     }
 
     /// Resolve a handle/DID/URL to its publications, follow + cache them, fetch their docs.
@@ -396,12 +433,8 @@ impl Ctx {
 
     /// A feed's documents: cached first (instant), then a network refresh.
     fn open_feed(&mut self, pub_uri: &str) -> Done {
-        let cached = self.store.documents_for(pub_uri)?;
-        if !cached.is_empty() {
-            self.send(FromWorker::Docs {
-                publication: pub_uri.to_string(),
-                docs: cached,
-            });
+        if !self.store.documents_for(pub_uri)?.is_empty() {
+            self.serve_docs(pub_uri)?;
         }
         self.refresh_docs(pub_uri)
     }
@@ -432,12 +465,7 @@ impl Ctx {
         }
 
         // A repo can host several publications; serve the cache filtered to this feed.
-        let docs = self.store.documents_for(pub_uri)?;
-        self.send(FromWorker::Docs {
-            publication: pub_uri.to_string(),
-            docs,
-        });
-        Ok(())
+        self.serve_docs(pub_uri)
     }
 
     /// Fetch the next older window of a feed's repo, resuming from the stored older cursor, and
@@ -458,11 +486,7 @@ impl Ctx {
                 }
                 self.store
                     .set_older_cursor(&repo.did, next.as_deref().unwrap_or(""))?;
-                let docs = self.store.documents_for(pub_uri)?;
-                self.send(FromWorker::Docs {
-                    publication: pub_uri.to_string(),
-                    docs,
-                });
+                self.serve_docs(pub_uri)?;
             }
             // "" (exhausted) or None (never opened) → nothing older to load.
             _ => self.send(FromWorker::Status("no older posts".into())),

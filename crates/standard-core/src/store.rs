@@ -36,6 +36,12 @@ pub trait Store {
 
     fn set_read(&mut self, uri: &str, read: bool) -> Result<(), Self::Error>;
 
+    /// URIs of a publication's cached documents that are marked read — so a frontend can flag the
+    /// unread ones in its list without loading every body.
+    fn read_uris(&self, publication_uri: &str) -> Result<Vec<String>, Self::Error>;
+    /// How many of a publication's cached documents are still unread (for a sidebar badge).
+    fn unread_count(&self, publication_uri: &str) -> Result<usize, Self::Error>;
+
     /// Full-text-ish search over cached `textContent`; returns matching doc URIs.
     fn search(&self, query: &str) -> Result<Vec<String>, Self::Error>;
 

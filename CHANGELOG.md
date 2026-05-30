@@ -7,6 +7,19 @@ aims to follow [Semantic Versioning](https://semver.org/). Versions are per-crat
 binary (`standard-reader`) and the `standard-core` engine version independently — `standard-core`
 stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
 
+## [1.1.1] - 2026-05-30 — `sr` (engine `standard-core` unchanged at 0.3.0)
+
+A packaging-only patch — the `sr` binary is functionally identical to 1.1.0.
+
+### Fixed
+- **Prebuilt Linux binaries now run on any distro**, not just glibc ≥ 2.39. The Linux release
+  builds are now **static musl** binaries (the build is pure-Rust, so this costs nothing), fixing
+  the `version 'GLIBC_2.39' not found` failure on older systems (Debian 12, Ubuntu 22.04, RHEL 9,
+  Crostini, …).
+
+### Added
+- A combined **`SHA256SUMS`** asset on each release, for verifying downloads.
+
 ## [1.1.0] - 2026-05-30 — `sr` (with `standard-core` 0.3.0)
 
 ### Added
@@ -97,5 +110,6 @@ long-form writing on the AT Protocol — online or fully offline.
   customization above — one consistent, user-controlled render path.
 - Requires Rust 1.88+ to build from source.
 
+[1.1.1]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.1.1
 [1.1.0]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.1.0
 [1.0.0]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.0.0

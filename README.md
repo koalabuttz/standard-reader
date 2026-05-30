@@ -48,7 +48,9 @@ pull your subscriptions, and read — with images and real formatting, online or
 **Prebuilt binaries** (no toolchain needed) — grab the archive for your OS from the
 [latest release](https://github.com/koalabuttz/standard-reader/releases/latest), unpack, and put
 `sr` on your `PATH`. Builds are published for Linux (x86_64 + aarch64), macOS (Apple Silicon),
-and Windows (x86_64).
+and Windows (x86_64); a `SHA256SUMS` is attached to verify them. The Linux binaries are **static
+musl**, so they run on any distro regardless of glibc version. On macOS the binary is unsigned —
+clear the quarantine flag with `xattr -dr com.apple.quarantine sr` if Gatekeeper blocks it.
 
 **From source** (needs Rust 1.88+):
 

@@ -22,10 +22,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Static musl on Linux so the binaries run on any distro (no glibc version floor).
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-musl
           - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
+            target: aarch64-unknown-linux-musl
           - os: macos-latest
             target: aarch64-apple-darwin
           - os: windows-latest
@@ -38,6 +39,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+
+      # musl needs a C toolchain for `ring`'s C/asm (and the static link). Pure-Rust otherwise.
+      - name: Install musl tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build
         run: cargo build --release --locked -p standard-reader --target ${{ matrix.target }}
@@ -89,3 +95,24 @@ jobs:
         with:
           files: ${{ env.ASSET }}
           body_path: RELEASE_NOTES.md
+
+  # After every archive is attached (a real tag), publish one SHA256SUMS for the release so
+  # downloads can be verified. Uses `gh` against the release assets — no extra actions to version.
+  checksums:
+    name: SHA256SUMS
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate + attach SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          tag: ${{ github.ref_name }}
+        run: |
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.tar.gz' --pattern '*.zip' --dir dist --clobber
+          (cd dist && sha256sum *) > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$tag" SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber

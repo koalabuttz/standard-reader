@@ -16,6 +16,11 @@ pull your subscriptions, and read — with images and real formatting, online or
 - **Read offline, with real images.** A block-flow reader renders inline + cover images
   (`ratatui-image`; iTerm2 graphics where available, halfblocks elsewhere) over a `redb`
   cache, so anything you've opened reads with no network.
+- **Fetches like an RSS reader.** Following a blog doesn't backfill its whole history — opening a
+  feed pulls a bounded recent window (older posts on demand with `↓`), so adding a prolific author
+  with many blogs stays snappy. Open posts render instantly from cache, then freshen in the
+  background if the author edited them. **Unread counts** sit beside each feed, with a dot on every
+  unread post.
 - **Six content decoders + a plaintext fallback** — Markdown/markpub, Leaflet, Pckt,
   Offprint, WordPress HTML, and Unthread all map to one neutral `RichDoc`; unknown content
   degrades to typeset `textContent` rather than failing.
@@ -29,8 +34,9 @@ pull your subscriptions, and read — with images and real formatting, online or
   In-post hyperlinks are navigable too — cycle them with `n`/`N` and open with `Enter`, or
   click them straight from the rendered text.
 - **A local follow-list, no account required** — add a blog by handle, DID, or URL and it
-  persists. Sign in (OAuth) and it **mirrors to atproto** `site.standard.graph.subscription`,
-  reconciling local-only follows without silent deletes.
+  persists; a handle that publishes several blogs lets you **pick which to follow**. Sign in (OAuth)
+  and it **mirrors to atproto** `site.standard.graph.subscription`, reconciling local-only follows
+  without silent deletes.
 - **Graceful images** — JPEG/PNG/GIF/WebP decode directly from the PDS; formats the default-features
   build can't decode (notably **AVIF**, which GreenGale emits) fall back to the Bluesky CDN's
   transcode-to-JPEG, then cache offline.

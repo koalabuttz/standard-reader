@@ -343,12 +343,15 @@ fn run(inlines: &[Inline], base: Style, theme: &Theme, out: &mut Vec<Span<'stati
     }
 }
 
-/// Background style for a highlight span: the author's colour tinted over the background (so it
-/// reads as a highlighter mark with normal text on top), or the neutral theme highlight when the
-/// author gave no colour.
+/// Style for a highlight span. Offprint paints it as **coloured text** (the author's colour, full
+/// opacity, as the foreground) over a light tint of the same colour — so the text itself is
+/// coloured, with a subtle highlight wash behind it. Falls back to the neutral theme highlight when
+/// the author gave no colour.
 fn highlight_style(theme: &Theme, color: Option<(u8, u8, u8)>) -> Style {
     match color {
-        Some(rgb) => Style::default().bg(theme.tint(rgb, 0.5)).fg(theme.fg),
+        Some((r, g, b)) => Style::default()
+            .fg(Color::Rgb(r, g, b))
+            .bg(theme.tint((r, g, b), 0.2)),
         None => theme.highlight(),
     }
 }
@@ -370,6 +373,14 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn highlight_colours_the_text_foreground() {
+        // Offprint's highlight is coloured *text*: the authored colour is the foreground.
+        let theme = Theme::modern_dark();
+        let style = highlight_style(&theme, Some((250, 204, 21)));
+        assert_eq!(style.fg, Some(ratatui::style::Color::Rgb(250, 204, 21)));
     }
 
     #[test]

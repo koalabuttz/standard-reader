@@ -7,7 +7,7 @@ aims to follow [Semantic Versioning](https://semver.org/). Versions are per-crat
 binary (`standard-reader`) and the `standard-core` engine version independently — `standard-core`
 stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
 
-## [1.1.0] - 2026-05-29 — `sr` (with `standard-core` 0.3.0)
+## [1.1.0] - 2026-05-30 — `sr` (with `standard-core` 0.3.0)
 
 ### Added
 - **Pick which blogs to follow.** Adding a handle/DID that publishes more than one

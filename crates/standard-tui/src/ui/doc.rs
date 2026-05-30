@@ -343,15 +343,14 @@ fn run(inlines: &[Inline], base: Style, theme: &Theme, out: &mut Vec<Span<'stati
     }
 }
 
-/// Style for a highlight span. Offprint paints it as **coloured text** (the author's colour, full
-/// opacity, as the foreground) over a light tint of the same colour — so the text itself is
-/// coloured, with a subtle highlight wash behind it. Falls back to the neutral theme highlight when
-/// the author gave no colour.
+/// Style for a highlight span. Offprint's `#highlight` is a **background** marker (a Tiptap
+/// highlight → `background-color: rgb(c / 0.5)`); the text stays normal. We tint the author's colour
+/// over the background so each highlight shows in its own hue. Falls back to the neutral theme
+/// highlight when no colour was given. (Offprint's separate foreground *text* colour — its
+/// `textStyle` mark — isn't exported to the atproto record, so we never receive it.)
 fn highlight_style(theme: &Theme, color: Option<(u8, u8, u8)>) -> Style {
     match color {
-        Some((r, g, b)) => Style::default()
-            .fg(Color::Rgb(r, g, b))
-            .bg(theme.tint((r, g, b), 0.2)),
+        Some(rgb) => Style::default().bg(theme.tint(rgb, 0.5)).fg(theme.fg),
         None => theme.highlight(),
     }
 }
@@ -376,11 +375,17 @@ mod tests {
     }
 
     #[test]
-    fn highlight_colours_the_text_foreground() {
-        // Offprint's highlight is coloured *text*: the authored colour is the foreground.
+    fn highlight_tints_the_background_per_colour() {
+        // Offprint's highlight is a background marker; the text stays normal and each highlight
+        // shows in its own hue (not one fixed colour).
         let theme = Theme::modern_dark();
-        let style = highlight_style(&theme, Some((250, 204, 21)));
-        assert_eq!(style.fg, Some(ratatui::style::Color::Rgb(250, 204, 21)));
+        let a = highlight_style(&theme, Some((250, 204, 21)));
+        let b = highlight_style(&theme, Some((59, 130, 246)));
+        assert_eq!(a.fg, Some(theme.fg), "text stays the normal foreground");
+        assert!(
+            a.bg.is_some() && a.bg != b.bg,
+            "each highlight tints its own background"
+        );
     }
 
     #[test]

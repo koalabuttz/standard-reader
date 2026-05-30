@@ -89,3 +89,14 @@ metadata-only-post `description` fallback, and the MSRV correction to 1.88. See 
 - [ ] `tantivy` search swap (only if ranked/fuzzy is wanted).
 - [ ] **PS Vita frontend** — new `Transport` + `Store` impls + framebuffer renderer, reusing the core.
 - Deferred polish: moving the one-time image encode off the UI thread (`ThreadProtocol`).
+
+## Known limitations
+
+- **Offprint foreground text colour isn't rendered — it isn't in the record.** Offprint's editor
+  has two separate colour marks: a `textStyle` *foreground* colour (e.g. "Grey text" shown grey) and
+  a `highlight` *background* wash. Only `#highlight` is exported to the `app.offprint.content`
+  atproto record (verified: no `textStyle`/`#color` facet type, and a colour-labelled run carries no
+  facet) — the foreground colour lives only in the editor JSON embedded in Offprint's web page, which
+  we don't (and, given direct-PDS reads, shouldn't) scrape. So coloured text renders plain while the
+  highlight shows correctly. If Offprint adds an `app.offprint.richtext.facet#color` (or similar) to
+  its published records, honoring it is a one-line decoder arm + a new `Inline` variant.

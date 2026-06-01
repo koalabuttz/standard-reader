@@ -1,6 +1,19 @@
 [workspace]
 resolver = "3"
-members = ["crates/standard-core", "crates/standard-frontend", "crates/standard-tui"]
+members = [
+    "crates/standard-core",
+    "crates/standard-frontend",
+    "crates/standard-tui",
+    "crates/standard-reader-web",
+]
+# The web shell builds only for wasm32 (via `trunk`), so keep it out of the default host build:
+# bare `cargo build` / `cargo test` operate on these three desktop crates. (Don't use `--workspace`
+# on the host — it would try to build the wasm-only crate for the host target.)
+default-members = [
+    "crates/standard-core",
+    "crates/standard-frontend",
+    "crates/standard-tui",
+]
 
 [workspace.package]
 edition = "2024"

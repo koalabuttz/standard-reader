@@ -1,0 +1,24 @@
+[package]
+name = "standard-reader-web"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Browser/WASM frontend shell for standard-reader (ratatui-in-the-browser via ratzilla)."
+
+[dependencies]
+# The engine (model types for canned data) + the platform-agnostic frontend (App / ui / worker /
+# input / seam traits) this shell drives.
+standard-core = { path = "../standard-core" }
+standard-frontend = { path = "../standard-frontend" }
+# ratatui-in-the-browser: owns the rAF render loop + DOM/canvas backends. Re-exports ratatui (and,
+# being a wasm framework, pulls it crossterm-free — so this build never compiles crossterm).
+ratzilla = "0.3"
+# `DynamicImage` appears in the `ImageSink` trait signature (the stub sink references the type).
+image = { version = "0.25", default-features = false }
+# Browser glue: window.open for the URL-opener; a keydown guard that preventDefaults the keys the
+# reader handles (so the browser doesn't scroll / move focus); a readable panic message in the console.
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Window", "EventTarget", "KeyboardEvent"] }
+console_error_panic_hook = "0.1"

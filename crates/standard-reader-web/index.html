@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>standard-reader (web)</title>
+    <link data-trunk rel="rust" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        /* The reader fills the page; nothing should scroll (arrows/space drive the reader). */
+        overflow: hidden;
+        background: #121212;
+        color: #ddd;
+      }
+      /* ratzilla's DomBackend renders each terminal row as a <pre>; the browser's default
+         `pre` margin inserts a gap between every row (the "black lines"). margin:0 +
+         line-height:1 make the rows contiguous. */
+      pre {
+        margin: 0;
+        font-family: ui-monospace, "Cascadia Code", "Fira Code", Menlo, Consolas, monospace;
+        font-size: 16px;
+        line-height: 1;
+      }
+    </style>
+  </head>
+  <body></body>
+</html>

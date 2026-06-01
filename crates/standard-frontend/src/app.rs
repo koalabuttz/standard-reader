@@ -6,8 +6,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::Sender;
 
 use image::{DynamicImage, GenericImageView};
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
+
+use crate::input::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 use standard_core::model::{Block, Document, ImageSource, Inline, Publication, RichDoc};
 
@@ -650,7 +651,6 @@ impl App {
                     self.open_link(&href);
                 }
             }
-            _ => {}
         }
     }
 
@@ -1826,7 +1826,7 @@ mod tests {
 
     #[test]
     fn click_selects_in_the_pane_under_the_cursor() {
-        use ratatui::crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+        use crate::input::{MouseButton, MouseEvent, MouseEventKind};
         use ratatui::layout::Rect;
         let mut prefs = Prefs::for_test();
         prefs.layout = LayoutKind::ThreePane;
@@ -1850,7 +1850,7 @@ mod tests {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: x,
             row: y,
-            modifiers: ratatui::crossterm::event::KeyModifiers::NONE,
+            modifiers: crate::input::KeyModifiers::NONE,
         };
         // A click in the posts pane (not the sidebar) selects that row's document and opens it,
         // even though the sidebar is visible too — proving the click hit the right pane.
@@ -1893,7 +1893,7 @@ mod tests {
 
     #[test]
     fn footer_click_opens_then_dismisses_status_detail() {
-        use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        use crate::input::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
         use ratatui::layout::Rect;
         let mut app = test_app(Prefs::for_test());
         app.status = "a long error message worth reading in full".into();
@@ -1941,7 +1941,7 @@ mod tests {
 
     #[test]
     fn publication_picker_toggles_select_all_and_none() {
-        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use crate::input::{KeyCode, KeyEvent, KeyModifiers};
         let mut app = test_app(Prefs::for_test());
         app.publication_choices = picker_choices();
         app.menu_sel = 0;
@@ -1970,7 +1970,7 @@ mod tests {
     #[test]
     fn publication_picker_enter_follows_only_the_checked_subset() {
         use crate::worker::ToWorker;
-        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use crate::input::{KeyCode, KeyEvent, KeyModifiers};
         use std::sync::mpsc::channel;
 
         let (tx, rx) = channel::<ToWorker>();

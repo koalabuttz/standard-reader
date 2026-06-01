@@ -8,3 +8,10 @@ Cargo.lock.orig
 
 # Local working notes / design scratch — not part of the published repo.
 /scratch
+
+# Web (trunk/wasm) build output + cache.
+dist/
+.trunk/
+
+# Stray screenshots dropped in the repo (e.g. shared during dev).
+/Screenshot*.png

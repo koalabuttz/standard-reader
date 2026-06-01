@@ -12,6 +12,7 @@ pub mod app;
 pub mod auth_provider;
 pub mod frontend_store;
 pub mod image_sink;
+pub mod input;
 pub mod prefs;
 pub mod ui;
 pub mod worker;

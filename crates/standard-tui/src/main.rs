@@ -36,7 +36,7 @@ use terminal_image_sink::TerminalImageSink;
 use transport::ReqwestTransport;
 
 use standard_frontend::app::App;
-use standard_frontend::{prefs, ui, worker};
+use standard_frontend::{input, prefs, ui, worker};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -143,12 +143,16 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
                 loop {
                     match event::read()? {
                         Event::Key(key) if key.kind == KeyEventKind::Press => {
-                            app.on_key(key);
-                            dirty = true;
+                            if let Some(k) = to_input_key(key) {
+                                app.on_key(k);
+                                dirty = true;
+                            }
                         }
                         Event::Mouse(m) => {
-                            app.on_mouse(m);
-                            dirty = true;
+                            if let Some(ev) = to_input_mouse(m) {
+                                app.on_mouse(ev);
+                                dirty = true;
+                            }
                         }
                         Event::Resize(_, _) => dirty = true,
                         _ => {}
@@ -177,6 +181,60 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
     let _ = execute!(stdout(), DisableMouseCapture);
     ratatui::restore();
     outcome
+}
+
+/// Map a crossterm key event to the frontend's neutral [`input::KeyEvent`]. `None` for keys the
+/// reader doesn't handle (so the loop ignores them). The frontend stays crossterm-free; the shell
+/// owns this adaptation.
+fn to_input_key(key: ratatui::crossterm::event::KeyEvent) -> Option<input::KeyEvent> {
+    use ratatui::crossterm::event::{KeyCode as Ct, KeyModifiers as CtMods};
+    let code = match key.code {
+        Ct::Char(c) => input::KeyCode::Char(c),
+        Ct::Enter => input::KeyCode::Enter,
+        Ct::Esc => input::KeyCode::Esc,
+        Ct::Backspace => input::KeyCode::Backspace,
+        Ct::Tab => input::KeyCode::Tab,
+        Ct::Up => input::KeyCode::Up,
+        Ct::Down => input::KeyCode::Down,
+        Ct::Left => input::KeyCode::Left,
+        Ct::Right => input::KeyCode::Right,
+        Ct::PageUp => input::KeyCode::PageUp,
+        Ct::PageDown => input::KeyCode::PageDown,
+        _ => return None,
+    };
+    let mut mods = input::KeyModifiers::NONE;
+    if key.modifiers.contains(CtMods::CONTROL) {
+        mods = mods | input::KeyModifiers::CONTROL;
+    }
+    if key.modifiers.contains(CtMods::SHIFT) {
+        mods = mods | input::KeyModifiers::SHIFT;
+    }
+    if key.modifiers.contains(CtMods::ALT) {
+        mods = mods | input::KeyModifiers::ALT;
+    }
+    Some(input::KeyEvent::new(code, mods))
+}
+
+/// Map a crossterm mouse event to the frontend's neutral [`input::MouseEvent`]. `None` for kinds
+/// the reader doesn't handle (moves, drags, button-up).
+fn to_input_mouse(ev: ratatui::crossterm::event::MouseEvent) -> Option<input::MouseEvent> {
+    use ratatui::crossterm::event::{MouseButton as CtBtn, MouseEventKind as CtKind};
+    let kind = match ev.kind {
+        CtKind::ScrollUp => input::MouseEventKind::ScrollUp,
+        CtKind::ScrollDown => input::MouseEventKind::ScrollDown,
+        CtKind::Down(btn) => input::MouseEventKind::Down(match btn {
+            CtBtn::Left => input::MouseButton::Left,
+            CtBtn::Right => input::MouseButton::Right,
+            CtBtn::Middle => input::MouseButton::Middle,
+        }),
+        _ => return None,
+    };
+    Some(input::MouseEvent {
+        kind,
+        column: ev.column,
+        row: ev.row,
+        modifiers: input::KeyModifiers::NONE,
+    })
 }
 
 // --- debug CLI paths --------------------------------------------------------------

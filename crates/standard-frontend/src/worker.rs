@@ -1,12 +1,15 @@
-//! The background worker: the only thread that does I/O. It owns the `Transport`, the
-//! `RedbStore`, and the decode `Registry`, and turns [`ToWorker`] commands into
-//! [`FromWorker`] results on a channel — keeping the render loop non-blocking (the core is
-//! synchronous; this is how the desktop frontend gets async behavior). Cache-first: it
-//! answers from `redb` instantly, then refreshes from the network and sends an update.
+//! The background worker: the only thread that does I/O. It owns a [`Transport`], a
+//! [`FrontendStore`], an optional [`AuthProvider`], and the decode `Registry`, and turns
+//! [`ToWorker`] commands into [`FromWorker`] results on a channel — keeping the render loop
+//! non-blocking (the core is synchronous; this is how a frontend gets async behavior). Cache-first:
+//! it answers from the store instantly, then refreshes from the network and sends an update.
+//!
+//! The worker is generic over the three platform seams (transport / store / auth) and free of any
+//! filesystem or platform I/O — logging and prefs persistence are injected as host closures — so it
+//! lives in the platform-agnostic frontend layer, shared by every frontend shell.
 
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
@@ -14,12 +17,11 @@ use standard_core::atp::{AtUri, Transport};
 use standard_core::decode::Registry;
 use standard_core::model::{Document, ImageSource, Publication, RichDoc};
 use standard_core::read;
-use standard_core::store::Store;
 
-use crate::auth::{Account, Auth};
+use crate::account::Account;
+use crate::auth_provider::AuthProvider;
+use crate::frontend_store::FrontendStore;
 use crate::prefs::Prefs;
-use crate::store::RedbStore;
-use crate::transport::ReqwestTransport;
 
 /// Pages (~50 docs each) fetched on a repo's first open, and per "load older" step. Bounds the
 /// work any single command does, so adding a prolific author can't wedge the worker.
@@ -104,46 +106,46 @@ pub enum FromWorker {
     Error(String),
 }
 
-/// Spawn the worker; returns the command sender and the result receiver.
-pub fn spawn(cache_path: PathBuf, config_dir: PathBuf) -> (Sender<ToWorker>, Receiver<FromWorker>) {
+/// Spawn the worker on its own thread. The shell constructs the platform deps (transport, store,
+/// optional auth) and the host closures (debug `log` + `save_prefs` persistence); the worker owns
+/// them and drives the command loop. Returns the command sender and the result receiver.
+pub fn spawn<T, S, A>(
+    transport: T,
+    store: S,
+    auth: Option<A>,
+    log: Box<dyn Fn(&str) + Send>,
+    save_prefs: Box<dyn FnMut(&Prefs) + Send>,
+) -> (Sender<ToWorker>, Receiver<FromWorker>)
+where
+    T: Transport + Send + 'static,
+    S: FrontendStore + Send + 'static,
+    A: AuthProvider + Send + 'static,
+{
     let (cmd_tx, cmd_rx) = channel::<ToWorker>();
     let (evt_tx, evt_rx) = channel::<FromWorker>();
-    thread::spawn(move || run(cache_path, config_dir, cmd_rx, evt_tx));
+    thread::spawn(move || run(transport, store, auth, log, save_prefs, cmd_rx, evt_tx));
     (cmd_tx, evt_rx)
 }
 
-fn run(
-    cache_path: PathBuf,
-    config_dir: PathBuf,
+fn run<T, S, A>(
+    transport: T,
+    store: S,
+    auth: Option<A>,
+    log: Box<dyn Fn(&str) + Send>,
+    save_prefs: Box<dyn FnMut(&Prefs) + Send>,
     cmd_rx: Receiver<ToWorker>,
     evt_tx: Sender<FromWorker>,
-) {
-    let store = match RedbStore::open(&cache_path) {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = evt_tx.send(FromWorker::Error(format!("opening cache: {e}")));
-            return;
-        }
-    };
-    let prefs_path = config_dir.join("prefs.toml");
-    let log_path = config_dir.join("sr.log");
-    // Fresh log per run, so it stays small and shows only the current session (it's a debug
-    // log, not a persistent record). Truncate-on-start beats unbounded append.
-    truncate_log(&log_path);
-    let auth = build_auth(&config_dir, &evt_tx);
-    append_log(
-        &log_path,
-        &format!(
-            "worker started; auth {}",
-            if auth.is_some() {
-                "enabled"
-            } else {
-                "disabled"
-            }
-        ),
-    );
+) where
+    T: Transport,
+    S: FrontendStore,
+    A: AuthProvider,
+{
+    log(&format!(
+        "worker started; auth {}",
+        if auth.is_some() { "enabled" } else { "disabled" }
+    ));
     let mut ctx = Ctx {
-        transport: ReqwestTransport::new(),
+        transport,
         store,
         registry: Registry::with_defaults(),
         pds_cache: HashMap::new(),
@@ -151,8 +153,8 @@ fn run(
         network_ok: true,
         account: None,
         auth,
-        prefs_path,
-        log_path,
+        log,
+        save_prefs,
         tx: evt_tx,
     };
     // Report the persisted text-only preference up front.
@@ -172,7 +174,7 @@ fn run(
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ctx.handle(msg))) {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                append_log(&ctx.log_path, &format!("error: {e}"));
+                (ctx.log)(&format!("error: {e}"));
                 let _ = ctx.tx.send(FromWorker::Error(e.to_string()));
             }
             Err(panic) => {
@@ -181,7 +183,7 @@ fn run(
                     .map(|s| s.to_string())
                     .or_else(|| panic.downcast_ref::<String>().cloned())
                     .unwrap_or_else(|| "unknown panic".into());
-                append_log(&ctx.log_path, &format!("PANIC: {what}"));
+                (ctx.log)(&format!("PANIC: {what}"));
                 let _ = ctx
                     .tx
                     .send(FromWorker::Error(format!("internal error: {what}")));
@@ -190,34 +192,9 @@ fn run(
     }
 }
 
-/// Build the auth context (a tokio runtime + the OAuth client). Auth is optional: if either
-/// the runtime or the client can't be built, the reader still works for (unauthenticated)
-/// reads — only sign-in and subscription sync are disabled.
-fn build_auth(config_dir: &std::path::Path, tx: &Sender<FromWorker>) -> Option<AuthCtx> {
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(e) => {
-            let _ = tx.send(FromWorker::Error(format!(
-                "auth disabled (no runtime): {e}"
-            )));
-            return None;
-        }
-    };
-    match Auth::new(config_dir) {
-        Ok(auth) => Some(AuthCtx { runtime, auth }),
-        Err(e) => {
-            let _ = tx.send(FromWorker::Error(format!("auth disabled: {e}")));
-            None
-        }
-    }
-}
-
-struct Ctx {
-    transport: ReqwestTransport,
-    store: RedbStore,
+struct Ctx<T: Transport, S: FrontendStore, A: AuthProvider> {
+    transport: T,
+    store: S,
     registry: Registry,
     /// did → PDS endpoint, so image-blob fetches don't re-resolve per image.
     pds_cache: HashMap<String, String>,
@@ -230,50 +207,21 @@ struct Ctx {
     network_ok: bool,
     /// The signed-in identity, or `None` when signed out.
     account: Option<Account>,
-    /// The OAuth runtime + client, or `None` if auth couldn't be initialized.
-    auth: Option<AuthCtx>,
-    /// Where the human-editable preferences file lives (`<config>/prefs.toml`).
-    prefs_path: PathBuf,
-    /// A debug log (`<config>/sr.log`) — the TUI owns the terminal, so progress/errors that
-    /// can't fit the status line go here. `tail -f` it to watch the sign-in flow.
-    log_path: PathBuf,
+    /// The auth provider, or `None` if auth couldn't be initialized / isn't available.
+    auth: Option<A>,
+    /// Host sink for the debug log — the TUI owns the terminal, so progress/errors that can't fit
+    /// the status line go here. Injected so the worker touches no filesystem (desktop writes
+    /// `<config>/sr.log`; a web shell could log to the browser console).
+    log: Box<dyn Fn(&str) + Send>,
+    /// Host sink that persists the user's preferences (desktop writes the human-editable
+    /// `prefs.toml`; a web shell could use localStorage). `FnMut` so a host may carry state.
+    save_prefs: Box<dyn FnMut(&Prefs) + Send>,
     tx: Sender<FromWorker>,
-}
-
-/// Reset the debug log to empty (called once at worker start). Best-effort.
-fn truncate_log(path: &std::path::Path) {
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path);
-}
-
-/// Append a timestamped line to the debug log (best-effort; never fails the caller).
-fn append_log(path: &std::path::Path, msg: &str) {
-    use std::io::Write;
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-    {
-        let _ = writeln!(f, "[{ts}] {msg}");
-    }
-}
-
-/// The async side, kept off `standard-core`: a worker-owned tokio runtime and the OAuth client.
-struct AuthCtx {
-    runtime: tokio::runtime::Runtime,
-    auth: Auth,
 }
 
 type Done = Result<(), Box<dyn Error>>;
 
-impl Ctx {
+impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
     fn send(&self, evt: FromWorker) {
         let _ = self.tx.send(evt);
     }
@@ -301,10 +249,9 @@ impl Ctx {
         }
     }
 
-    /// Persist preferences to the human-editable `prefs.toml`. Best-effort surfacing of write
-    /// errors to the status line; not secret, so a plain (non-`0600`) write is fine.
-    fn save_prefs(&self, prefs: &Prefs) -> Done {
-        std::fs::write(&self.prefs_path, prefs.to_toml())?;
+    /// Persist preferences via the host sink (desktop writes the human-editable `prefs.toml`).
+    fn save_prefs(&mut self, prefs: &Prefs) -> Done {
+        (self.save_prefs)(prefs);
         Ok(())
     }
 
@@ -647,10 +594,9 @@ impl Ctx {
         };
         // Undecodable. Fall back to the CDN transcode if we can name the blob (did+cid).
         if let Some(cdn) = cdn_image_url(&source) {
-            append_log(
-                &self.log_path,
-                &format!("image decode failed ({err}); retrying via CDN: {cdn}"),
-            );
+            (self.log)(&format!(
+                "image decode failed ({err}); retrying via CDN: {cdn}"
+            ));
             if let Ok(transcoded) = self.cached_url(&cdn)
                 && let Ok(image) = image::load_from_memory(&transcoded)
             {
@@ -707,7 +653,7 @@ impl Ctx {
             self.send(FromWorker::Account(None));
             return;
         };
-        match auth.runtime.block_on(auth.auth.restore()) {
+        match auth.restore() {
             Ok(Some(account)) => {
                 self.account = Some(account.clone());
                 self.send(FromWorker::Account(Some(account.clone())));
@@ -731,19 +677,19 @@ impl Ctx {
             return Ok(());
         };
         let ident = normalize(ident);
-        append_log(&self.log_path, &format!("login: start, ident={ident}"));
-        // Report each step to both the status line and the log (the worker is blocked in
-        // `block_on` meanwhile; the UI thread drains the channel and re-renders). Clones so the
-        // closure doesn't borrow `self` across the `block_on`.
+        (self.log)(&format!("login: start, ident={ident}"));
+        // Report each step to both the status line and the log (the provider blocks meanwhile; the
+        // UI thread drains the channel and re-renders). The progress closure borrows the log sink +
+        // a cloned sender, so it doesn't borrow `self` mutably across the blocking call.
         let progress_tx = self.tx.clone();
-        let progress_log = self.log_path.clone();
+        let log = &self.log;
         let progress = move |msg: String| {
-            append_log(&progress_log, &format!("login: {msg}"));
+            log(&format!("login: {msg}"));
             let _ = progress_tx.send(FromWorker::Status(msg));
         };
-        match auth.runtime.block_on(auth.auth.login(&ident, progress)) {
+        match auth.login(&ident, &progress) {
             Ok(account) => {
-                append_log(&self.log_path, &format!("login: ok, did={}", account.did));
+                (self.log)(&format!("login: ok, did={}", account.did));
                 self.account = Some(account.clone());
                 self.send(FromWorker::Account(Some(account.clone())));
                 self.send(FromWorker::Status(format!(
@@ -753,7 +699,7 @@ impl Ctx {
                 self.sync_subscriptions(&account)?;
             }
             Err(e) => {
-                append_log(&self.log_path, &format!("login: failed: {e}"));
+                (self.log)(&format!("login: failed: {e}"));
                 self.send(FromWorker::Error(format!("log-in failed: {e}")));
             }
         }
@@ -763,7 +709,7 @@ impl Ctx {
     /// Revoke the session upstream and forget it locally. Local follows stay (now unsynced).
     fn logout(&mut self) -> Done {
         if let Some(auth) = &self.auth {
-            let _ = auth.runtime.block_on(auth.auth.logout());
+            let _ = auth.logout();
         }
         self.account = None;
         self.send(FromWorker::Account(None));
@@ -865,9 +811,7 @@ impl Ctx {
         if let Some(did) = self.account.as_ref().map(|a| a.did.clone())
             && let Some(rkey) = self.store.follow_rkey(pub_uri)?
             && let Some(auth) = &self.auth
-            && let Err(e) = auth
-                .runtime
-                .block_on(auth.auth.delete_subscription(&did, &rkey))
+            && let Err(e) = auth.delete_subscription(&did, &rkey)
         {
             self.send(FromWorker::Status(format!(
                 "removed locally; upstream delete failed: {e}"
@@ -880,8 +824,7 @@ impl Ctx {
     /// Create one `site.standard.graph.subscription` record (auth required); returns its rkey.
     fn create_subscription(&self, did: &str, pub_uri: &str) -> Result<String, Box<dyn Error>> {
         let auth = self.auth.as_ref().ok_or("auth unavailable")?;
-        auth.runtime
-            .block_on(auth.auth.create_subscription(did, pub_uri))
+        auth.create_subscription(did, pub_uri)
             .map_err(|e| -> Box<dyn Error> { e.to_string().into() })
     }
 

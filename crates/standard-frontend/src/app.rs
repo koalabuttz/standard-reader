@@ -8,12 +8,10 @@ use std::sync::mpsc::Sender;
 use image::{DynamicImage, GenericImageView};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
-use ratatui_image::picker::Picker;
-use ratatui_image::sliced::SlicedProtocol;
 
 use standard_core::model::{Block, Document, ImageSource, Inline, Publication, RichDoc};
 
-use crate::auth::Account;
+use crate::account::Account;
 use crate::prefs::{LayoutKind, PANE_MAX, PANE_MIN, Prefs};
 use crate::ui::theme::{PRESETS, Theme, ThemeColors};
 use crate::worker::{FromWorker, ToWorker};
@@ -26,15 +24,13 @@ pub fn image_key(source: &ImageSource) -> String {
     }
 }
 
-/// A decoded image plus its pixel dimensions and a lazily-built, row-sliced protocol
-/// (encoded once per display size; the reader scrolls it without re-encoding).
-pub struct LoadedImage {
+/// A decoded image plus its pixel dimensions. Portable: the per-display-size encode cache
+/// (terminal slices on desktop, an overlay element on web) lives in the [`crate::image_sink::ImageSink`],
+/// not here, so `App` holds no platform-specific image-protocol state.
+pub struct StoredImage {
     pub image: DynamicImage,
     pub width: u32,
     pub height: u32,
-    pub sliced: Option<SlicedProtocol>,
-    /// The (cols, rows) the slices were built for; rebuilt only when this changes.
-    pub sliced_size: (u16, u16),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -187,10 +183,9 @@ pub struct App {
     pub loading: bool,
     pub should_quit: bool,
     pub rects: Rects,
-    /// Terminal graphics protocol picker (font size + protocol detection).
-    pub picker: Picker,
-    /// Decoded + encoded images, keyed by [`image_key`].
-    pub images: HashMap<String, LoadedImage>,
+    /// Decoded images, keyed by [`image_key`]. The per-size encode/overlay state lives in the
+    /// frontend's [`crate::image_sink::ImageSink`], not here.
+    pub images: HashMap<String, StoredImage>,
     /// Text-only toggle: when false, images aren't fetched and render as placeholders.
     pub show_images: bool,
     /// The signed-in account, or `None` when signed out.
@@ -215,7 +210,7 @@ pub struct App {
     pub layout: LayoutKind,
     /// Cached reader-pane layout; reused across draws unless an input changed (see the reader's
     /// `ReaderKey`). Lets scroll + sidebar nav skip the expensive re-layout.
-    pub reader_cache: Option<crate::ui::reader::ReaderLayout>,
+    pub(crate) reader_cache: Option<crate::ui::reader::ReaderLayout>,
     /// Bumped whenever the open document's body changes — part of the reader cache key.
     pub reading_version: u64,
     /// Bumped whenever an image loads (which can reflow the layout) — part of the reader cache key.
@@ -247,10 +242,14 @@ pub struct App {
     /// it doesn't change underneath the reader while open).
     pub status_detail: String,
     tx: Sender<ToWorker>,
+    /// Host hook to open a URL in the user's browser (desktop: the `open` crate; a web shell:
+    /// `window.open`). Defaults to a no-op until the shell installs one via [`App::set_open_url`],
+    /// so the platform-agnostic state machine carries no process/`open` dependency.
+    open_url: Box<dyn Fn(&str)>,
 }
 
 impl App {
-    pub fn new(tx: Sender<ToWorker>, picker: Picker, prefs: Prefs) -> Self {
+    pub fn new(tx: Sender<ToWorker>, prefs: Prefs) -> Self {
         let mut app = Self {
             mode: Mode::Browse,
             focus: Focus::Sidebar,
@@ -272,7 +271,6 @@ impl App {
             loading: true,
             should_quit: false,
             rects: Rects::default(),
-            picker,
             images: HashMap::new(),
             show_images: true,
             account: None,
@@ -298,6 +296,7 @@ impl App {
             freshened: HashSet::new(),
             prefs,
             tx,
+            open_url: Box::new(|_| {}),
         };
         app.recompute_appearance();
         app.send(ToWorker::LoadHome);
@@ -305,6 +304,12 @@ impl App {
             app.start_onboarding();
         }
         app
+    }
+
+    /// Install the host's URL-opener (browser launch). The shell sets this once at startup; until
+    /// then it's a no-op, so headless tests never shell out.
+    pub fn set_open_url(&mut self, open_url: Box<dyn Fn(&str)>) {
+        self.open_url = open_url;
     }
 
     /// Resolve the effective theme + layout into [`Self::theme`]/[`Self::layout`]. Cheap; called
@@ -426,15 +431,13 @@ impl App {
             FromWorker::Image { key, image } => {
                 self.images_version = self.images_version.wrapping_add(1); // a new image can reflow
                 let (width, height) = image.dimensions();
-                // Slicing is built lazily in the reader, once the display size is known.
+                // Encoding is the sink's job, built lazily once the display size is known.
                 self.images.insert(
                     key,
-                    LoadedImage {
+                    StoredImage {
                         image,
                         width,
                         height,
-                        sliced: None,
-                        sliced_size: (0, 0),
                     },
                 );
             }
@@ -1376,7 +1379,7 @@ impl App {
     /// Open a hyperlink in the browser.
     fn open_link(&mut self, href: &str) {
         self.status = format!("opening {href}");
-        let _ = open::that_detached(href);
+        (self.open_url)(href);
     }
 
     /// The link under a click in the reader pane, if any (maps screen → virtual doc coordinates).
@@ -1408,7 +1411,7 @@ impl App {
             }
         };
         self.status = format!("opening {url}");
-        let _ = open::that_detached(&url);
+        (self.open_url)(&url);
     }
 
     /// The post's browser URL: the publication's `url` (looked up among the feeds) joined
@@ -1633,11 +1636,10 @@ mod tests {
         use super::{App, LinkRect};
         use crate::worker::ToWorker;
         use ratatui::layout::Rect;
-        use ratatui_image::picker::Picker;
         use std::sync::mpsc::channel;
 
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::default());
+        let mut app = App::new(tx, crate::prefs::Prefs::default());
         app.rects.reader = Rect {
             x: 0,
             y: 0,
@@ -1692,13 +1694,12 @@ mod tests {
 
     use super::{App, Focus, Mode, hit};
     use crate::prefs::{LayoutKind, Prefs};
-    use ratatui_image::picker::Picker;
     use standard_core::model::{Document, Publication};
     use std::sync::mpsc::channel;
 
     fn test_app(prefs: Prefs) -> App {
         let (tx, _rx) = channel::<crate::worker::ToWorker>();
-        App::new(tx, Picker::halfblocks(), prefs)
+        App::new(tx, prefs)
     }
 
     fn feed(uri: &str) -> Publication {
@@ -1973,7 +1974,7 @@ mod tests {
         use std::sync::mpsc::channel;
 
         let (tx, rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), Prefs::for_test());
+        let mut app = App::new(tx, Prefs::for_test());
         app.publication_choices = vec![
             ("at://r/p/1".into(), "One".into(), true),
             ("at://r/p/2".into(), "Two".into(), false),
@@ -2050,7 +2051,7 @@ mod tests {
         use std::sync::mpsc::channel;
 
         let (tx, rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), Prefs::for_test());
+        let mut app = App::new(tx, Prefs::for_test());
         while rx.try_recv().is_ok() {} // drain startup (LoadHome)
 
         let cached = |uri: &str| FromWorker::Doc {

@@ -15,6 +15,8 @@ use standard_core::model::{Document, Publication, RichDoc};
 use standard_core::search::tokenize;
 use standard_core::store::{Store, StoredDoc};
 
+use standard_frontend::frontend_store::FrontendStore;
+
 // uri → json(Publication)
 const PUBLICATIONS: TableDefinition<&str, &[u8]> = TableDefinition::new("publications");
 // uri → json(StoredDoc)  (metadata + decoded body + read-state in one value)
@@ -212,93 +214,6 @@ impl RedbStore {
             w.open_multimap_table(INDEX)?;
             w.open_table(FOLLOWS)?;
             w.open_table(SETTINGS)?;
-        }
-        w.commit()?;
-        Ok(())
-    }
-
-    /// The local follow-list — publication URIs the user follows (the app's own
-    /// subscriptions, persisted without atproto auth). OAuth mirrors this to
-    /// `site.standard.graph.subscription`. Adding a follow leaves its rkey empty (unknown
-    /// until pushed/imported); an existing rkey is preserved so re-following a synced feed
-    /// doesn't lose its upstream link.
-    pub fn follow(&mut self, publication_uri: &str) -> Result<()> {
-        let w = self.db.begin_write()?;
-        {
-            let mut table = w.open_table(FOLLOWS)?;
-            if table.get(publication_uri)?.is_none() {
-                table.insert(publication_uri, "")?;
-            }
-        }
-        w.commit()?;
-        Ok(())
-    }
-
-    /// Record the atproto rkey of a followed publication's upstream subscription record
-    /// (set after a `createRecord`, or when importing the account's existing subscriptions).
-    /// Also ensures the publication is in the follow-list.
-    pub fn set_follow_rkey(&mut self, publication_uri: &str, rkey: &str) -> Result<()> {
-        let w = self.db.begin_write()?;
-        {
-            let mut table = w.open_table(FOLLOWS)?;
-            table.insert(publication_uri, rkey)?;
-        }
-        w.commit()?;
-        Ok(())
-    }
-
-    /// The upstream subscription rkey for a followed publication, if known (empty → `None`).
-    pub fn follow_rkey(&self, publication_uri: &str) -> Result<Option<String>> {
-        let r = self.db.begin_read()?;
-        let table = r.open_table(FOLLOWS)?;
-        Ok(table.get(publication_uri)?.and_then(|g| {
-            let rkey = g.value();
-            (!rkey.is_empty()).then(|| rkey.to_string())
-        }))
-    }
-
-    pub fn unfollow(&mut self, publication_uri: &str) -> Result<()> {
-        let w = self.db.begin_write()?;
-        {
-            let mut table = w.open_table(FOLLOWS)?;
-            table.remove(publication_uri)?;
-        }
-        w.commit()?;
-        Ok(())
-    }
-
-    pub fn is_followed(&self, publication_uri: &str) -> Result<bool> {
-        let r = self.db.begin_read()?;
-        let table = r.open_table(FOLLOWS)?;
-        Ok(table.get(publication_uri)?.is_some())
-    }
-
-    /// Followed publication URIs.
-    pub fn follows(&self) -> Result<Vec<String>> {
-        let r = self.db.begin_read()?;
-        let table = r.open_table(FOLLOWS)?;
-        let mut out = Vec::new();
-        for entry in table.iter()? {
-            out.push(entry?.0.value().to_string());
-        }
-        Ok(out)
-    }
-
-    /// Whether to download + render images (persisted preference; defaults to on).
-    pub fn show_images(&self) -> Result<bool> {
-        let r = self.db.begin_read()?;
-        let table = r.open_table(SETTINGS)?;
-        Ok(table
-            .get("show_images")?
-            .map(|v| v.value() != "0")
-            .unwrap_or(true))
-    }
-
-    pub fn set_show_images(&mut self, on: bool) -> Result<()> {
-        let w = self.db.begin_write()?;
-        {
-            let mut table = w.open_table(SETTINGS)?;
-            table.insert("show_images", if on { "1" } else { "0" })?;
         }
         w.commit()?;
         Ok(())
@@ -518,6 +433,91 @@ impl Store for RedbStore {
         {
             let mut table = w.open_table(OLDER_CURSORS)?;
             table.insert(did, cursor)?;
+        }
+        w.commit()?;
+        Ok(())
+    }
+}
+
+impl FrontendStore for RedbStore {
+    fn follows(&self) -> Result<Vec<String>> {
+        let r = self.db.begin_read()?;
+        let table = r.open_table(FOLLOWS)?;
+        let mut out = Vec::new();
+        for entry in table.iter()? {
+            out.push(entry?.0.value().to_string());
+        }
+        Ok(out)
+    }
+
+    fn is_followed(&self, publication_uri: &str) -> Result<bool> {
+        let r = self.db.begin_read()?;
+        let table = r.open_table(FOLLOWS)?;
+        Ok(table.get(publication_uri)?.is_some())
+    }
+
+    /// The local follow-list — publication URIs the user follows (the app's own subscriptions,
+    /// persisted without atproto auth). OAuth mirrors this to `site.standard.graph.subscription`.
+    /// Adding a follow leaves its rkey empty (unknown until pushed/imported); an existing rkey is
+    /// preserved so re-following a synced feed doesn't lose its upstream link.
+    fn follow(&mut self, publication_uri: &str) -> Result<()> {
+        let w = self.db.begin_write()?;
+        {
+            let mut table = w.open_table(FOLLOWS)?;
+            if table.get(publication_uri)?.is_none() {
+                table.insert(publication_uri, "")?;
+            }
+        }
+        w.commit()?;
+        Ok(())
+    }
+
+    fn unfollow(&mut self, publication_uri: &str) -> Result<()> {
+        let w = self.db.begin_write()?;
+        {
+            let mut table = w.open_table(FOLLOWS)?;
+            table.remove(publication_uri)?;
+        }
+        w.commit()?;
+        Ok(())
+    }
+
+    fn follow_rkey(&self, publication_uri: &str) -> Result<Option<String>> {
+        let r = self.db.begin_read()?;
+        let table = r.open_table(FOLLOWS)?;
+        Ok(table.get(publication_uri)?.and_then(|g| {
+            let rkey = g.value();
+            (!rkey.is_empty()).then(|| rkey.to_string())
+        }))
+    }
+
+    /// Record the atproto rkey of a followed publication's upstream subscription record (set after
+    /// a `createRecord`, or when importing the account's existing subscriptions). Also ensures the
+    /// publication is in the follow-list.
+    fn set_follow_rkey(&mut self, publication_uri: &str, rkey: &str) -> Result<()> {
+        let w = self.db.begin_write()?;
+        {
+            let mut table = w.open_table(FOLLOWS)?;
+            table.insert(publication_uri, rkey)?;
+        }
+        w.commit()?;
+        Ok(())
+    }
+
+    fn show_images(&self) -> Result<bool> {
+        let r = self.db.begin_read()?;
+        let table = r.open_table(SETTINGS)?;
+        Ok(table
+            .get("show_images")?
+            .map(|v| v.value() != "0")
+            .unwrap_or(true))
+    }
+
+    fn set_show_images(&mut self, on: bool) -> Result<()> {
+        let w = self.db.begin_write()?;
+        {
+            let mut table = w.open_table(SETTINGS)?;
+            table.insert("show_images", if on { "1" } else { "0" })?;
         }
         w.commit()?;
         Ok(())

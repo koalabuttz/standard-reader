@@ -43,7 +43,9 @@ use atrium_oauth::{
 };
 use atrium_xrpc::HttpClient;
 use atrium_xrpc::http;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+
+use standard_frontend::auth_provider::AuthProvider;
 
 /// Any failure in the auth path. Boxed so every atrium / reqwest / io error converts with `?`.
 pub type AuthError = Box<dyn Error + Send + Sync + 'static>;
@@ -90,12 +92,9 @@ const SUBSCRIPTION_NSID: &str = "site.standard.graph.subscription";
 const HOSTED_CLIENT_ID: &str = "https://www.davidlewis.xyz/standard-reader/client_metadata.json";
 const CLIENT_URI: &str = "https://www.davidlewis.xyz";
 
-/// The signed-in identity, persisted in `account.json` so startup needn't hit the network.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Account {
-    pub did: String,
-    pub handle: String,
-}
+// The signed-in identity lives in the platform-agnostic `account` module (shared with the UI +
+// worker); re-exported here so `crate::auth::Account` keeps resolving.
+pub use standard_frontend::account::Account;
 
 // --- The concrete OAuth client ---------------------------------------------------
 
@@ -306,6 +305,52 @@ impl Auth {
             }
         }
         Ok(())
+    }
+}
+
+/// The desktop [`AuthProvider`]: a current-thread tokio runtime + the `atrium-oauth`-backed
+/// [`Auth`]. Each blocking trait method drives one async call to completion via `block_on`. Built
+/// off the worker thread and then only ever driven from it (a current-thread runtime must run on a
+/// single thread). This is what lets the synchronous worker stay async-free.
+pub struct DesktopAuth {
+    runtime: tokio::runtime::Runtime,
+    auth: Auth,
+}
+
+impl DesktopAuth {
+    /// Build the runtime + OAuth client under `config_dir`. Returns `None` if either can't be
+    /// built — auth is optional, so the reader still works for unauthenticated reads.
+    pub fn new(config_dir: &Path) -> Option<Self> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()?;
+        let auth = Auth::new(config_dir).ok()?;
+        Some(Self { runtime, auth })
+    }
+}
+
+impl AuthProvider for DesktopAuth {
+    fn restore(&self) -> AuthResult<Option<Account>> {
+        self.runtime.block_on(self.auth.restore())
+    }
+
+    fn login(&self, ident: &str, progress: &dyn Fn(String)) -> AuthResult<Account> {
+        self.runtime.block_on(self.auth.login(ident, progress))
+    }
+
+    fn logout(&self) -> AuthResult<()> {
+        self.runtime.block_on(self.auth.logout())
+    }
+
+    fn create_subscription(&self, did: &str, publication_uri: &str) -> AuthResult<String> {
+        self.runtime
+            .block_on(self.auth.create_subscription(did, publication_uri))
+    }
+
+    fn delete_subscription(&self, did: &str, rkey: &str) -> AuthResult<()> {
+        self.runtime
+            .block_on(self.auth.delete_subscription(did, rkey))
     }
 }
 

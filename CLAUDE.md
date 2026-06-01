@@ -8,27 +8,43 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 
 **Ethos (load-bearing, mirrors davidlewis.xyz): a small, justified dependency surface.** No build step beyond `cargo`; no runtime services. Prefer pure-Rust crates; every dependency should earn its place (the AVIF C decoder and an openssl TLS stack were both turned down on these grounds).
 
-## Architecture — portable core, swappable frontend
+## Architecture — portable core, portable frontend, swappable shell
 
-A Cargo workspace. The split exists for **portability**: a PS Vita frontend is a stated future goal, so the engine must not assume a desktop.
+A Cargo workspace, split for **portability**: a PS Vita frontend *and* a browser/WASM frontend are stated goals, so neither the engine nor the UI may assume a desktop.
 
 ```
 crates/
-  standard-core/   lib · ZERO platform deps · SYNCHRONOUS · the whole brain
-    model            · RichDoc AST + Document/Publication/Subscription
-    decode           · ContentDecoder trait + Registry + per-publisher decoders
-    atp              · AtUri parsing + XRPC request building (over a Transport)
-    store            · the Store cache trait
-    search           · inverted index over textContent
-  standard-tui/    bin `sr` · the desktop frontend (ratatui + reqwest + redb + OAuth)
+  standard-core/      lib · ZERO platform deps · SYNCHRONOUS · the whole brain
+    model               · RichDoc AST + Document/Publication/Subscription
+    decode              · ContentDecoder trait + Registry + per-publisher decoders
+    atp                 · AtUri parsing + XRPC request building (over a Transport)
+    store               · the Store cache trait
+    search              · inverted index over textContent
+  standard-frontend/  lib · platform-agnostic frontend · App + UI + worker, no platform stack
+    app                 · the App state machine (events → state + ToWorker commands; I/O-free)
+    ui                  · the ratatui renderer (sidebar + block-flow reader, themes, pickers)
+    worker              · generic orchestration: cache-first reads, lazy fetch, sync, freshen
+    prefs               · layout/theme/per-blog prefs (+ their (de)serialization)
+    {frontend_store,auth_provider,image_sink} · the frontend seam traits (+ Account)
+  standard-tui/       bin `sr` · the desktop shell (reqwest + redb + atrium-oauth + ratatui-image + open)
 ```
 
-**Two traits are the seam** — the only things a new platform implements:
+Dependency direction: `standard-tui` → `standard-frontend` → `standard-core`. A future `standard-reader-web` is a second shell over the same `standard-frontend` (ratzilla/WASM); a Vita shell, a third.
 
-- **`atp::Transport`** — perform an XRPC GET/POST and attach auth. Desktop impl: `reqwest`. A Vita impl: the Vita's net stack. The core *builds* every request URL and *parses* every response; it never opens a socket.
-- **`store::Store`** — the offline cache (documents, read-state, blobs, sync cursors). Desktop impl: `redb`.
+**The seams** — the only things a new platform implements. Two are *core-level* (in `standard-core`, which builds every URL and parses every response, and never opens a socket):
 
-**Hard rule: never let `tokio`, `reqwest`, `redb`, `ratatui`, or `async` into `standard-core`.** The core is synchronous. The desktop frontend gets non-blocking fetches by running core operations on a worker thread and channeling results into the `ratatui` render loop; a Vita frontend calls core inline. Auth is also a frontend concern (the Vita would likely use an app-password instead of the loopback flow).
+- **`atp::Transport`** — perform an XRPC GET/POST and attach auth. Desktop: `reqwest::blocking`; a Vita: its net stack; web: a synchronous `XMLHttpRequest` in a worker.
+- **`store::Store`** — the offline cache (documents, read-state, blobs, sync cursors). Desktop: `redb`; web: OPFS/IndexedDB.
+
+Three more are *frontend-level* (in `standard-frontend`, extending those for the App + worker):
+
+- **`FrontendStore: Store`** — the local follow-list (+ each follow's subscription rkey) and the show-images preference.
+- **`AuthProvider`** — sign-in + subscription writes, a **synchronous (blocking)** trait (the worker blocks on it). Desktop: `DesktopAuth` owns a tokio runtime and `block_on`s `atrium-oauth`, keeping the worker async-free; a Vita might use an app-password, a web shell a browser-OAuth island.
+- **`ImageSink`** — *"paint an image into a reserved cell rect."* Desktop: `TerminalImageSink` builds `ratatui-image` row-slices; web: a native `<img>`/canvas overlay. The reader is image-protocol-agnostic and carries no `ratatui-image` types.
+
+Plus three **host hooks** the shell injects at the seam, so the frontend touches no filesystem/process: a debug-log sink and a prefs-save sink (closures passed to `worker::spawn`), and `App::set_open_url` (browser launch).
+
+**Hard rules:** the core stays synchronous — never let `tokio`/`reqwest`/`redb`/`ratatui`/`async` into `standard-core`. And `standard-frontend` stays platform-agnostic — never let a platform stack (`reqwest`/`redb`/`tokio`/`atrium`/`ratatui-image`/`open`) into it; it depends only on `ratatui` + `image` (both pure-Rust, WASM-clean). A shell gets non-blocking fetches by running the synchronous `worker` off the render thread — desktop: a worker thread + `mpsc` channels feeding the `ratatui` loop; a Vita/web shell wires the same `worker` to its own thread model. `FromWorker::Image` carries a concrete `image::DynamicImage`, so the worker (decode + AVIF→CDN fallback) is shared verbatim with no image-payload generics.
 
 Pipeline: **`atp`** builds/parses XRPC → **`decode`** maps each publisher's `content` lexicon to one `RichDoc` → **`store`** caches it for offline → **`search`** indexes `textContent`.
 
@@ -76,7 +92,7 @@ OAuth via loopback redirect (`atrium-oauth`). The **`client_id`** is the hosted 
 ## Conventions
 
 - Rust **edition 2024**.
-- Keep `standard-core` **synchronous and dependency-light**; heavy/platform deps live only in frontends.
+- Keep `standard-core` **synchronous and dependency-light**, and `standard-frontend` **platform-agnostic** (`ratatui` + `image` only); every heavy/platform dep (`reqwest`/`redb`/`tokio`/`atrium`/`ratatui-image`/`open`) lives in the **shell** (`standard-tui`).
 - Decoders are pure functions of their input `Value` → `RichDoc`. Unknown/partial content degrades gracefully (return `None` → next decoder → plaintext fallback), never panics.
 - `ratatui-image` auto-detects the terminal graphics protocol (iTerm2 works on the maintainer's hterm box; halfblocks elsewhere).
 - This is a personal solo repo: commit directly to `main` when asked; don't push unless asked.
@@ -85,10 +101,10 @@ OAuth via loopback redirect (`atrium-oauth`). The **`client_id`** is the hosted 
 
 ```
 cargo build
-cargo test -p standard-core
-cargo run -p standard-reader   # runs the `sr` binary
+cargo test --workspace          # standard-core + standard-frontend + the sr shell
+cargo run -p standard-reader    # runs the `sr` binary
 ```
 
 ## Status & roadmap
 
-See **ROADMAP.md** (authoritative). The core engine is real and tested (RichDoc model, decoder `Registry` + `Plaintext` fallback, `AtUri` + `Transport` trait + XRPC builders, `Store` trait, inverted-index search). **All six content decoders are implemented** — Markdown/markpub, Leaflet, Pckt, Offprint, WordPress HTML, Unthread — plus the shared byte-range facet engine and the GreenGale `content_ref` two-phase seam, all validated against live-record fixtures (`cargo test -p standard-core`). The `standard-tui` frontend is built too: the `ratatui` reader (sidebar + block-flow reader with inline/cover images, search, palette), the `reqwest`/`redb` worker with `content_ref` fetch-then-decode and blob images, and OAuth sign-in with follow-list ↔ atproto subscription sync. **Customization is implemented** (the v0.1 capstone): four cycleable layouts (one/two/three-pane + drill-down, `\`) with an adjustable sidebar width (`< >`), colour themes (built-in presets + an in-app RGB editor, `t`), and **per-blog overrides** of layout/theme (`b`), all chosen on a first-launch picker and persisted to a human-editable `prefs.toml` in the config dir (loaded by `main`, written by the worker via `ToWorker::SavePrefs`; `App` stays I/O-free). `App` holds the *resolved* `theme`/`layout`, recomputed each draw (`recompute_appearance`): per-blog override (keyed on the active `open_pub`) else global, with the editor's live draft winning while open. Author-`basicTheme` styling was considered and dropped in favour of this user-driven path. **1.1.0** made fetching lazy and bounded (publication picker + first-open window + load-older with an end-of-feed affordance; see the atproto read-model section), added **unread badges** (per-feed counts in the sidebar + per-post markers, with read-state plumbed via `Store::read_uris`/`unread_count` and carried on `FromWorker::Docs` alongside a `has_older` flag), **completed Offprint + Leaflet decoder coverage** (all blocks/facets incl. lists, embeds→links, and `Inline::Highlight`; see the content-decoding section), an OS-keyring session store (macOS/Windows native, Linux Secret Service opt-in), a `description` fallback for metadata-only posts, and a reader-layout cache so navigation doesn't re-lay-out the open post each draw.
+See **ROADMAP.md** (authoritative). The core engine is real and tested (RichDoc model, decoder `Registry` + `Plaintext` fallback, `AtUri` + `Transport` trait + XRPC builders, `Store` trait, inverted-index search). **All six content decoders are implemented** — Markdown/markpub, Leaflet, Pckt, Offprint, WordPress HTML, Unthread — plus the shared byte-range facet engine and the GreenGale `content_ref` two-phase seam, all validated against live-record fixtures (`cargo test -p standard-core`). The frontend is built too — the `App`/`ui`/`worker` now live in the platform-agnostic **`standard-frontend`** crate, with `standard-tui` the desktop shell supplying the `reqwest`/`redb`/`atrium-oauth`/`ratatui-image` impls (see Architecture): the `ratatui` reader (sidebar + block-flow reader with inline/cover images, search, palette), the worker with `content_ref` fetch-then-decode and blob images, and OAuth sign-in with follow-list ↔ atproto subscription sync. **Customization is implemented** (the v0.1 capstone): four cycleable layouts (one/two/three-pane + drill-down, `\`) with an adjustable sidebar width (`< >`), colour themes (built-in presets + an in-app RGB editor, `t`), and **per-blog overrides** of layout/theme (`b`), all chosen on a first-launch picker and persisted to a human-editable `prefs.toml` in the config dir (loaded by the shell, written via a host `save_prefs` closure the worker invokes on `ToWorker::SavePrefs`; `App` stays I/O-free). `App` holds the *resolved* `theme`/`layout`, recomputed each draw (`recompute_appearance`): per-blog override (keyed on the active `open_pub`) else global, with the editor's live draft winning while open. Author-`basicTheme` styling was considered and dropped in favour of this user-driven path. **1.1.0** made fetching lazy and bounded (publication picker + first-open window + load-older with an end-of-feed affordance; see the atproto read-model section), added **unread badges** (per-feed counts in the sidebar + per-post markers, with read-state plumbed via `Store::read_uris`/`unread_count` and carried on `FromWorker::Docs` alongside a `has_older` flag), **completed Offprint + Leaflet decoder coverage** (all blocks/facets incl. lists, embeds→links, and `Inline::Highlight`; see the content-decoding section), an OS-keyring session store (macOS/Windows native, Linux Secret Service opt-in), a `description` fallback for metadata-only posts, and a reader-layout cache so navigation doesn't re-lay-out the open post each draw.

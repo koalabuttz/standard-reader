@@ -1,0 +1,21 @@
+[package]
+name = "standard-frontend"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Platform-agnostic frontend (App state machine, ratatui UI, worker, seam traits) for standard-reader."
+
+[dependencies]
+standard-core = { path = "../standard-core" }
+# Account/Prefs derive serde; Prefs (de)serializes via toml.
+serde = { workspace = true }
+toml = "0.8"
+unicode-width = "0.2.2"
+# The ratatui UI. `unstable-rendered-line-info` gives `Paragraph::line_count`, used to measure
+# wrapped text height so the block-flow reader matches ratatui's own wrapping.
+ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
+# `DynamicImage` flows through `FromWorker`/`App`/`ImageSink`; the worker decodes blobs with the
+# pure-Rust codecs (AVIF + anything unsupported falls back to the bsky CDN transcode, frontend-side).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }

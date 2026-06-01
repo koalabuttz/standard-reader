@@ -8,13 +8,10 @@
 //! `sr` with no args launches the interactive reader; `sr fetch`/`sr cached` are debug
 //! CLI paths over the same pipeline.
 
-mod app;
 mod auth;
-mod prefs;
 mod store;
+mod terminal_image_sink;
 mod transport;
-mod ui;
-mod worker;
 
 use std::error::Error;
 use std::io::stdout;
@@ -33,9 +30,13 @@ use standard_core::model::{Block, Document, Inline, RichDoc};
 use standard_core::read;
 use standard_core::store::Store;
 
-use app::App;
+use auth::DesktopAuth;
 use store::RedbStore;
+use terminal_image_sink::TerminalImageSink;
 use transport::ReqwestTransport;
+
+use standard_frontend::app::App;
+use standard_frontend::{prefs, ui, worker};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -78,7 +79,30 @@ fn print_usage() {
 
 fn run_tui() -> Result<(), Box<dyn Error>> {
     let config_dir = config_dir()?;
-    let (tx, rx) = worker::spawn(cache_path()?, config_dir.clone());
+    let log_path = config_dir.join("sr.log");
+    let prefs_path = config_dir.join("prefs.toml");
+    // Fresh debug log per run (truncate-on-start), so it shows only the current session.
+    truncate_log(&log_path);
+
+    // Build the platform deps the (generic) worker runs on: synchronous HTTP, the `redb` cache, and
+    // optional OAuth. The shell also supplies host closures for the debug log + prefs persistence,
+    // so the worker itself touches no filesystem.
+    let transport = ReqwestTransport::new();
+    let store = RedbStore::open(cache_path()?)?;
+    let auth = DesktopAuth::new(&config_dir);
+    let log: Box<dyn Fn(&str) + Send> = {
+        let path = log_path.clone();
+        Box::new(move |msg| append_log(&path, msg))
+    };
+    let save_prefs: Box<dyn FnMut(&prefs::Prefs) + Send> = {
+        let path = prefs_path.clone();
+        // Best-effort, non-secret: a plain (non-`0600`) write of the human-editable prefs file.
+        Box::new(move |prefs: &prefs::Prefs| {
+            let _ = std::fs::write(&path, prefs.to_toml());
+        })
+    };
+    let (tx, rx) = worker::spawn(transport, store, auth, log, save_prefs);
+
     let mut terminal = ratatui::init();
     // Restore the terminal on panic, not just on the normal return path below — otherwise a panic
     // inside a draw would leave it in raw/alt-screen/mouse-reporting mode. `ratatui::init` handles
@@ -93,18 +117,25 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
     // Detect the terminal graphics protocol + font size (before mouse capture, so the
     // query's stdin replies aren't interleaved with mouse reports). Fall back to halfblocks.
     let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
+    // The desktop image sink owns the picker + the row-sliced protocol cache; threaded into each
+    // draw so `App` itself stays free of `ratatui-image`.
+    let mut sink = TerminalImageSink::new(picker);
     execute!(stdout(), EnableMouseCapture)?;
 
     // User preferences (layout/theme/per-blog overrides); defaults on first launch.
     let prefs = prefs::Prefs::load(&config_dir.join("prefs.toml"));
-    let mut app = App::new(tx, picker, prefs);
+    let mut app = App::new(tx, prefs);
+    // Install the desktop URL-opener (the platform-agnostic `App` carries no `open` dependency).
+    app.set_open_url(Box::new(|url| {
+        let _ = open::that_detached(url);
+    }));
 
     // Render only when something changes. Terminal image protocols re-emit on every draw,
     // so redrawing on a timer would make images flicker constantly; this draws once, then
     // only after a real input or worker update — and coalesces a burst of (e.g. scroll)
     // events into a single redraw, minimizing image re-emits while scrolling.
     let outcome = (|| -> Result<(), Box<dyn Error>> {
-        terminal.draw(|f| ui::draw(f, &mut app))?;
+        terminal.draw(|f| ui::draw(f, &mut app, &mut sink))?;
         loop {
             let mut dirty = false;
 
@@ -137,7 +168,7 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
                 break;
             }
             if dirty {
-                terminal.draw(|f| ui::draw(f, &mut app))?;
+                terminal.draw(|f| ui::draw(f, &mut app, &mut sink))?;
             }
         }
         Ok(())
@@ -296,6 +327,35 @@ fn config_dir() -> Result<PathBuf, Box<dyn Error>> {
     let dir = os_base("XDG_CONFIG_HOME", ".config", "APPDATA")?.join("standard-reader");
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+// The debug-log sinks the worker's injected `log` closure writes through. The TUI owns the
+// terminal, so progress/errors that can't fit the status line go to `<config>/sr.log`; `tail -f`
+// it to watch the sign-in flow. (Filesystem I/O lives here, in the shell, not the worker.)
+
+/// Reset the debug log to empty (called once at launch). Best-effort.
+fn truncate_log(path: &std::path::Path) {
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path);
+}
+
+/// Append a timestamped line to the debug log (best-effort; never fails the caller).
+fn append_log(path: &std::path::Path, msg: &str) {
+    use std::io::Write;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(f, "[{ts}] {msg}");
+    }
 }
 
 fn title_or_untitled(title: &str) -> &str {

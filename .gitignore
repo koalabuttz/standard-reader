@@ -5,3 +5,6 @@ Cargo.lock.orig
 # Local runtime state (cache DB, cached blobs, OAuth session). Never commit.
 /data
 *.redb
+
+# Local working notes / design scratch — not part of the published repo.
+/scratch

@@ -13,6 +13,9 @@ path = "src/main.rs"
 
 [dependencies]
 standard-core = { path = "../standard-core" }
+# The platform-agnostic frontend (App, UI, worker, seam traits) this binary is the desktop shell
+# for: it supplies the concrete `Transport` / `FrontendStore` / `AuthProvider` / `ImageSink` impls.
+standard-frontend = { path = "../standard-frontend" }
 # Synchronous HTTP for the `Transport` impl. rustls (pure-Rust TLS); `blocking`
 # matches the core's sync Transport. One HTTP stack, later shared with async OAuth.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
@@ -21,10 +24,10 @@ redb = "4"
 # (De)serialize the model types (which derive serde) into cache values.
 serde = "1"
 serde_json = "1"
-# The terminal UI (re-exports crossterm for events/backend). The unstable feature
-# gives Paragraph::line_count, used to measure wrapped text height for the block-flow
-# reader (so layout matches ratatui's own wrapping exactly).
-ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
+# The terminal backend + `Frame` (re-exports crossterm for events). The reader's wrapped-text
+# measurement (`unstable-rendered-line-info`) lives in `standard-frontend`; the shell only renders
+# and reads input, so it needs default features only.
+ratatui = "0.30"
 # Terminal images (iTerm2 protocol on this hterm box; halfblocks fallback) + decoding.
 # default-features off drops the `chafa` C-lib protocol and image's all-formats default;
 # iTerm2/kitty/halfblocks are always available. `crossterm` matches ratatui's backend.
@@ -44,10 +47,6 @@ atrium-xrpc = "0.12"
 # session with our own 0600 file instead of atrium's in-memory default.
 atrium-common = "0.1"
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "sync"] }
-unicode-width = "0.2.2"
-# Human-editable preferences file (layout/theme/per-blog overrides). Pure-Rust; chosen over
-# JSON so `prefs.toml` reads and hand-edits cleanly. Default features only (serde via derive).
-toml = "0.8"
 
 # OS keyring for the OAuth session (DPoP key + tokens). keyring v3 has no default features — pick
 # a backend per OS. macOS Keychain + Windows Credential Manager are pure-Rust native stores, on by

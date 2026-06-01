@@ -40,8 +40,9 @@ pull your subscriptions, and read — with images and real formatting, online or
 - **Graceful images** — JPEG/PNG/GIF/WebP decode directly from the PDS; formats the default-features
   build can't decode (notably **AVIF**, which GreenGale emits) fall back to the Bluesky CDN's
   transcode-to-JPEG, then cache offline.
-- **A portable core.** The engine has zero platform dependencies — a **PS Vita** frontend is
-  a stated future goal, reusing all of it.
+- **A portable core *and* frontend.** The engine and the App/UI/worker carry no platform stack,
+  behind a small set of seam traits — so a **browser/WASM** build and a **PS Vita** frontend are
+  stated future goals, reusing all of it.
 
 ## Install
 
@@ -86,31 +87,34 @@ Keys in the reader:
 | `i` | toggle images (text-only) | `L` | sign in / out (atproto OAuth) |
 | `?` | help | `q` | quit |
 
-## Architecture: a portable core, a swappable frontend
+## Architecture: a portable core, a portable frontend, a swappable shell
 
 ```
 crates/
-  standard-core/   lib · ZERO platform deps — the whole brain (synchronous)
-    model            · the RichDoc AST + Document/Publication/Subscription
-    decode           · ContentDecoder trait + per-publisher decoders
-    atp              · AT-URI parsing + XRPC request building (over a Transport)
-    store            · the Store cache trait
-    search           · inverted index over textContent
-  standard-tui/    bin `sr` · ratatui + reqwest + redb + OAuth (the impls)
+  standard-core/      lib · ZERO platform deps — the whole brain (synchronous)
+    model               · the RichDoc AST + Document/Publication/Subscription
+    decode              · ContentDecoder trait + per-publisher decoders
+    atp                 · AT-URI parsing + XRPC request building (over a Transport)
+    store               · the Store cache trait
+    search              · inverted index over textContent
+  standard-frontend/  lib · platform-agnostic — the App state machine, ratatui UI, and worker
+  standard-tui/       bin `sr` · the desktop shell — reqwest + redb + atrium-oauth + ratatui-image
 ```
 
-The core is **synchronous and I/O-agnostic**. Two traits are the only seam a new
-platform must cross:
+The core is **synchronous and I/O-agnostic**, and the frontend is **platform-agnostic**
+(`ratatui` + `image` only). A new platform writes a thin **shell** that crosses a handful of
+seams:
 
-- **`atp::Transport`** — perform an XRPC GET/POST (and attach auth). Desktop:
-  `reqwest`. A PS Vita port: the Vita's net stack.
-- **`store::Store`** — the offline cache (docs, read-state, blobs, sync cursors).
-  Desktop: `redb`. Elsewhere: whatever fits.
+- **`Transport`** / **`Store`** (core) — perform an XRPC GET/POST, and the offline cache.
+  Desktop: `reqwest` + `redb`.
+- **`FrontendStore`** / **`AuthProvider`** / **`ImageSink`** (frontend) — the follow-list,
+  sign-in + subscription writes, and "paint an image into a cell rect." Desktop: `redb`
+  follows, `atrium-oauth`, `ratatui-image`.
 
-So the hard part — atproto reads, content decoding, caching, search — is written
-once and reused; a different platform reimplements only transport, storage, and
-drawing the `RichDoc`. The desktop frontend keeps fetches non-blocking by running core
-operations on a worker thread and channeling results into the `ratatui` render loop.
+So the hard part — atproto reads, content decoding, caching, search, the whole reader UI — is
+written once and reused; a different platform (a **browser/WASM** build, a **PS Vita** port)
+reimplements only those seams. The desktop shell keeps fetches non-blocking by running the
+synchronous worker on its own thread, channeling results into the `ratatui` render loop.
 
 ## Content decoding
 
@@ -143,7 +147,7 @@ same structure, so customization only changes presentation.
 
 ```
 cargo build
-cargo test                     # the full suite (124 tests across both crates)
+cargo test                     # the full suite (147 tests across the three crates)
 cargo test -p standard-core    # just the engine
 cargo run -p standard-reader   # runs the `sr` binary
 ```

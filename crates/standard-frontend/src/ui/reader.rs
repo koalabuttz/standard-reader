@@ -8,14 +8,12 @@
 //! Each image is sized to fit the available width (capped in height, using the terminal's
 //! real font-cell metrics) and rendered centered, as soon as its top scrolls into view.
 
-use image::DynamicImage;
 use ratatui::Frame;
 use ratatui::buffer::{Buffer, Cell};
-use ratatui::layout::{Alignment, Rect, Size};
+use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Widget, Wrap};
-use ratatui_image::sliced::{SignedPosition, SlicedImage, SlicedProtocol};
 
 use standard_core::model::{Block as DocBlock, Image, Inline};
 
@@ -27,6 +25,7 @@ const MAX_IMAGE_ROWS: u16 = 20;
 use super::doc;
 use super::theme::Theme;
 use crate::app::{App, Focus, image_key};
+use crate::image_sink::ImageSink;
 
 const GAP: u16 = 1; // blank row between segments
 
@@ -118,7 +117,7 @@ struct ReaderKey {
 }
 
 /// Draw the reader pane (bordered panel + scrolled block-flow body).
-pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
+pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, sink: &mut dyn ImageSink, area: Rect) {
     let focused = app.focus == Focus::Reader;
     let title = if app.reading_title.is_empty() {
         "Reader".to_string()
@@ -168,7 +167,7 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
     let layout = match app.reader_cache.take() {
         Some(cached) if cached.key == key => cached,
         _ => {
-            let (mut segments, total) = build(app, theme, inner.width, inner.height);
+            let (mut segments, total) = build(app, theme, &*sink, inner.width, inner.height);
             app.link_rects =
                 locate_and_highlight_links(&mut segments, app.focused_link, theme, inner.width);
             ReaderLayout {
@@ -194,8 +193,8 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, area: Rect) {
     }
     app.scroll = app.scroll.min(total.saturating_sub(inner.height));
     let scroll = app.scroll;
-    ensure_slices(app, &layout.segments);
-    render(f, app, theme, inner, &layout.segments, scroll);
+    ensure_images(app, sink, &layout.segments);
+    render(f, app, theme, sink, inner, &layout.segments, scroll);
     app.reader_cache = Some(layout); // put the (reused or freshly built) layout back
 }
 
@@ -389,47 +388,40 @@ fn is_untouched_cell(cell: &Cell) -> bool {
     cell.fg == Color::Reset && cell.bg == Color::Reset && cell.modifier.is_empty()
 }
 
-/// Build (encode) the row-sliced protocol for each image at its current display size, once
-/// per size. Two passes so `&app.picker` and `&mut app.images` never overlap.
-fn ensure_slices(app: &mut App, segments: &[Segment]) {
-    // (key, target size) for every image that needs (re)slicing at its current display size.
-    let mut wanted: Vec<(&str, Size)> = Vec::new();
+/// Ask the sink to prepare (encode) each visible image at its current display size. The sink
+/// caches per size, so this is cheap on a hit. A single pass works because `sink` is a separate
+/// borrow from `app.images` — no more two-pass picker/images dance.
+fn ensure_images(app: &App, sink: &mut dyn ImageSink, segments: &[Segment]) {
     for seg in segments {
         match seg {
             Segment::Image {
                 key, width, height, ..
-            } => wanted.push((key, Size::new(*width, *height))),
+            } => {
+                if let Some(si) = app.images.get(key) {
+                    sink.ensure(key, &si.image, *width, *height);
+                }
+            }
             Segment::Grid { cells, .. } => {
-                wanted.extend(cells.iter().map(|c| (c.key.as_str(), Size::new(c.w, c.h))));
+                for c in cells {
+                    if let Some(si) = app.images.get(&c.key) {
+                        sink.ensure(&c.key, &si.image, c.w, c.h);
+                    }
+                }
             }
             _ => {}
-        }
-    }
-
-    let pending: Vec<(String, DynamicImage, Size)> = wanted
-        .into_iter()
-        .filter_map(|(key, size)| {
-            let li = app.images.get(key)?;
-            (li.sliced.is_none() || li.sliced_size != (size.width, size.height))
-                .then(|| (key.to_string(), li.image.clone(), size))
-        })
-        .collect();
-
-    for (key, image, size) in pending {
-        // Encodes once per size; `new` returns owned, releasing the picker borrow before
-        // we take `&mut app.images`.
-        if let Ok(sliced) = SlicedProtocol::new(&app.picker, image, Some(size))
-            && let Some(li) = app.images.get_mut(&key)
-        {
-            li.sliced = Some(sliced);
-            li.sliced_size = (size.width, size.height);
         }
     }
 }
 
 /// Build measured, positioned segments for the current document (+ its cover). Borrows
 /// `app` only to read; returns owned segments so rendering can borrow `app.images` freely.
-fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
+fn build(
+    app: &App,
+    theme: &Theme,
+    sink: &dyn ImageSink,
+    width: u16,
+    vh: u16,
+) -> (Vec<Segment>, u16) {
     let mut segs: Vec<Segment> = Vec::new();
     let mut y: u16 = 0;
 
@@ -444,7 +436,7 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
                       bar: bool,
                       gap: bool,
                       align: Alignment| {
-        let (cols, rows) = image_display_size(app, &key, width.saturating_sub(indent), vh);
+        let (cols, rows) = image_display_size(app, sink, &key, width.saturating_sub(indent), vh);
         if gap && !segs.is_empty() {
             *y += GAP;
         }
@@ -560,7 +552,7 @@ fn build(app: &App, theme: &Theme, width: u16, vh: u16) -> (Vec<Segment>, u16) {
                 }
                 DocBlock::ImageGrid(images) if app.show_images => {
                     flush_text(&mut run, theme, width, &mut segs, &mut y);
-                    let (cells, height) = grid_layout(app, images, width, vh, align);
+                    let (cells, height) = grid_layout(app, sink, images, width, vh, align);
                     if !cells.is_empty() {
                         if !segs.is_empty() {
                             y += GAP;
@@ -730,8 +722,14 @@ fn flush_text(
 
 /// Display size (cols, rows) for an image: scaled to fit the available width using the
 /// terminal's real font-cell aspect, never upscaled past its natural size, and capped in
-/// height so a tall image stays reasonable. Cell metrics come from the `Picker`.
-fn image_display_size(app: &App, key: &str, avail_w: u16, vh: u16) -> (u16, u16) {
+/// height so a tall image stays reasonable. Cell metrics come from the [`ImageSink`].
+fn image_display_size(
+    app: &App,
+    sink: &dyn ImageSink,
+    key: &str,
+    avail_w: u16,
+    vh: u16,
+) -> (u16, u16) {
     let cap_h = vh.saturating_sub(2).clamp(1, MAX_IMAGE_ROWS) as f32;
     let avail_w = avail_w.max(1) as f32;
 
@@ -742,8 +740,8 @@ fn image_display_size(app: &App, key: &str, avail_w: u16, vh: u16) -> (u16, u16)
         return (w as u16, h.max(1.0) as u16);
     };
 
-    let fs = app.picker.font_size();
-    let (cw, ch) = (fs.width.max(1) as f32, fs.height.max(1) as f32);
+    let (fw, fh) = sink.cell_size();
+    let (cw, ch) = (fw.max(1) as f32, fh.max(1) as f32);
     let natural_w = (loaded.width as f32 / cw).max(1.0); // image size in cells
     let natural_h = (loaded.height as f32 / ch).max(1.0);
 
@@ -790,6 +788,7 @@ fn grid_cols(n: usize, width: u16) -> usize {
 /// cells and the grid's total height.
 fn grid_layout(
     app: &App,
+    sink: &dyn ImageSink,
     images: &[Image],
     width: u16,
     vh: u16,
@@ -809,7 +808,7 @@ fn grid_layout(
         .iter()
         .map(|img| {
             let key = image_key(&img.source);
-            let (w, h) = image_display_size(app, &key, cell_w, vh);
+            let (w, h) = image_display_size(app, sink, &key, cell_w, vh);
             (key, w, h)
         })
         .collect();
@@ -843,7 +842,15 @@ fn grid_layout(
     (cells, row_top.saturating_sub(GAP_Y))
 }
 
-fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segment], scroll: u16) {
+fn render(
+    f: &mut Frame,
+    app: &App,
+    theme: &Theme,
+    sink: &mut dyn ImageSink,
+    inner: Rect,
+    segments: &[Segment],
+    scroll: u16,
+) {
     for seg in segments {
         let (top, height) = (seg.top(), seg.height());
         let vis_top = top.max(scroll);
@@ -884,27 +891,21 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                     );
                     f.render_widget(bar_col, Rect { width: 1, ..rect });
                 }
-                // Pre-encoded slices: render the rows that fall within the reader, at a
-                // signed vertical offset, so scrolling never re-encodes (no lag, no resize)
-                // and a partly-visible image shows correctly whether its top or bottom is cut.
-                if let Some(sliced) = app.images.get(key).and_then(|li| li.sliced.as_ref()) {
-                    // Framed images sit left-aligned after the gutter; standalone ones follow their
-                    // alignment (centered by default).
-                    let x = if *indent > 0 {
-                        *indent as i16
-                    } else {
-                        match align {
-                            Alignment::Left => 0,
-                            Alignment::Right => inner.width.saturating_sub(*cols) as i16,
-                            _ => (inner.width.saturating_sub(*cols) / 2) as i16,
-                        }
-                    };
-                    let y =
-                        (top as i32 - scroll as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                    f.render_widget(
-                        SlicedImage::new(sliced, SignedPosition::from((x, y))),
-                        inner,
-                    );
+                // Ask the sink to paint at a signed vertical offset, so scrolling never re-encodes
+                // (no lag, no resize) and a partly-visible image clips correctly whether its top or
+                // bottom is cut. Framed images sit left-aligned after the gutter; standalone ones
+                // follow their alignment (centered by default).
+                let x = if *indent > 0 {
+                    *indent as i16
+                } else {
+                    match align {
+                        Alignment::Left => 0,
+                        Alignment::Right => inner.width.saturating_sub(*cols) as i16,
+                        _ => (inner.width.saturating_sub(*cols) / 2) as i16,
+                    }
+                };
+                let y = (top as i32 - scroll as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                if sink.paint(f, key, inner, x, y) {
                     continue;
                 }
                 let label = if app.images.contains_key(key) {
@@ -959,21 +960,14 @@ fn render(f: &mut Frame, app: &App, theme: &Theme, inner: Rect, segments: &[Segm
                 f.render_widget(para, text_rect);
             }
             Segment::Grid { cells, .. } => {
-                // Each cell is a pre-sliced image positioned at its (dx, dy) within the grid,
-                // offset by scroll; SlicedImage clips each to the reader.
+                // Each cell is positioned at its (dx, dy) within the grid, offset by scroll; the
+                // sink clips each to the reader. A not-yet-ready cell just leaves its gap (no
+                // placeholder, matching the prior behavior).
                 for cell in cells {
-                    if let Some(sliced) =
-                        app.images.get(&cell.key).and_then(|li| li.sliced.as_ref())
-                    {
-                        let x = cell.dx as i16;
-                        let y = ((top + cell.dy) as i32 - scroll as i32)
-                            .clamp(i16::MIN as i32, i16::MAX as i32)
-                            as i16;
-                        f.render_widget(
-                            SlicedImage::new(sliced, SignedPosition::from((x, y))),
-                            inner,
-                        );
-                    }
+                    let x = cell.dx as i16;
+                    let y = ((top + cell.dy) as i32 - scroll as i32)
+                        .clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                    let _ = sink.paint(f, &cell.key, inner, x, y);
                 }
             }
         }
@@ -997,8 +991,8 @@ fn rgb_of(c: Color) -> (u8, u8, u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image_sink::NoopImageSink;
     use crate::worker::ToWorker;
-    use ratatui_image::picker::Picker;
     use standard_core::model::{Block as DocBlock, Image, ImageSource, Inline, RichDoc};
     use std::sync::mpsc::channel;
 
@@ -1034,7 +1028,7 @@ mod tests {
                 img("b"),
             ],
         });
-        let (segs, _) = build(&app, &Theme::modern_dark(), 60, 40);
+        let (segs, _) = build(&app, &Theme::modern_dark(), &NoopImageSink, 60, 40);
         let aligns: Vec<Alignment> = segs
             .iter()
             .filter_map(|s| match s {
@@ -1104,7 +1098,7 @@ mod tests {
 
     fn app_with(doc: RichDoc) -> App {
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::default());
+        let mut app = App::new(tx, crate::prefs::Prefs::default());
         app.reading = Some(doc);
         app
     }
@@ -1122,7 +1116,7 @@ mod tests {
             ],
         });
         let theme = Theme::modern_dark();
-        let (segs, total) = build(&app, &theme, 40, 40);
+        let (segs, total) = build(&app, &theme, &NoopImageSink, 40, 40);
         assert_eq!(segs.len(), 3);
         assert!(matches!(segs[0], Segment::Text { .. }));
         assert!(matches!(segs[1], Segment::Image { .. }));
@@ -1146,7 +1140,7 @@ mod tests {
             ])])],
         });
         let theme = Theme::modern_dark();
-        let (segs, _) = build(&app, &theme, 80, 40);
+        let (segs, _) = build(&app, &theme, &NoopImageSink, 80, 40);
 
         assert!(
             matches!(segs.first(), Some(Segment::Text { .. })),
@@ -1165,22 +1159,20 @@ mod tests {
 
     #[test]
     fn renders_a_loaded_image_without_panic() {
-        use crate::app::LoadedImage;
+        use crate::app::StoredImage;
         use ratatui::{Terminal, backend::TestBackend};
 
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
         let source = ImageSource::Url("https://i.test/a.png".into());
         let key = image_key(&source);
         let image = image::DynamicImage::ImageRgba8(image::RgbaImage::new(4, 4));
         app.images.insert(
             key,
-            LoadedImage {
+            StoredImage {
                 image,
                 width: 4,
                 height: 4,
-                sliced: None,
-                sliced_size: (0, 0),
             },
         );
         app.reading = Some(RichDoc {
@@ -1195,9 +1187,13 @@ mod tests {
         });
         app.loading = false;
 
+        // The block-flow reader must lay out + render a loaded image without panicking. (The real
+        // ratatui-image encode/paint path is covered by the desktop sink's own test in standard-tui.)
+        let mut sink = NoopImageSink;
         let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
-        // The block-flow reader (incl. the StatefulImage path) must render without panicking.
-        terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+        terminal
+            .draw(|f| crate::ui::draw(f, &mut app, &mut sink))
+            .unwrap();
     }
 
     #[test]
@@ -1335,7 +1331,7 @@ mod tests {
     fn reader_records_a_link_rect() {
         use ratatui::{Terminal, backend::TestBackend};
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
         app.reading = Some(RichDoc {
             blocks: vec![DocBlock::Paragraph(vec![
                 Inline::Text("go ".into()),
@@ -1347,8 +1343,11 @@ mod tests {
         });
         app.links = vec!["https://example.com".into()];
         app.loading = false;
+        let mut sink = NoopImageSink;
         let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
-        terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+        terminal
+            .draw(|f| crate::ui::draw(f, &mut app, &mut sink))
+            .unwrap();
         assert_eq!(app.link_rects.len(), 1, "one link rect recorded");
         assert_eq!(app.link_rects[0].idx, 0);
     }

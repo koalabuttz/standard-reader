@@ -13,11 +13,12 @@ use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Para
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{Action, App, Focus, Mode};
+use crate::image_sink::ImageSink;
 use crate::prefs::{LayoutKind, PANE_MAX, PANE_MIN};
 use theme::{PRESETS, SLOTS, Theme, ThemeColors};
 
 /// Draw the whole UI for one frame. Records pane rects on `app` for mouse hit-testing.
-pub fn draw(f: &mut Frame, app: &mut App) {
+pub fn draw(f: &mut Frame, app: &mut App, sink: &mut dyn ImageSink) {
     // Resolve the effective theme/layout for this frame, then copy the theme out into a local so
     // the renderer can hold `&theme` and `&mut app` at once (the reader mutates `app.link_rects`
     // while reading the theme — a borrow of `app.theme` would conflict).
@@ -35,10 +36,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // zero-area, so mouse hit-testing never matches an invisible pane).
     app.rects = crate::app::Rects::default();
     match app.layout {
-        LayoutKind::TwoPane => draw_two_pane(f, app, theme, body),
-        LayoutKind::ThreePane => draw_three_pane(f, app, theme, body),
-        LayoutKind::OnePane => draw_one_pane(f, app, theme, body),
-        LayoutKind::DrillDown => draw_drill_down(f, app, theme, body),
+        LayoutKind::TwoPane => draw_two_pane(f, app, theme, sink, body),
+        LayoutKind::ThreePane => draw_three_pane(f, app, theme, sink, body),
+        LayoutKind::OnePane => draw_one_pane(f, app, theme, sink, body),
+        LayoutKind::DrillDown => draw_drill_down(f, app, theme, sink, body),
     }
     draw_footer(f, app, theme, footer); // also records the status region as a click target
 
@@ -69,7 +70,7 @@ fn clamp_pane(width: u16, total: u16) -> u16 {
 
 /// Two-pane (the default): the left pane is the feed list, or — once a feed is opened — its post
 /// list (Mode::DocList); the reader fills the right.
-fn draw_two_pane(f: &mut Frame, app: &mut App, theme: &Theme, body: Rect) {
+fn draw_two_pane(f: &mut Frame, app: &mut App, theme: &Theme, sink: &mut dyn ImageSink, body: Rect) {
     let sw = clamp_pane(app.prefs.sidebar_width, body.width);
     let cols = Layout::horizontal([Constraint::Length(sw), Constraint::Min(0)]).split(body);
     let (left, right) = (cols[0], cols[1]);
@@ -81,11 +82,17 @@ fn draw_two_pane(f: &mut Frame, app: &mut App, theme: &Theme, body: Rect) {
         draw_sidebar(f, app, theme, left);
     }
     app.rects.reader = right;
-    reader::draw(f, app, theme, right);
+    reader::draw(f, app, theme, sink, right);
 }
 
 /// Three-pane: feeds | posts | reader, all visible at once (feeds + posts sized independently).
-fn draw_three_pane(f: &mut Frame, app: &mut App, theme: &Theme, body: Rect) {
+fn draw_three_pane(
+    f: &mut Frame,
+    app: &mut App,
+    theme: &Theme,
+    sink: &mut dyn ImageSink,
+    body: Rect,
+) {
     let sw = clamp_pane(app.prefs.sidebar_width, body.width);
     let pw = clamp_pane(app.prefs.posts_width, body.width);
     let cols = Layout::horizontal([
@@ -99,11 +106,11 @@ fn draw_three_pane(f: &mut Frame, app: &mut App, theme: &Theme, body: Rect) {
     app.rects.posts = cols[1];
     draw_doclist(f, app, theme, cols[1], app.focus == Focus::Posts);
     app.rects.reader = cols[2];
-    reader::draw(f, app, theme, cols[2]);
+    reader::draw(f, app, theme, sink, cols[2]);
 }
 
 /// One-pane: only the focused pane, full width.
-fn draw_one_pane(f: &mut Frame, app: &mut App, theme: &Theme, body: Rect) {
+fn draw_one_pane(f: &mut Frame, app: &mut App, theme: &Theme, sink: &mut dyn ImageSink, body: Rect) {
     match app.focus {
         Focus::Sidebar => {
             app.rects.sidebar = body;
@@ -115,14 +122,20 @@ fn draw_one_pane(f: &mut Frame, app: &mut App, theme: &Theme, body: Rect) {
         }
         Focus::Reader => {
             app.rects.reader = body;
-            reader::draw(f, app, theme, body);
+            reader::draw(f, app, theme, sink, body);
         }
     }
 }
 
 /// Drill-down: a collapsing layout that grows with focus — feeds (full) → feeds + posts → just
 /// the open post (full). `Tab` descends a level, `Esc` ascends.
-fn draw_drill_down(f: &mut Frame, app: &mut App, theme: &Theme, body: Rect) {
+fn draw_drill_down(
+    f: &mut Frame,
+    app: &mut App,
+    theme: &Theme,
+    sink: &mut dyn ImageSink,
+    body: Rect,
+) {
     match app.focus {
         // Stage 1 — the feed list, full width (choose a feed).
         Focus::Sidebar => {
@@ -141,7 +154,7 @@ fn draw_drill_down(f: &mut Frame, app: &mut App, theme: &Theme, body: Rect) {
         // Stage 3 — just the open post, full width.
         Focus::Reader => {
             app.rects.reader = body;
-            reader::draw(f, app, theme, body);
+            reader::draw(f, app, theme, sink, body);
         }
     }
 }
@@ -754,12 +767,12 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image_sink::NoopImageSink;
     use crate::worker::ToWorker;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Position;
-    use ratatui_image::picker::Picker;
     use standard_core::model::{Block, Inline, Publication, RichDoc};
     use std::sync::mpsc::channel;
 
@@ -780,7 +793,7 @@ mod tests {
     #[test]
     fn renders_feed_reader_and_footer() {
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
         app.loading = false;
         app.feeds = vec![Publication {
             uri: "at://d/site.standard.publication/1".into(),
@@ -798,7 +811,9 @@ mod tests {
         });
 
         let mut terminal = Terminal::new(TestBackend::new(90, 20)).unwrap();
-        terminal.draw(|f| draw(f, &mut app)).unwrap();
+        terminal
+            .draw(|f| draw(f, &mut app, &mut NoopImageSink))
+            .unwrap();
         let text = buffer_text(terminal.backend().buffer());
 
         assert!(text.contains("Feeds"), "sidebar title");
@@ -822,7 +837,7 @@ mod tests {
     fn drill_down_sidebar_focus_shows_the_feed_list() {
         use crate::prefs::{LayoutKind, Prefs};
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), Prefs::for_test());
+        let mut app = App::new(tx, Prefs::for_test());
         app.prefs.layout = LayoutKind::DrillDown;
         app.loading = false;
         app.feeds = vec![Publication {
@@ -838,7 +853,7 @@ mod tests {
         // Even with a post open, focusing the feed list must surface it (not stay on posts|reader).
         app.focus = crate::app::Focus::Sidebar;
         let mut t = Terminal::new(TestBackend::new(80, 20)).unwrap();
-        t.draw(|f| draw(f, &mut app)).unwrap();
+        t.draw(|f| draw(f, &mut app, &mut NoopImageSink)).unwrap();
         let text = buffer_text(t.backend().buffer());
         assert!(
             text.contains("Feeds"),
@@ -851,7 +866,7 @@ mod tests {
     fn drill_down_posts_focus_shows_feeds_and_posts() {
         use crate::prefs::{LayoutKind, Prefs};
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), Prefs::for_test());
+        let mut app = App::new(tx, Prefs::for_test());
         app.prefs.layout = LayoutKind::DrillDown;
         app.loading = false;
         app.open_pub = Some("at://p/1".into());
@@ -877,7 +892,7 @@ mod tests {
         // Stage 2 (posts focused): both the feed list and the post list are on screen.
         app.focus = crate::app::Focus::Posts;
         let mut t = Terminal::new(TestBackend::new(80, 20)).unwrap();
-        t.draw(|f| draw(f, &mut app)).unwrap();
+        t.draw(|f| draw(f, &mut app, &mut NoopImageSink)).unwrap();
         let text = buffer_text(t.backend().buffer());
         assert!(text.contains("Feeds"), "feeds pane visible in stage 2");
         assert!(text.contains("a post"), "posts pane visible in stage 2");
@@ -893,10 +908,10 @@ mod tests {
     #[test]
     fn long_status_never_pushes_hints_off_the_footer() {
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
         app.status = "x".repeat(200); // an absurdly long status line
         let mut t = Terminal::new(TestBackend::new(80, 6)).unwrap();
-        t.draw(|f| draw(f, &mut app)).unwrap();
+        t.draw(|f| draw(f, &mut app, &mut NoopImageSink)).unwrap();
         let text = buffer_text(t.backend().buffer());
         assert!(text.contains("? help"), "control hints stay visible");
         assert!(text.contains('…'), "the status got truncated to make room");
@@ -905,10 +920,10 @@ mod tests {
     #[test]
     fn error_status_wins_over_hints() {
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
         app.status = "⚠ the publication record could not be fetched from the PDS".into();
         let mut t = Terminal::new(TestBackend::new(80, 6)).unwrap();
-        t.draw(|f| draw(f, &mut app)).unwrap();
+        t.draw(|f| draw(f, &mut app, &mut NoopImageSink)).unwrap();
         let text = buffer_text(t.backend().buffer());
         assert!(
             text.contains("could not be fetched from the PDS"),
@@ -923,11 +938,11 @@ mod tests {
     #[test]
     fn status_detail_popup_shows_the_full_text() {
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
         app.status_detail = "a fairly long status that would not fit on the footer row".into();
         app.mode = crate::app::Mode::StatusDetail;
         let mut t = Terminal::new(TestBackend::new(80, 16)).unwrap();
-        t.draw(|f| draw(f, &mut app)).unwrap();
+        t.draw(|f| draw(f, &mut app, &mut NoopImageSink)).unwrap();
         let text = buffer_text(t.backend().buffer());
         assert!(text.contains("Status"), "the popup title");
         assert!(
@@ -939,10 +954,10 @@ mod tests {
     #[test]
     fn help_rows_render_descriptions_in_full() {
         let (tx, _rx) = channel::<ToWorker>();
-        let mut app = App::new(tx, Picker::halfblocks(), crate::prefs::Prefs::for_test());
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
         app.mode = crate::app::Mode::Help;
         let mut t = Terminal::new(TestBackend::new(120, 40)).unwrap();
-        t.draw(|f| draw(f, &mut app)).unwrap();
+        t.draw(|f| draw(f, &mut app, &mut NoopImageSink)).unwrap();
         let text = buffer_text(t.backend().buffer());
         // The widest key ("Enter / click") must not squeeze its description.
         assert!(
@@ -969,7 +984,7 @@ mod tests {
                     Mode::BlogMenu,
                 ] {
                     let (tx, _rx) = channel::<ToWorker>();
-                    let mut app = App::new(tx, Picker::halfblocks(), Prefs::for_test());
+                    let mut app = App::new(tx, Prefs::for_test());
                     app.loading = false;
                     app.prefs.layout = layout;
                     app.feeds = vec![Publication {
@@ -991,7 +1006,7 @@ mod tests {
                         app.menu_target = Some("at://p/1".into());
                     }
                     let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
-                    t.draw(|f| draw(f, &mut app)).unwrap();
+                    t.draw(|f| draw(f, &mut app, &mut NoopImageSink)).unwrap();
                 }
             }
         }

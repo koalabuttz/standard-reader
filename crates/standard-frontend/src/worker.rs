@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::thread;
 
 use standard_core::atp::{AtUri, Transport};
 use standard_core::decode::Registry;
@@ -123,7 +122,14 @@ where
 {
     let (cmd_tx, cmd_rx) = channel::<ToWorker>();
     let (evt_tx, evt_rx) = channel::<FromWorker>();
-    thread::spawn(move || run(transport, store, auth, log, save_prefs, cmd_rx, evt_tx));
+    // The worker runs off the render thread. On desktop that's an OS thread; on wasm it's a Web
+    // Worker via `wasm_thread` (sharing wasm memory, so the `mpsc` channels + blocking `recv` still
+    // work) — blocking is illegal on the browser's main thread but fine on a worker thread.
+    let task = move || run(transport, store, auth, log, save_prefs, cmd_rx, evt_tx);
+    #[cfg(target_arch = "wasm32")]
+    wasm_thread::spawn(task);
+    #[cfg(not(target_arch = "wasm32"))]
+    std::thread::spawn(task);
     (cmd_tx, evt_rx)
 }
 

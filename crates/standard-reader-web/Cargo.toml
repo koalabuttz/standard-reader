@@ -17,8 +17,16 @@ standard-frontend = { path = "../standard-frontend" }
 ratzilla = "0.3"
 # `DynamicImage` appears in the `ImageSink` trait signature (the stub sink references the type).
 image = { version = "0.25", default-features = false }
-# Browser glue: window.open for the URL-opener; a keydown guard that preventDefaults the keys the
-# reader handles (so the browser doesn't scroll / move focus); a readable panic message in the console.
+# Browser glue: window.open (URL-opener); a keydown guard (preventDefault the reader's keys); the
+# synchronous-XHR transport; console logging; a readable panic message in the console.
 wasm-bindgen = "0.2"
-web-sys = { version = "0.3", features = ["Window", "EventTarget", "KeyboardEvent"] }
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "EventTarget",
+    "KeyboardEvent",
+    "XmlHttpRequest",
+    "XmlHttpRequestResponseType",
+    "console",
+] }
 console_error_panic_hook = "0.1"

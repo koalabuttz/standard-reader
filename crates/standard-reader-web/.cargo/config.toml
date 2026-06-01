@@ -1,0 +1,40 @@
+# Web (wasm) build flags — scoped to this crate dir (cargo reads it when trunk builds here), so the
+# desktop workspace build at the repo root stays on stable with no build-std.
+#
+# Threads need wasm atomics, and the prebuilt std has no atomics, so std is rebuilt from source
+# (`build-std`) with the atomics target-features. Requires the nightly toolchain (see
+# rust-toolchain.toml). Runtime also needs cross-origin isolation — see Trunk.toml's COOP/COEP.
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C",
+    "target-feature=+atomics,+bulk-memory,+mutable-globals",
+    # Mark the memory shared (current nightly doesn't infer it from `+atomics`): this is what makes
+    # wasm-bindgen run its threading transform and emit a SharedArrayBuffer-backed memory the worker
+    # can share. `--shared-memory` requires `--max-memory`. We deliberately do NOT pass
+    # `--import-memory` — wasm-bindgen does the import itself, and passing it hides the `__heap_base`
+    # global the threading transform needs.
+    "-C",
+    "link-arg=--shared-memory",
+    # wasm-bindgen's threading transform asserts the memory is *imported* (it creates the shared
+    # Memory in JS and imports it into both the main + worker instances).
+    "-C",
+    "link-arg=--import-memory",
+    "-C",
+    "link-arg=--max-memory=1073741824",
+    # `--import-memory` suppresses lld's default export of the heap/TLS symbols wasm-bindgen's
+    # threading transform reads (`__heap_base` for thread stacks, `__wasm_init_tls` + `__tls_*` for
+    # per-thread TLS setup) — so export the full set explicitly.
+    "-C",
+    "link-arg=--export=__heap_base",
+    "-C",
+    "link-arg=--export=__wasm_init_tls",
+    "-C",
+    "link-arg=--export=__tls_size",
+    "-C",
+    "link-arg=--export=__tls_align",
+    "-C",
+    "link-arg=--export=__tls_base",
+]
+
+[unstable]
+build-std = ["std", "panic_abort"]

@@ -29,3 +29,9 @@ ratatui = { version = "0.30", default-features = false, features = [
 # `DynamicImage` flows through `FromWorker`/`App`/`ImageSink`; the worker decodes blobs with the
 # pure-Rust codecs (AVIF + anything unsupported falls back to the bsky CDN transcode, frontend-side).
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+
+# On wasm, the worker runs in a Web Worker: `wasm_thread` is a `std::thread::spawn` drop-in over
+# Web Workers (shared wasm memory, so `std::sync::mpsc` spans them). wasm-only — the desktop arm
+# uses `std::thread` — and it needs the atomics build flags the web shell sets (nightly + build-std).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm_thread = "0.3.3"

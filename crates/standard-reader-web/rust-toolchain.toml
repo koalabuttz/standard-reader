@@ -1,0 +1,7 @@
+# wasm threads (wasm_thread) need atomics, which require a custom-built std — nightly + rust-src.
+# This file is directory-scoped: it only selects nightly when cargo/trunk runs *here* (the web
+# crate), so the desktop workspace keeps building on stable from the repo root.
+[toolchain]
+channel = "nightly"
+components = ["rust-src"]
+targets = ["wasm32-unknown-unknown"]

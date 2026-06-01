@@ -23,7 +23,7 @@ mod sink;
 mod store;
 mod transport;
 use auth::NoAuth;
-use sink::StubSink;
+use sink::OverlayImageSink;
 use store::MemStore;
 use transport::WebTransport;
 
@@ -67,12 +67,14 @@ fn main() -> std::io::Result<()> {
         }
     });
 
-    let mut sink = StubSink;
+    let mut sink = OverlayImageSink::new();
     terminal.draw_web(move |f| {
         // Drain worker results (non-blocking) before drawing.
         while let Ok(evt) = rx.try_recv() {
             app.borrow_mut().apply(evt);
         }
+        // Hide last frame's image overlays; `paint` re-shows the ones still on screen.
+        sink.before_frame();
         ui::draw(f, &mut app.borrow_mut(), &mut sink);
     });
 

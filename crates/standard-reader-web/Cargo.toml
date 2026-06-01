@@ -15,8 +15,8 @@ standard-frontend = { path = "../standard-frontend" }
 # ratatui-in-the-browser: owns the rAF render loop + DOM/canvas backends. Re-exports ratatui (and,
 # being a wasm framework, pulls it crossterm-free — so this build never compiles crossterm).
 ratzilla = "0.3"
-# `DynamicImage` appears in the `ImageSink` trait signature (the stub sink references the type).
-image = { version = "0.25", default-features = false }
+# The overlay sink receives a decoded `DynamicImage` and PNG-encodes it for a Blob object URL.
+image = { version = "0.25", default-features = false, features = ["png"] }
 # Browser glue: window.open (URL-opener); a keydown guard (preventDefault the reader's keys); the
 # synchronous-XHR transport; console logging; a readable panic message in the console.
 wasm-bindgen = "0.2"
@@ -28,5 +28,15 @@ web-sys = { version = "0.3", features = [
     "XmlHttpRequest",
     "XmlHttpRequestResponseType",
     "console",
+    # The native-`<img>` image overlay (sink.rs).
+    "Document",
+    "Element",
+    "HtmlElement",
+    "HtmlImageElement",
+    "Node",
+    "CssStyleDeclaration",
+    "DomRect",
+    "Blob",
+    "Url",
 ] }
 console_error_panic_hook = "0.1"

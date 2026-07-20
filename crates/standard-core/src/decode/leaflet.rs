@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::facets::text_block_inlines;
 use super::image::blob_image;
 use super::{ContentDecoder, DecodeCtx};
-use crate::model::{Block, Inline, RichDoc};
+use crate::model::{Block, Inline, PublishingPlatform, RichDoc};
 
 pub struct Leaflet;
 
@@ -34,6 +34,10 @@ impl ContentDecoder for Leaflet {
             }
         }
         Some(RichDoc { blocks })
+    }
+
+    fn publishing_platform(&self, _content: &Value) -> Option<PublishingPlatform> {
+        Some(PublishingPlatform::Leaflet)
     }
 }
 

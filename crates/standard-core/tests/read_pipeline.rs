@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use standard_core::atp::{AtUri, Transport, xrpc};
 use standard_core::decode::Registry;
-use standard_core::model::{Block, ImageSource, Inline};
+use standard_core::model::{Block, ImageSource, Inline, PublishingPlatform};
 use standard_core::read;
 
 const DAVID_DID: &str = "did:plc:xn3l7ogsxym5ixxugidum5dw";
@@ -200,6 +200,7 @@ fn full_cross_repo_subscription_flow() {
     let pckt_uri = AtUri::parse(&docs[0].uri).unwrap();
     let (meta, body) = read::get_document(&t, &registry, &pckt_uri, &repo.pds).unwrap();
     assert_eq!(meta.publication, subs[0].publication);
+    assert_eq!(meta.publishing_platform, Some(PublishingPlatform::Pckt));
     assert!(!body.blocks.is_empty(), "pckt body should decode to blocks");
 }
 
@@ -238,7 +239,8 @@ fn pckt_gallery_ref_resolves_to_image_grid() {
         "at://{DAVID_DID}/site.standard.document/3mmrd52hpdakk"
     ))
     .unwrap();
-    let (_, body) = read::get_document(&t, &registry, &uri, DAVID_PDS).unwrap();
+    let (meta, body) = read::get_document(&t, &registry, &uri, DAVID_PDS).unwrap();
+    assert_eq!(meta.publishing_platform, Some(PublishingPlatform::Pckt));
 
     let grid = body
         .blocks
@@ -340,7 +342,11 @@ fn greengale_two_phase_contentref_fetches_referenced_record() {
         "at://{DAVID_DID}/site.standard.document/3mmozgypkle2s"
     ))
     .unwrap();
-    let (_, body) = read::get_document(&t, &registry, &uri, DAVID_PDS).unwrap();
+    let (meta, body) = read::get_document(&t, &registry, &uri, DAVID_PDS).unwrap();
+    assert_eq!(
+        meta.publishing_platform,
+        Some(PublishingPlatform::GreenGale)
+    );
     assert!(body.blocks.iter().any(|b| matches!(
         b,
         Block::Heading { level: 1, content } if content == &[standard_core::model::Inline::Text("BLAH BLAH".into())]

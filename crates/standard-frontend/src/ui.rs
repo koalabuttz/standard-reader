@@ -823,6 +823,51 @@ mod tests {
     }
 
     #[test]
+    fn reader_renders_a_clickable_platform_signature_on_its_bottom_border() {
+        use standard_core::model::PublishingPlatform;
+
+        let (tx, _rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
+        app.loading = false;
+        app.reading = Some(RichDoc::default());
+        app.reading_platform = Some(PublishingPlatform::Leaflet);
+        app.links = vec![PublishingPlatform::Leaflet.homepage().into()];
+        app.attribution_link = Some(0);
+
+        let mut terminal = Terminal::new(TestBackend::new(90, 20)).unwrap();
+        terminal
+            .draw(|f| draw(f, &mut app, &mut NoopImageSink))
+            .unwrap();
+        let text = buffer_text(terminal.backend().buffer());
+
+        assert!(text.contains("Published with Leaflet ↗"));
+        assert_eq!(app.rects.attribution.height, 1);
+        assert_eq!(app.rects.attribution.width, "Leaflet ↗".width() as u16);
+        assert!(app.attribution_visible);
+        let rect = app.rects.attribution;
+        let linked_cells: String = (rect.x..rect.right())
+            .filter_map(|x| {
+                terminal
+                    .backend()
+                    .buffer()
+                    .cell(Position::new(x, rect.y))
+                    .map(|cell| cell.symbol())
+            })
+            .collect();
+        assert_eq!(linked_cells, "Leaflet ↗", "hitbox covers exactly the link");
+
+        // A resize that cannot fit even `via Leaflet ↗` removes both the visual and its focus.
+        app.focused_link = app.attribution_link;
+        let mut narrow = Terminal::new(TestBackend::new(35, 20)).unwrap();
+        narrow
+            .draw(|f| draw(f, &mut app, &mut NoopImageSink))
+            .unwrap();
+        assert!(!app.attribution_visible);
+        assert_eq!(app.focused_link, None);
+        assert_eq!(app.rects.attribution, Rect::default());
+    }
+
+    #[test]
     fn pane_width_clamps_to_range_and_terminal() {
         assert_eq!(clamp_pane(30, 90), 30, "in-range width is kept");
         assert_eq!(clamp_pane(5, 90), PANE_MIN, "floored at the minimum");
@@ -884,6 +929,7 @@ mod tests {
             publication: "at://p/1".into(),
             published_at: "2026-01-01".into(),
             updated_at: None,
+            publishing_platform: None,
             cover_image: None,
             text_content: None,
             tags: vec![],

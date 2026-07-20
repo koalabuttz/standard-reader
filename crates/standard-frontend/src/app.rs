@@ -10,7 +10,9 @@ use ratatui::layout::Rect;
 
 use crate::input::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
-use standard_core::model::{Block, Document, ImageSource, Inline, Publication, RichDoc};
+use standard_core::model::{
+    Block, Document, ImageSource, Inline, Publication, PublishingPlatform, RichDoc,
+};
 
 use crate::account::Account;
 use crate::prefs::{LayoutKind, PANE_MAX, PANE_MIN, Prefs};
@@ -140,6 +142,8 @@ pub struct Rects {
     pub sidebar: Rect,
     pub posts: Rect,
     pub reader: Rect,
+    /// Click target for the linked platform name in the reader's bottom border.
+    pub attribution: Rect,
     /// The status-text region of the footer (left side only), for click-to-expand. The hints on
     /// the right are deliberately *not* covered, so clicking them doesn't open the status popup.
     pub status: Rect,
@@ -172,6 +176,8 @@ pub struct App {
     pub reading: Option<RichDoc>,
     pub reading_title: String,
     pub reading_uri: Option<String>,
+    /// Publishing application for the open document, when its content lexicon identifies one.
+    pub reading_platform: Option<PublishingPlatform>,
     /// The open doc's `description`, kept so the reader can recognise a metadata-only post (whose
     /// body is just the description blurb) and append a "press o to open" hint.
     pub reading_description: Option<String>,
@@ -197,6 +203,11 @@ pub struct App {
     pub links: Vec<String>,
     /// Focused link (index into `links`) for keyboard navigation + `Enter` to open.
     pub focused_link: Option<usize>,
+    /// Index of the border-attribution link in `links` (always after the body links), if present.
+    pub attribution_link: Option<usize>,
+    /// Whether the current reader width can render the full or compact attribution. Maintained by
+    /// the renderer so keyboard navigation never lands on an invisible border control.
+    pub attribution_visible: bool,
     /// Set when a focus change should scroll the focused link into view (honored on the next draw).
     pub scroll_to_focused: bool,
     /// Link rectangles from the last render, for click hit-testing (filled by the reader).
@@ -263,6 +274,7 @@ impl App {
             reading: None,
             reading_title: String::new(),
             reading_uri: None,
+            reading_platform: None,
             reading_description: None,
             reading_cover: None,
             scroll: 0,
@@ -278,6 +290,8 @@ impl App {
             sync_prompt: Vec::new(),
             links: Vec::new(),
             focused_link: None,
+            attribution_link: None,
+            attribution_visible: false,
             scroll_to_focused: false,
             link_rects: Vec::new(),
             theme: Theme::modern_dark(),
@@ -399,11 +413,11 @@ impl App {
             }
             FromWorker::Doc {
                 uri,
-                body,
+                mut body,
+                publishing_platform,
                 from_cache,
             } => {
                 if self.reading_uri.as_deref() == Some(uri.as_str()) || self.reading_uri.is_none() {
-                    let mut body = body;
                     // Metadata-only post: the core fell back to the description blurb (the full
                     // article is on the web). Append a hint that `o` opens it.
                     if self.is_description_stub(&body) {
@@ -412,13 +426,20 @@ impl App {
                                 .into(),
                         )]));
                     }
-                    self.request_body_images(&body);
-                    self.links.clear();
-                    collect_links(&body.blocks, &mut self.links);
-                    self.focused_link = None;
-                    self.reading = Some(body);
-                    self.scroll = 0;
-                    self.reading_version = self.reading_version.wrapping_add(1); // invalidate reader cache
+                    let body_changed = self.reading.as_ref() != Some(&body);
+                    let platform_changed = self.reading_platform != publishing_platform;
+                    self.reading_platform = publishing_platform;
+                    if body_changed {
+                        self.request_body_images(&body);
+                        self.rebuild_links(&body, false);
+                        self.reading = Some(body);
+                        self.scroll = 0;
+                        self.reading_version = self.reading_version.wrapping_add(1);
+                    } else if platform_changed {
+                        // Keep body focus + scroll when a freshen learns provenance for an older
+                        // cache entry; only the persistent border chrome changes.
+                        self.rebuild_links(&body, true);
+                    }
                     self.note_read(&uri); // opening a post auto-marks it read (mirror the worker)
                     // A cached open is instant but possibly stale (author edit / decoder upgrade):
                     // schedule a background freshen, once per post per session, after the image
@@ -1225,6 +1246,7 @@ impl App {
             d.title.clone()
         };
         self.reading_uri = Some(d.uri.clone());
+        self.reading_platform = d.publishing_platform;
         self.reading_description = d.description.clone();
         self.reading_cover = d.cover_image.as_ref().map(|i| i.source.clone());
         let doc_uri = d.uri.clone();
@@ -1232,7 +1254,9 @@ impl App {
 
         self.reading = None;
         self.links.clear();
+        self.append_attribution_link();
         self.focused_link = None;
+        self.attribution_visible = false;
         self.link_rects.clear();
         self.scroll = 0;
         self.loading = true;
@@ -1242,6 +1266,28 @@ impl App {
             self.request_image(src);
         }
         self.send(ToWorker::OpenDoc(doc_uri));
+    }
+
+    /// Rebuild the reader's navigable links in visual reading order: body links first, then the
+    /// persistent bottom-border attribution. A metadata-only platform refresh may preserve focus
+    /// because the body and its link ordering did not change.
+    fn rebuild_links(&mut self, body: &RichDoc, preserve_focus: bool) {
+        let previous_focus = preserve_focus.then_some(self.focused_link).flatten();
+        self.links.clear();
+        collect_links(&body.blocks, &mut self.links);
+        self.append_attribution_link();
+        self.focused_link = previous_focus.filter(|i| *i < self.links.len());
+        self.attribution_visible = false;
+        self.link_rects.clear();
+        self.reader_cache = None;
+    }
+
+    fn append_attribution_link(&mut self) {
+        self.attribution_link = self.reading_platform.map(|platform| {
+            let idx = self.links.len();
+            self.links.push(platform.homepage().to_string());
+            idx
+        });
     }
 
     /// Request any not-yet-loaded images in `body` from the worker — including ones nested in
@@ -1346,24 +1392,40 @@ impl App {
 
     /// Cycle the focused link (`delta` +1/-1, wrapping) and ask the reader to scroll it into view.
     fn focus_link(&mut self, delta: i32) {
-        if self.links.is_empty() {
+        let n = self.navigable_link_count();
+        if n == 0 {
             self.status = "no links in this post".into();
             return;
         }
-        let n = self.links.len() as i32;
-        let next = match self.focused_link {
+        let n = n as i32;
+        let current = self.focused_link.filter(|i| *i < n as usize);
+        let next = match current {
             None if delta < 0 => (n - 1) as usize,
             None => 0,
             Some(i) => (i as i32 + delta).rem_euclid(n) as usize,
         };
         self.focused_link = Some(next);
-        self.scroll_to_focused = true;
+        self.scroll_to_focused = self.attribution_link != Some(next);
         self.focus = Focus::Reader;
         self.status = format!("link {}/{}: {}", next + 1, n, self.links[next]);
     }
 
+    fn navigable_link_count(&self) -> usize {
+        match (self.attribution_link, self.attribution_visible) {
+            (Some(idx), false) => idx,
+            _ => self.links.len(),
+        }
+    }
+
     /// Open the focused link (`Enter` while reading).
     fn open_focused_link(&mut self) {
+        if self
+            .attribution_link
+            .is_some_and(|idx| self.focused_link == Some(idx))
+            && !self.attribution_visible
+        {
+            return;
+        }
         match self.focused_link.and_then(|i| self.links.get(i)) {
             Some(href) => {
                 let href = href.clone();
@@ -1384,6 +1446,12 @@ impl App {
 
     /// The link under a click in the reader pane, if any (maps screen → virtual doc coordinates).
     fn link_at(&self, col: u16, row: u16) -> Option<String> {
+        if in_rect(self.rects.attribution, col, row) {
+            return self
+                .attribution_link
+                .and_then(|idx| self.links.get(idx))
+                .cloned();
+        }
         let r = self.rects.reader;
         let (inner_x, inner_y) = (r.x + 1, r.y + 1); // inside the 1-cell border
         if col < inner_x
@@ -1603,7 +1671,7 @@ pub fn web_url(base: &str, path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{collect_links, fuzzy, web_url};
-    use standard_core::model::{Block, Inline};
+    use standard_core::model::{Block, Inline, PublishingPlatform, RichDoc};
 
     #[test]
     fn collect_links_walks_in_document_order() {
@@ -1659,6 +1727,106 @@ mod tests {
         // outside the link's column span, and a different row: misses.
         assert_eq!(app.link_at(10, 3), None);
         assert_eq!(app.link_at(6, 4), None);
+    }
+
+    #[test]
+    fn attribution_is_the_last_keyboard_link_and_does_not_scroll() {
+        let mut app = test_app(Prefs::for_test());
+        let body = RichDoc {
+            blocks: vec![Block::Paragraph(vec![Inline::Link {
+                href: "https://article.test/link".into(),
+                content: vec![Inline::Text("body link".into())],
+            }])],
+        };
+        app.reading_platform = Some(PublishingPlatform::Leaflet);
+        app.rebuild_links(&body, false);
+        app.attribution_visible = true;
+
+        app.focus_link(1);
+        assert_eq!(app.focused_link, Some(0), "body link comes first");
+        assert!(app.scroll_to_focused);
+        app.focus_link(1);
+        assert_eq!(app.focused_link, app.attribution_link);
+        assert!(!app.scroll_to_focused, "persistent chrome never scrolls");
+        assert_eq!(app.links[1], PublishingPlatform::Leaflet.homepage());
+    }
+
+    #[test]
+    fn hidden_attribution_is_not_keyboard_navigable() {
+        let mut app = test_app(Prefs::for_test());
+        app.reading_platform = Some(PublishingPlatform::GreenGale);
+        app.rebuild_links(&RichDoc::default(), false);
+        app.attribution_visible = false;
+
+        app.focus_link(1);
+        assert_eq!(app.focused_link, None);
+        assert_eq!(app.status, "no links in this post");
+    }
+
+    #[test]
+    fn attribution_border_click_and_enter_open_the_platform_homepage() {
+        use crate::input::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        use ratatui::layout::Rect;
+        use std::sync::{Arc, Mutex};
+
+        let opened = Arc::new(Mutex::new(Vec::<String>::new()));
+        let capture = Arc::clone(&opened);
+        let mut app = test_app(Prefs::for_test());
+        app.set_open_url(Box::new(move |url| {
+            capture.lock().unwrap().push(url.to_string());
+        }));
+        app.reading_platform = Some(PublishingPlatform::Offprint);
+        app.rebuild_links(&RichDoc::default(), false);
+        app.attribution_visible = true;
+        app.rects.attribution = Rect::new(20, 9, 10, 1);
+
+        app.on_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 24,
+            row: 9,
+            modifiers: KeyModifiers::NONE,
+        });
+        app.focused_link = app.attribution_link;
+        app.open_focused_link();
+
+        assert_eq!(
+            opened.lock().unwrap().as_slice(),
+            [
+                PublishingPlatform::Offprint.homepage(),
+                PublishingPlatform::Offprint.homepage()
+            ]
+        );
+    }
+
+    #[test]
+    fn attribution_only_worker_update_preserves_body_and_scroll() {
+        use crate::worker::FromWorker;
+
+        let mut app = test_app(Prefs::for_test());
+        app.reading_uri = Some("at://d/1".into());
+        let body = RichDoc {
+            blocks: vec![Block::Paragraph(vec![Inline::Text("body".into())])],
+        };
+        app.apply(FromWorker::Doc {
+            uri: "at://d/1".into(),
+            body: body.clone(),
+            publishing_platform: None,
+            from_cache: false,
+        });
+        app.scroll = 12;
+        let version = app.reading_version;
+
+        app.apply(FromWorker::Doc {
+            uri: "at://d/1".into(),
+            body,
+            publishing_platform: Some(PublishingPlatform::Wordpress),
+            from_cache: false,
+        });
+
+        assert_eq!(app.scroll, 12);
+        assert_eq!(app.reading_version, version);
+        assert_eq!(app.attribution_link, Some(0));
+        assert_eq!(app.links, [PublishingPlatform::Wordpress.homepage()]);
     }
 
     #[test]
@@ -1720,6 +1888,7 @@ mod tests {
             publication: publication.into(),
             published_at: "2026-01-01".into(),
             updated_at: None,
+            publishing_platform: None,
             cover_image: None,
             text_content: None,
             tags: vec![],
@@ -2030,6 +2199,7 @@ mod tests {
         app.apply(FromWorker::Doc {
             uri: "at://d/2".into(),
             body: RichDoc::default(),
+            publishing_platform: None,
             from_cache: false,
         });
         assert!(app.read_uris.contains("at://d/2"));
@@ -2039,6 +2209,7 @@ mod tests {
         app.apply(FromWorker::Doc {
             uri: "at://d/2".into(),
             body: RichDoc::default(),
+            publishing_platform: None,
             from_cache: false,
         });
         assert_eq!(app.unread_counts.get("at://p/1").copied(), Some(1));
@@ -2057,6 +2228,7 @@ mod tests {
         let cached = |uri: &str| FromWorker::Doc {
             uri: uri.into(),
             body: RichDoc::default(),
+            publishing_platform: None,
             from_cache: true,
         };
 
@@ -2081,6 +2253,7 @@ mod tests {
         app.apply(FromWorker::Doc {
             uri: "at://d/10".into(),
             body: RichDoc::default(),
+            publishing_platform: None,
             from_cache: false,
         });
         assert!(

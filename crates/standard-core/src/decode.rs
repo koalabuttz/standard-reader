@@ -24,7 +24,7 @@
 use serde_json::Value;
 
 use crate::atp::AtUri;
-use crate::model::{Block, Inline, RichDoc};
+use crate::model::{Block, Inline, PublishingPlatform, RichDoc};
 
 pub mod facets;
 pub mod image;
@@ -69,6 +69,13 @@ pub trait ContentDecoder {
 
     /// Decode, or return `None` to defer.
     fn decode(&self, content: &Value, ctx: &DecodeCtx) -> Option<RichDoc>;
+
+    /// The authoring application identified by this content shape, if any. This is separate from
+    /// successful decoding so a partial record can still carry accurate provenance while its body
+    /// gracefully falls back to `textContent`.
+    fn publishing_platform(&self, _content: &Value) -> Option<PublishingPlatform> {
+        None
+    }
 }
 
 /// Ordered set of decoders plus the always-on `textContent` fallback.
@@ -109,6 +116,15 @@ impl Registry {
             }
         }
         Plaintext.from_text(text_content.unwrap_or_default())
+    }
+
+    /// Identify the publishing application from the decoder that claims `content`.
+    pub fn publishing_platform(&self, content: Option<&Value>) -> Option<PublishingPlatform> {
+        let value = content?;
+        self.decoders
+            .iter()
+            .find(|decoder| decoder.handles(value))
+            .and_then(|decoder| decoder.publishing_platform(value))
     }
 }
 
@@ -194,6 +210,30 @@ mod tests {
         let doc = Registry::with_defaults().decode(Some(&content), Some("a\n\nb"), &CTX);
         assert_eq!(doc.blocks.len(), 2);
         assert!(doc.blocks.iter().all(|b| matches!(b, Block::Paragraph(_))));
+    }
+
+    #[test]
+    fn registry_identifies_only_authoring_apps_not_generic_markdown_formats() {
+        use PublishingPlatform::{Leaflet, Offprint, Pckt, Unthread, Wordpress};
+
+        let registry = Registry::with_defaults();
+        for (ty, expected) in [
+            ("pub.leaflet.content", Leaflet),
+            ("blog.pckt.content", Pckt),
+            ("app.offprint.content", Offprint),
+            ("org.wordpress.html", Wordpress),
+            ("at.unthread.content", Unthread),
+        ] {
+            let content = serde_json::json!({ "$type": ty });
+            assert_eq!(registry.publishing_platform(Some(&content)), Some(expected));
+        }
+
+        let bare = Value::String("# could have come from several tools".into());
+        let markpub = serde_json::json!({ "$type": "at.markpub.markdown" });
+        let unknown = serde_json::json!({ "$type": "com.example.content" });
+        assert_eq!(registry.publishing_platform(Some(&bare)), None);
+        assert_eq!(registry.publishing_platform(Some(&markpub)), None);
+        assert_eq!(registry.publishing_platform(Some(&unknown)), None);
     }
 
     #[test]

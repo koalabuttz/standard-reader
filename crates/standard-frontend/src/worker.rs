@@ -14,7 +14,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use standard_core::atp::{AtUri, Transport};
 use standard_core::decode::Registry;
-use standard_core::model::{Document, ImageSource, Publication, RichDoc};
+use standard_core::model::{Document, ImageSource, Publication, PublishingPlatform, RichDoc};
 use standard_core::read;
 
 use crate::account::Account;
@@ -79,6 +79,7 @@ pub enum FromWorker {
     Doc {
         uri: String,
         body: RichDoc,
+        publishing_platform: Option<PublishingPlatform>,
         /// True when served from cache (instant) — the UI schedules a background freshen.
         /// False for a freshly fetched/re-decoded body (the freshen result), which is final.
         from_cache: bool,
@@ -519,37 +520,43 @@ impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
             self.send(FromWorker::Doc {
                 uri: doc_uri.to_string(),
                 body,
+                publishing_platform: stored.meta.publishing_platform,
                 from_cache: true,
             });
             return Ok(());
         }
-        let body = self.fetch_and_cache_doc(doc_uri)?;
+        let (body, publishing_platform) = self.fetch_and_cache_doc(doc_uri)?;
         self.store.set_read(doc_uri, true)?;
         self.send(FromWorker::Doc {
             uri: doc_uri.to_string(),
             body,
+            publishing_platform,
             from_cache: false,
         });
         Ok(())
     }
 
-    /// Background freshen of an already-open post: re-fetch + re-decode and push an updated body
-    /// only if it differs from what's cached (an author edit, or our decoder improving). Skipped
-    /// while the network looks down (see [`Ctx::network_ok`]) so offline navigation stays snappy —
-    /// the cached body the UI already showed stands.
+    /// Background freshen of an already-open post: re-fetch + re-decode and push an update only if
+    /// its body or publishing provenance differs from the cache (an author edit, decoder upgrade,
+    /// or attribution learned for an older entry). Skipped while the network looks down (see
+    /// [`Ctx::network_ok`]) so offline navigation stays snappy — the cached body stays visible.
     fn freshen_doc(&mut self, doc_uri: &str) -> Done {
         if !self.network_ok {
             return Ok(());
         }
-        let before = self.store.document(doc_uri)?.and_then(|s| s.body);
+        let before = self.store.document(doc_uri)?;
+        let before_body = before.as_ref().and_then(|s| s.body.as_ref());
+        let before_platform = before.as_ref().and_then(|s| s.meta.publishing_platform);
         match self.fetch_and_cache_doc(doc_uri) {
-            Ok(body) => {
+            Ok((body, publishing_platform)) => {
                 self.network_ok = true;
-                // Only disturb the reader if the re-decoded body actually changed.
-                if Some(&body) != before.as_ref() {
+                // A newly-known publishing platform updates only the reader chrome; the app keeps
+                // the body and scroll position when `body` itself is unchanged.
+                if Some(&body) != before_body || publishing_platform != before_platform {
                     self.send(FromWorker::Doc {
                         uri: doc_uri.to_string(),
                         body,
+                        publishing_platform,
                         from_cache: false,
                     });
                 }
@@ -566,12 +573,16 @@ impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
 
     /// Fetch a document, decode its body, and cache it (preserving read-state). Shared by the
     /// open and freshen paths.
-    fn fetch_and_cache_doc(&mut self, doc_uri: &str) -> Result<RichDoc, Box<dyn Error>> {
+    fn fetch_and_cache_doc(
+        &mut self,
+        doc_uri: &str,
+    ) -> Result<(RichDoc, Option<PublishingPlatform>), Box<dyn Error>> {
         let uri = AtUri::parse(doc_uri).ok_or("malformed document AT-URI")?;
         let pds = read::resolve_pds(&self.transport, &uri.did)?;
         let (meta, body) = read::get_document(&self.transport, &self.registry, &uri, &pds)?;
+        let publishing_platform = meta.publishing_platform;
         self.store.upsert_document(&meta, Some(&body))?;
-        Ok(body)
+        Ok((body, publishing_platform))
     }
 
     fn search(&self, query: &str) -> Done {

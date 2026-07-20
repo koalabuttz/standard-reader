@@ -142,6 +142,7 @@ fn parse_document(value: &Value, uri: &str) -> Option<Document> {
             .get("updatedAt")
             .and_then(Value::as_str)
             .map(str::to_string),
+        publishing_platform: None,
         cover_image: value.get("coverImage").and_then(|b| blob_image(b, did, "")),
         text_content: value
             .get("textContent")
@@ -471,7 +472,7 @@ pub fn get_document<T: Transport>(
 ) -> Result<(Document, RichDoc), ReadError> {
     let url = xrpc::get_record(pds, &doc_uri.did, &doc_uri.collection, &doc_uri.rkey);
     let record = parse_get(&get(t, &url)?)?;
-    let meta = parse_document(&record.value, &doc_uri.to_string())
+    let mut meta = parse_document(&record.value, &doc_uri.to_string())
         .ok_or_else(|| ReadError::Parse(format!("not a document: {doc_uri}")))?;
 
     let ctx = DecodeCtx {
@@ -496,10 +497,14 @@ pub fn get_document<T: Transport>(
         None => None,
     };
     let content = spliced.as_ref().or(raw_content);
+    meta.publishing_platform = registry.publishing_platform(content);
 
     let body = match content.and_then(content_ref) {
         // Two-phase: the content points at another record; fetch and decode that.
         Some(ref_uri) => {
+            if ref_uri.collection == "app.greengale.document" {
+                meta.publishing_platform = Some(crate::model::PublishingPlatform::GreenGale);
+            }
             let ref_pds = if ref_uri.did == doc_uri.did {
                 pds.to_string()
             } else {

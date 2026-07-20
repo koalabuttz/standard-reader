@@ -537,6 +537,7 @@ mod tests {
             publication: pub_uri.into(),
             published_at: published.into(),
             updated_at: None,
+            publishing_platform: None,
             cover_image: None,
             text_content: Some(text.into()),
             tags: vec![],

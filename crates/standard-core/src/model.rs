@@ -115,6 +115,45 @@ pub enum ImageSource {
     Blob { did: String, cid: String },
 }
 
+/// The publishing application that authored a document's structured content.
+///
+/// This is intentionally derived from the content lexicon rather than a publication URL: custom
+/// domains do not reliably identify the authoring tool. Homepage URLs remain methods on the enum
+/// so changing one updates already-cached documents without a data migration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PublishingPlatform {
+    Leaflet,
+    Pckt,
+    Offprint,
+    GreenGale,
+    Wordpress,
+    Unthread,
+}
+
+impl PublishingPlatform {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Leaflet => "Leaflet",
+            Self::Pckt => "pckt",
+            Self::Offprint => "Offprint",
+            Self::GreenGale => "GreenGale",
+            Self::Wordpress => "WordPress",
+            Self::Unthread => "Unthread",
+        }
+    }
+
+    pub fn homepage(self) -> &'static str {
+        match self {
+            Self::Leaflet => "https://leaflet.pub/",
+            Self::Pckt => "https://pckt.blog/",
+            Self::Offprint => "https://offprint.app/",
+            Self::GreenGale => "https://greengale.app/",
+            Self::Wordpress => "https://wordpress.org/",
+            Self::Unthread => "https://unthread.at/",
+        }
+    }
+}
+
 /// Metadata for a `site.standard.document`, independent of its decoded body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Document {
@@ -126,6 +165,10 @@ pub struct Document {
     pub publication: String,
     pub published_at: String,
     pub updated_at: Option<String>,
+    /// Publishing application inferred from the document's content lexicon. Absent when the
+    /// content shape identifies only a format (for example bare Markdown) or is unknown.
+    #[serde(default)]
+    pub publishing_platform: Option<PublishingPlatform>,
     pub cover_image: Option<Image>,
     /// Flat plaintext fallback / search source (spec: contains no formatting).
     pub text_content: Option<String>,
@@ -154,4 +197,27 @@ pub struct Subscription {
     pub uri: String,
     /// AT-URI of the subscribed publication.
     pub publication: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Document;
+
+    #[test]
+    fn older_cached_document_without_platform_still_deserializes() {
+        let json = r#"{
+            "uri":"at://did:plc:x/site.standard.document/1",
+            "title":"Old cache entry",
+            "description":null,
+            "publication":"at://did:plc:x/site.standard.publication/1",
+            "published_at":"2026-01-01T00:00:00Z",
+            "updated_at":null,
+            "cover_image":null,
+            "text_content":null,
+            "tags":[]
+        }"#;
+        let doc: Document = serde_json::from_str(json).expect("old cache shape remains readable");
+        assert_eq!(doc.publishing_platform, None);
+        assert_eq!(doc.path, None);
+    }
 }

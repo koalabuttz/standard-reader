@@ -8,7 +8,7 @@ use serde_json::Value;
 use super::facets::{parse_css_rgb, text_block_inlines};
 use super::image::blob_image;
 use super::{ContentDecoder, DecodeCtx};
-use crate::model::{Align, Block, Image, Inline, RichDoc};
+use crate::model::{Align, Block, Image, Inline, PublishingPlatform, RichDoc};
 
 pub struct Offprint;
 
@@ -112,6 +112,10 @@ impl ContentDecoder for Offprint {
             }
         }
         Some(RichDoc { blocks })
+    }
+
+    fn publishing_platform(&self, _content: &Value) -> Option<PublishingPlatform> {
+        Some(PublishingPlatform::Offprint)
     }
 }
 

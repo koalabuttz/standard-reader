@@ -10,7 +10,7 @@ use tl::{Node, NodeHandle, Parser};
 
 use super::image::url_image;
 use super::{ContentDecoder, DecodeCtx};
-use crate::model::{Block, Image, Inline, RichDoc};
+use crate::model::{Block, Image, Inline, PublishingPlatform, RichDoc};
 
 pub struct Wordpress;
 
@@ -26,6 +26,10 @@ impl ContentDecoder for Wordpress {
         let mut blocks = Vec::new();
         children_to_blocks(dom.children(), parser, &mut blocks);
         Some(RichDoc { blocks })
+    }
+
+    fn publishing_platform(&self, _content: &Value) -> Option<PublishingPlatform> {
+        Some(PublishingPlatform::Wordpress)
     }
 }
 

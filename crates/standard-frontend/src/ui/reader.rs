@@ -14,8 +14,9 @@ use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Widget, Wrap};
+use unicode_width::UnicodeWidthStr;
 
-use standard_core::model::{Block as DocBlock, Image, Inline};
+use standard_core::model::{Block as DocBlock, Image, Inline, PublishingPlatform};
 
 use crate::app::LinkRect;
 
@@ -116,6 +117,51 @@ struct ReaderKey {
     focused_link: Option<usize>,
 }
 
+struct AttributionTitle {
+    line: Line<'static>,
+    width: u16,
+    link_offset: u16,
+    link_width: u16,
+}
+
+/// Build the full or compact attribution for the available bottom-border width. The linked span
+/// is kept separate so mouse hit-testing covers only `Platform ↗`, not the explanatory phrase.
+fn attribution_title(
+    platform: PublishingPlatform,
+    theme: &Theme,
+    area_width: u16,
+    focused: bool,
+) -> Option<AttributionTitle> {
+    let available = area_width.saturating_sub(2); // rounded left/right corners
+    let link = format!("{} ↗", platform.label());
+    let link_width = UnicodeWidthStr::width(link.as_str()) as u16;
+    let choice = [" Published with ", " via "]
+        .into_iter()
+        .find_map(|prefix| {
+            let width = UnicodeWidthStr::width(prefix) as u16 + link_width + 1; // trailing pad
+            (width <= available).then_some((prefix, width))
+        })?;
+    let (prefix, width) = choice;
+    let link_style = if focused {
+        theme
+            .accent_style()
+            .add_modifier(Modifier::REVERSED | Modifier::BOLD)
+    } else {
+        theme.accent_style().add_modifier(Modifier::UNDERLINED)
+    };
+    Some(AttributionTitle {
+        line: Line::from(vec![
+            Span::styled(prefix.to_string(), theme.dim_style()),
+            Span::styled(link, link_style),
+            Span::raw(" "),
+        ])
+        .right_aligned(),
+        width,
+        link_offset: UnicodeWidthStr::width(prefix) as u16,
+        link_width,
+    })
+}
+
 /// Draw the reader pane (bordered panel + scrolled block-flow body).
 pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, sink: &mut dyn ImageSink, area: Rect) {
     let focused = app.focus == Focus::Reader;
@@ -125,11 +171,45 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, sink: &mut dyn ImageSin
         app.reading_title.clone()
     };
     let border = if focused { theme.accent } else { theme.border };
-    let block = Block::bordered()
+    let attribution_focused = app
+        .attribution_link
+        .is_some_and(|idx| app.focused_link == Some(idx));
+    let attribution = (area.height > 0)
+        .then(|| app.reading_platform)
+        .flatten()
+        .and_then(|platform| attribution_title(platform, theme, area.width, attribution_focused));
+    app.attribution_visible = attribution.is_some();
+    if attribution.is_none()
+        && app
+            .attribution_link
+            .is_some_and(|idx| app.focused_link == Some(idx))
+    {
+        app.focused_link = None;
+        app.scroll_to_focused = false;
+        app.reader_cache = None;
+    }
+    app.rects.attribution = attribution
+        .as_ref()
+        .filter(|_| app.attribution_link.is_some())
+        .map(|title| {
+            let title_x = area.right().saturating_sub(1).saturating_sub(title.width);
+            Rect::new(
+                title_x.saturating_add(title.link_offset),
+                area.bottom().saturating_sub(1),
+                title.link_width,
+                1,
+            )
+        })
+        .unwrap_or_default();
+
+    let mut block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border))
         .title(Span::styled(format!(" {title} "), theme.heading()))
         .style(theme.base());
+    if let Some(title) = attribution {
+        block = block.title_bottom(title.line);
+    }
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -993,8 +1073,34 @@ mod tests {
     use super::*;
     use crate::image_sink::NoopImageSink;
     use crate::worker::ToWorker;
-    use standard_core::model::{Block as DocBlock, Image, ImageSource, Inline, RichDoc};
+    use standard_core::model::{
+        Block as DocBlock, Image, ImageSource, Inline, PublishingPlatform, RichDoc,
+    };
     use std::sync::mpsc::channel;
+
+    #[test]
+    fn attribution_uses_full_compact_and_hidden_forms_by_width() {
+        let theme = Theme::modern_dark();
+        let full = attribution_title(PublishingPlatform::Leaflet, &theme, 40, false).unwrap();
+        assert_eq!(full.line.spans[0].content.as_ref(), " Published with ");
+        assert_eq!(full.line.spans[1].content.as_ref(), "Leaflet ↗");
+
+        let compact = attribution_title(PublishingPlatform::Leaflet, &theme, 20, false).unwrap();
+        assert_eq!(compact.line.spans[0].content.as_ref(), " via ");
+        assert_eq!(compact.line.spans[1].content.as_ref(), "Leaflet ↗");
+
+        assert!(attribution_title(PublishingPlatform::Leaflet, &theme, 14, false).is_none());
+    }
+
+    #[test]
+    fn focused_attribution_has_a_non_color_only_style() {
+        let theme = Theme::modern_dark();
+        let title = attribution_title(PublishingPlatform::Pckt, &theme, 40, true).unwrap();
+        let modifiers = title.line.spans[1].style.add_modifier;
+        assert!(modifiers.contains(Modifier::REVERSED));
+        assert!(modifiers.contains(Modifier::BOLD));
+        assert!(!modifiers.contains(Modifier::UNDERLINED));
+    }
 
     #[test]
     fn grid_columns_balance_rows() {

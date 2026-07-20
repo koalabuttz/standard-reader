@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use super::markdown::from_markdown;
 use super::{ContentDecoder, DecodeCtx};
-use crate::model::RichDoc;
+use crate::model::{PublishingPlatform, RichDoc};
 
 pub struct Unthread;
 
@@ -22,6 +22,10 @@ impl ContentDecoder for Unthread {
         // body defers (→ next decoder → typeset `textContent`) rather than yielding an empty doc.
         let md = content.get("content").and_then(Value::as_str)?;
         Some(from_markdown(md))
+    }
+
+    fn publishing_platform(&self, _content: &Value) -> Option<PublishingPlatform> {
+        Some(PublishingPlatform::Unthread)
     }
 }
 

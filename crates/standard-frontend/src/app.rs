@@ -645,16 +645,30 @@ impl App {
     pub fn on_mouse(&mut self, ev: MouseEvent) {
         match ev.kind {
             MouseEventKind::ScrollDown => {
+                if !matches!(self.mode, Mode::Browse | Mode::DocList) {
+                    return;
+                }
                 if hit(self.rects.reader, ev.column, ev.row).is_some() {
                     self.scroll = self.scroll.saturating_add(3);
-                } else {
+                } else if hit(self.rects.posts, ev.column, ev.row).is_some() {
+                    self.focus = Focus::Posts;
+                    self.move_down();
+                } else if hit(self.rects.sidebar, ev.column, ev.row).is_some() {
+                    self.focus = Focus::Sidebar;
                     self.move_down();
                 }
             }
             MouseEventKind::ScrollUp => {
+                if !matches!(self.mode, Mode::Browse | Mode::DocList) {
+                    return;
+                }
                 if hit(self.rects.reader, ev.column, ev.row).is_some() {
                     self.scroll = self.scroll.saturating_sub(3);
-                } else {
+                } else if hit(self.rects.posts, ev.column, ev.row).is_some() {
+                    self.focus = Focus::Posts;
+                    self.move_up();
+                } else if hit(self.rects.sidebar, ev.column, ev.row).is_some() {
+                    self.focus = Focus::Sidebar;
                     self.move_up();
                 }
             }
@@ -2038,6 +2052,12 @@ mod tests {
             width: 20,
             height: 10,
         };
+        app.rects.reader = Rect {
+            x: 40,
+            y: 0,
+            width: 40,
+            height: 10,
+        };
         let click = |x, y| MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: x,
@@ -2060,6 +2080,26 @@ mod tests {
         app.on_mouse(click(22, 2));
         assert_eq!(app.doc_sel, 0);
         assert_eq!(app.mode, Mode::ThemePicker);
+
+        let wheel = |kind, x, y| MouseEvent {
+            kind,
+            column: x,
+            row: y,
+            modifiers: crate::input::KeyModifiers::NONE,
+        };
+        app.mode = Mode::Browse;
+        app.focus = Focus::Sidebar;
+        app.on_mouse(wheel(MouseEventKind::ScrollDown, 22, 2));
+        assert_eq!(app.focus, Focus::Posts, "wheel targets the hovered pane");
+        assert_eq!(app.doc_sel, 1);
+
+        app.scroll = 6;
+        app.on_mouse(wheel(MouseEventKind::ScrollUp, 42, 2));
+        assert_eq!(app.scroll, 3, "reader wheel moves three document rows");
+
+        app.mode = Mode::ThemePicker;
+        app.on_mouse(wheel(MouseEventKind::ScrollDown, 42, 2));
+        assert_eq!(app.scroll, 3, "modal consumes wheel events");
     }
 
     #[test]

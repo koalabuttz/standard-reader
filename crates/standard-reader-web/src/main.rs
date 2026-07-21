@@ -122,6 +122,7 @@ async fn run(
             }
         }
     });
+    install_wheel_handler(app.clone());
 
     // Persist write-side state (main thread): one coalescing queue and at most one OPFS write at a
     // time. CIDs loaded at startup are already durable and do not need rewriting.
@@ -232,6 +233,112 @@ fn install_key_guard() {
     handler.forget(); // keep the listener alive for the page's lifetime
 }
 
+/// Bridge native wheel/trackpad gestures into the frontend's cell-based scroll events. The
+/// document listener is explicitly non-passive so the browser page stays still while the pointer
+/// is over the terminal; Ctrl+wheel remains untouched for browser zoom.
+fn install_wheel_handler(app: Rc<RefCell<App>>) {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::closure::Closure;
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let mut accumulator = WheelAccumulator::default();
+    let handler = Closure::<dyn FnMut(web_sys::WheelEvent)>::new(move |ev: web_sys::WheelEvent| {
+        if ev.ctrl_key() {
+            return;
+        }
+        let Some(geometry) = live_grid_geometry() else {
+            return;
+        };
+        let Some((column, row)) = geometry.cell_at(ev.client_x() as f64, ev.client_y() as f64)
+        else {
+            return;
+        };
+        let delta_rows = wheel_delta_rows(
+            ev.delta_y(),
+            ev.delta_mode(),
+            geometry.cell_height,
+            geometry.rows,
+        );
+        if delta_rows == 0.0 {
+            return;
+        }
+
+        // Consume even a sub-threshold trackpad event: its delta is retained and will become an
+        // app scroll step shortly, while letting the page move now would split one gesture across
+        // two scroll surfaces.
+        ev.prevent_default();
+        let steps = accumulator.push(delta_rows);
+        let kind = if steps > 0 {
+            input::MouseEventKind::ScrollDown
+        } else {
+            input::MouseEventKind::ScrollUp
+        };
+        let event = input::MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: wheel_modifiers(&ev),
+        };
+        let mut app = app.borrow_mut();
+        for _ in 0..steps.unsigned_abs() {
+            app.on_mouse(event);
+        }
+    });
+    let options = web_sys::AddEventListenerOptions::new();
+    options.set_passive(false);
+    let _ = document.add_event_listener_with_callback_and_add_event_listener_options(
+        "wheel",
+        handler.as_ref().unchecked_ref(),
+        &options,
+    );
+    handler.forget();
+}
+
+fn wheel_modifiers(ev: &web_sys::WheelEvent) -> input::KeyModifiers {
+    let mut modifiers = input::KeyModifiers::NONE;
+    if ev.ctrl_key() {
+        modifiers = modifiers | input::KeyModifiers::CONTROL;
+    }
+    if ev.shift_key() {
+        modifiers = modifiers | input::KeyModifiers::SHIFT;
+    }
+    if ev.alt_key() {
+        modifiers = modifiers | input::KeyModifiers::ALT;
+    }
+    modifiers
+}
+
+const ROWS_PER_SCROLL_STEP: f64 = 3.0;
+const MAX_SCROLL_STEPS: i8 = 8;
+
+#[derive(Default)]
+struct WheelAccumulator {
+    pending_rows: f64,
+}
+
+impl WheelAccumulator {
+    fn push(&mut self, delta_rows: f64) -> i8 {
+        if !delta_rows.is_finite() {
+            return 0;
+        }
+        let limit = ROWS_PER_SCROLL_STEP * f64::from(MAX_SCROLL_STEPS);
+        self.pending_rows = (self.pending_rows + delta_rows).clamp(-limit, limit);
+        let steps = (self.pending_rows / ROWS_PER_SCROLL_STEP).trunc() as i8;
+        self.pending_rows -= f64::from(steps) * ROWS_PER_SCROLL_STEP;
+        steps
+    }
+}
+
+fn wheel_delta_rows(delta_y: f64, mode: u32, cell_height: f64, page_rows: u32) -> f64 {
+    match mode {
+        web_sys::WheelEvent::DOM_DELTA_LINE => delta_y,
+        web_sys::WheelEvent::DOM_DELTA_PAGE => delta_y * f64::from(page_rows),
+        _ if cell_height > 0.0 => delta_y / cell_height,
+        _ => 0.0,
+    }
+}
+
 /// Map a ratzilla key event to the frontend's neutral [`input::KeyEvent`]. `None` for keys the
 /// reader doesn't handle.
 fn adapt_key(ev: ratzilla::event::KeyEvent) -> Option<input::KeyEvent> {
@@ -290,23 +397,50 @@ fn adapt_mouse(ev: ratzilla::event::MouseEvent) -> Option<input::MouseEvent> {
     })
 }
 
-fn dom_cell_at(client_x: f64, client_y: f64) -> Option<(u16, u16)> {
+#[derive(Clone, Copy)]
+struct GridGeometry {
+    origin_x: f64,
+    origin_y: f64,
+    cell_width: f64,
+    cell_height: f64,
+    columns: u32,
+    rows: u32,
+}
+
+impl GridGeometry {
+    fn cell_at(self, client_x: f64, client_y: f64) -> Option<(u16, u16)> {
+        cell_from_geometry(
+            client_x,
+            client_y,
+            self.origin_x,
+            self.origin_y,
+            self.cell_width,
+            self.cell_height,
+            self.columns,
+            self.rows,
+        )
+    }
+}
+
+fn live_grid_geometry() -> Option<GridGeometry> {
     let document = web_sys::window()?.document()?;
     let grid = document.get_element_by_id("grid")?;
     let first_row = grid.first_element_child()?;
     let first_cell = first_row.first_element_child()?;
     let cell_rect = first_cell.get_bounding_client_rect();
     let row_rect = first_row.get_bounding_client_rect();
-    cell_from_geometry(
-        client_x,
-        client_y,
-        cell_rect.left(),
-        cell_rect.top(),
-        cell_rect.width(),
-        row_rect.height(),
-        first_row.child_element_count(),
-        grid.child_element_count(),
-    )
+    Some(GridGeometry {
+        origin_x: cell_rect.left(),
+        origin_y: cell_rect.top(),
+        cell_width: cell_rect.width(),
+        cell_height: row_rect.height(),
+        columns: first_row.child_element_count(),
+        rows: grid.child_element_count(),
+    })
+}
+
+fn dom_cell_at(client_x: f64, client_y: f64) -> Option<(u16, u16)> {
+    live_grid_geometry()?.cell_at(client_x, client_y)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -339,7 +473,7 @@ fn cell_from_geometry(
 
 #[cfg(test)]
 mod tests {
-    use super::cell_from_geometry;
+    use super::{WheelAccumulator, cell_from_geometry, wheel_delta_rows};
 
     #[test]
     fn browser_pixels_map_to_terminal_cells_and_reject_outside_clicks() {
@@ -349,5 +483,19 @@ mod tests {
         assert_eq!(geom(9.9, 20.0), None);
         assert_eq!(geom(650.0, 20.0), None);
         assert_eq!(geom(10.0, 380.0), None);
+    }
+
+    #[test]
+    fn wheel_deltas_normalize_and_small_trackpad_movements_accumulate() {
+        assert_eq!(wheel_delta_rows(45.0, 0, 15.0, 24), 3.0);
+        assert_eq!(wheel_delta_rows(-3.0, 1, 15.0, 24), -3.0);
+        assert_eq!(wheel_delta_rows(1.0, 2, 15.0, 24), 24.0);
+
+        let mut wheel = WheelAccumulator::default();
+        assert_eq!(wheel.push(0.75), 0);
+        assert_eq!(wheel.push(1.25), 0);
+        assert_eq!(wheel.push(1.0), 1);
+        assert_eq!(wheel.push(-6.0), -2);
+        assert_eq!(wheel.push(1_000.0), 8, "large gestures are capped");
     }
 }

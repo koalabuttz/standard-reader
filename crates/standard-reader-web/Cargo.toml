@@ -32,7 +32,10 @@ serde_json = { workspace = true }
 web-sys = { version = "0.3", features = [
     "Window",
     "EventTarget",
+    "AddEventListenerOptions",
     "KeyboardEvent",
+    "MouseEvent",
+    "WheelEvent",
     "XmlHttpRequest",
     "XmlHttpRequestResponseType",
     "console",

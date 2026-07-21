@@ -46,6 +46,15 @@ pub enum Focus {
     Reader,
 }
 
+/// Shape used for panel corners. Shells can select the form their renderer/font handles best
+/// without making the user's persisted appearance platform-specific.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum PanelBorderStyle {
+    #[default]
+    Rounded,
+    Square,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
     Browse,
@@ -190,6 +199,9 @@ pub struct App {
     pub loading: bool,
     pub should_quit: bool,
     pub rects: Rects,
+    /// Host-selected panel-corner style. Rounded remains the portable default; browser DOM font
+    /// rendering can opt into square corners when rounded box-drawing glyphs rasterize poorly.
+    pub panel_border_style: PanelBorderStyle,
     /// Decoded images, keyed by [`image_key`]. The per-size encode/overlay state lives in the
     /// frontend's [`crate::image_sink::ImageSink`], not here.
     pub images: HashMap<String, StoredImage>,
@@ -284,6 +296,7 @@ impl App {
             loading: true,
             should_quit: false,
             rects: Rects::default(),
+            panel_border_style: PanelBorderStyle::Rounded,
             images: HashMap::new(),
             show_images: true,
             account: None,
@@ -325,6 +338,11 @@ impl App {
     /// then it's a no-op, so headless tests never shell out.
     pub fn set_open_url(&mut self, open_url: Box<dyn Fn(&str)>) {
         self.open_url = open_url;
+    }
+
+    /// Select the panel-corner shape for this shell's renderer.
+    pub fn set_panel_border_style(&mut self, style: PanelBorderStyle) {
+        self.panel_border_style = style;
     }
 
     /// Resolve the effective theme + layout into [`Self::theme`]/[`Self::layout`]. Cheap; called
@@ -372,7 +390,7 @@ impl App {
             .unwrap_or(self.prefs.layout)
     }
 
-    /// Persist the current preferences (sent to the worker, which writes `prefs.toml`).
+    /// Persist the current preferences through the worker's host-provided sink.
     fn persist_prefs(&self) {
         self.send(ToWorker::SavePrefs(self.prefs.clone()));
     }

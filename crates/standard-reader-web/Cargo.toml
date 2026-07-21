@@ -20,7 +20,15 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # Browser glue: window.open (URL-opener); a keydown guard (preventDefault the reader's keys); the
 # synchronous-XHR transport; console logging; a readable panic message in the console.
 wasm-bindgen = "0.2"
+# Bridges OPFS's async Promises (getDirectory / read / write) into Rust `Future`s; `spawn_local`
+# drives the persistence writes + the startup cache-load on the main thread (the worker thread
+# blocks on `recv()` and can never await).
+wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
+# The OPFS cache (persist.rs / store.rs). `serde_json` is the same wire codec the desktop redb store
+# uses, so the on-disk `index.json` / body / blob format is just the `model` types serialized.
+serde = { workspace = true }
+serde_json = { workspace = true }
 web-sys = { version = "0.3", features = [
     "Window",
     "EventTarget",
@@ -38,5 +46,15 @@ web-sys = { version = "0.3", features = [
     "DomRect",
     "Blob",
     "Url",
+    # OPFS persistence (persist.rs): navigator.storage.getDirectory() → dir/file handles → writes.
+    "Navigator",
+    "StorageManager",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemGetDirectoryOptions",
+    "FileSystemGetFileOptions",
+    "FileSystemWritableFileStream",
+    "WritableStream",
+    "File",
 ] }
 console_error_panic_hook = "0.1"

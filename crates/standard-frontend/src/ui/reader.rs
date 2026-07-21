@@ -13,7 +13,7 @@ use ratatui::buffer::{Buffer, Cell};
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, BorderType, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Block, Paragraph, Widget, Wrap};
 use unicode_width::UnicodeWidthStr;
 
 use standard_core::model::{Block as DocBlock, Image, Inline, PublishingPlatform};
@@ -203,7 +203,7 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, sink: &mut dyn ImageSin
         .unwrap_or_default();
 
     let mut block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(super::panel_border_type(app.panel_border_style))
         .border_style(Style::default().fg(border))
         .title(Span::styled(format!(" {title} "), theme.heading()))
         .style(theme.base());

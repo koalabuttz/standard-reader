@@ -1,9 +1,8 @@
-//! User preferences: layout, colour theme, and per-blog overrides — persisted as a
-//! human-editable `prefs.toml` in the config dir.
+//! User preferences: layout, colour theme, and per-blog overrides. The host shell chooses the
+//! durable representation: desktop uses human-editable `prefs.toml`; web stores JSON in OPFS.
 //!
-//! This is durable *config*, not re-fetchable cache, so it lives beside the OAuth session files
-//! (under `$XDG_CONFIG_HOME/standard-reader/`), not in the `redb` cache. The UI thread owns the
-//! canonical [`Prefs`] (loaded at startup, mutated on user action); writes go through the worker
+//! This is durable *config*, not re-fetchable cache. The UI thread owns the canonical [`Prefs`]
+//! (loaded at startup, mutated on user action); writes go through the worker
 //! (`ToWorker::SavePrefs`) so `App` stays I/O-free.
 //!
 //! Loading is tolerant: a missing or malformed file → [`Prefs::default`]; missing fields fall

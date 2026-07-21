@@ -2,9 +2,14 @@
 
 A TUI reader for [standard.site](https://standard.site) (long-form on the AT Protocol). The engine (`standard-core`) plus a platform-agnostic frontend (`standard-frontend`: App + UI + worker + seam traits) are portable by design, so the app can grow new shells — a desktop `ratatui` TUI now, a **browser/WASM** and a **PS Vita** frontend later — without a rewrite. See `CLAUDE.md` for architecture.
 
-## Status — 2026-05-30: `sr` 1.1.1 (engine `standard-core` 0.3.0)
+## Status — 2026-07-20: `sr` 1.1.1 (engine `standard-core` 0.3.0)
 
-Workspace builds; the suite is green (147 tests across the three crates: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, full Offprint/Leaflet block+facet coverage + alignment, the redb cache round-trip, and the TUI's renderer/state/`TestBackend` tests, the OAuth loopback parser, the subscription sync-diff, unread/load-older plumbing, and the customization layer — theme/layout resolution, focus cycling, the prefs `toml` round-trip). `sr` launches a **`ratatui` reader** — add a blog by handle (a local follow-list persisted in redb), browse the sidebar → document list → reader, search, command palette, mouse. The reader is a **block-flow** that renders real inline + cover images (`ratatui-image`, iTerm2 graphics where supported), all over a worker thread with an offline cache. Reading needs no auth; **`L` signs in via OAuth** to mirror the follow-list to atproto subscriptions. **Fully customizable**: cycle layouts (`\`), resize panes independently (`< >`), pick/edit a colour theme (`t`), and override either per blog (`b`) — set on first launch and persisted to `prefs.toml`. Feeds load **lazily** — adding a handle that publishes several blogs shows a **pick-which-to-follow** checklist, and opening a feed pulls a bounded recent window (older posts on demand via `↓`) rather than backfilling everything up front.
+Workspace builds; the suite is green (165 tests across the workspace: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, full Offprint/Leaflet block+facet coverage + alignment, the redb and OPFS-cache round trips, and the frontend/TUI renderer-state tests, OAuth loopback parser, subscription sync-diff, unread/load-older plumbing, and customization persistence). `sr` launches a **`ratatui` reader** — add a blog by handle (a local follow-list persisted in redb), browse the sidebar → document list → reader, search, command palette, mouse. The reader is a **block-flow** that renders real inline + cover images (`ratatui-image`, iTerm2 graphics where supported), all over a worker thread with an offline cache. Reading needs no auth; **`L` signs in via OAuth** to mirror the follow-list to atproto subscriptions. **Fully customizable**: cycle layouts (`\`), resize panes independently (`< >`), pick/edit a colour theme (`t`), and override either per blog (`b`) — set on first launch and persisted to `prefs.toml`. Feeds load **lazily** — adding a handle that publishes several blogs shows a **pick-which-to-follow** checklist, and opening a feed pulls a bounded recent window (older posts on demand via `↓`) rather than backfilling everything up front.
+
+The **browser/WASM shell is complete through M2**: the shared frontend renders through ratzilla,
+fetches directly from PDSes on a Web Worker, paints native browser image overlays, and persists the
+complete offline reading cache plus appearance preferences in OPFS. Browser OAuth is the remaining
+M3 slice; public reading and local follows already work without it.
 
 **Done (real & tested):**
 - [x] Cargo workspace + the portable split: `standard-core` (engine) → `standard-frontend` (App/UI/worker) → `standard-tui` (desktop shell)
@@ -55,7 +60,11 @@ Sequenced so each step is runnable on top of the last:
 - [ ] **Embeds beyond Pckt iframes.** Pckt `iframe` blocks now decode to a clickable link (YouTube → `watch?v=` page); extend the same link treatment to **Leaflet's website/bsky embed blocks** and any Offprint embeds, so no embed is silently dropped.
 - [ ] **Richer embed labels.** A Bluesky embed (`bsky.app` / AT-URI) currently links by raw URL; resolve a friendlier label (author + snippet) instead. Same idea for other recognizable embed hosts.
 - [ ] `tantivy` search swap (only if ranked/fuzzy search is wanted).
-- [ ] **Browser / WASM frontend** — a `standard-reader-web` shell over `standard-frontend` (ratatui-in-browser via ratzilla): a sync-`XMLHttpRequest` `Transport`, an OPFS `Store`, a browser-OAuth `AuthProvider`, and a native `<img>`/canvas `ImageSink`. *(M0 — the `standard-frontend` extraction — is done.)*
+- [ ] **Browser / WASM frontend** — a `standard-reader-web` shell over `standard-frontend`:
+  - [x] **M0:** extract the platform-agnostic frontend and seam traits.
+  - [x] **M1:** ratzilla UI, Web Worker + synchronous-XHR transport, and native `<img>` overlays.
+  - [x] **M2:** OPFS-backed offline cache (including images/read state/cursors) plus persisted appearance preferences.
+  - [ ] **M3:** browser OAuth `AuthProvider` and atproto subscription writes.
 - [ ] **PS Vita frontend** — new `Transport` + `Store` impls + framebuffer renderer, reusing `standard-core` + `standard-frontend`.
 
 ## 1.0 — released
@@ -89,7 +98,7 @@ metadata-only-post `description` fallback, and the MSRV correction to 1.88. See 
   label for a Bluesky post / known host (author + snippet) instead of the raw URL. Plus recommends
   (`site.standard.graph.recommend`) and the Bluesky comment thread.
 - [ ] `tantivy` search swap (only if ranked/fuzzy is wanted).
-- [ ] **Browser / WASM frontend** — a second shell over `standard-frontend` (ratzilla/WASM): sync-XHR `Transport`, OPFS `Store`, browser-OAuth `AuthProvider`, native-image `ImageSink`. Groundwork (the `standard-frontend` carve) has landed.
+- [ ] **Browser / WASM frontend M3** — add browser OAuth and subscription writes; M0–M2 are complete (see the milestone checklist above).
 - [ ] **PS Vita frontend** — new `Transport` + `Store` impls + framebuffer renderer, reusing `standard-core` + `standard-frontend`.
 - Deferred polish: moving the one-time image encode off the UI thread (`ThreadProtocol`).
 

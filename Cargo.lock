@@ -3436,9 +3436,12 @@ dependencies = [
  "image",
  "js-sys",
  "ratzilla",
+ "serde",
+ "serde_json",
  "standard-core",
  "standard-frontend",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 

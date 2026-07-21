@@ -12,7 +12,7 @@ use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Para
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{Action, App, Focus, Mode};
+use crate::app::{Action, App, Focus, Mode, PanelBorderStyle};
 use crate::image_sink::ImageSink;
 use crate::prefs::{LayoutKind, PANE_MAX, PANE_MIN};
 use theme::{PRESETS, SLOTS, Theme, ThemeColors};
@@ -25,6 +25,25 @@ pub fn draw(f: &mut Frame, app: &mut App, sink: &mut dyn ImageSink) {
     app.recompute_appearance();
     let theme = app.theme;
     let theme = &theme;
+
+    // Native browser images sit above ratzilla's text grid, so a terminal-cell `Clear` cannot
+    // cover them. Hide that overlay layer whenever a dialog is open; buffer-native sinks (the
+    // desktop terminal) can ignore this hook because the popup is rendered later in the frame.
+    sink.set_overlays_visible(!matches!(
+        app.mode,
+        Mode::Help
+            | Mode::Search
+            | Mode::Palette
+            | Mode::AddFeed
+            | Mode::SignIn
+            | Mode::SyncPrompt
+            | Mode::ThemePicker
+            | Mode::ThemeEditor
+            | Mode::LayoutPicker
+            | Mode::BlogMenu
+            | Mode::StatusDetail
+            | Mode::PublicationPicker
+    ));
 
     let area = f.area();
     f.render_widget(Block::new().style(theme.base()), area); // base fill
@@ -44,7 +63,7 @@ pub fn draw(f: &mut Frame, app: &mut App, sink: &mut dyn ImageSink) {
     draw_footer(f, app, theme, footer); // also records the status region as a click target
 
     match app.mode {
-        Mode::Help => draw_help(f, theme, area),
+        Mode::Help => draw_help(f, app, theme, area),
         Mode::Search => draw_input(f, app, theme, area, "Search"),
         Mode::AddFeed => draw_input(f, app, theme, area, "Add a blog — handle, DID, or URL"),
         Mode::SignIn => draw_input(f, app, theme, area, "Log in — your handle or DID"),
@@ -60,6 +79,13 @@ pub fn draw(f: &mut Frame, app: &mut App, sink: &mut dyn ImageSink) {
     }
 }
 
+pub(crate) fn panel_border_type(style: PanelBorderStyle) -> BorderType {
+    match style {
+        PanelBorderStyle::Rounded => BorderType::Rounded,
+        PanelBorderStyle::Square => BorderType::Plain,
+    }
+}
+
 /// Clamp a configured pane width to a sane range for the current terminal width — never below
 /// the minimum, never so wide the reader can't breathe (defensive against a hand-edited
 /// `prefs.toml` or a tiny window).
@@ -70,7 +96,13 @@ fn clamp_pane(width: u16, total: u16) -> u16 {
 
 /// Two-pane (the default): the left pane is the feed list, or — once a feed is opened — its post
 /// list (Mode::DocList); the reader fills the right.
-fn draw_two_pane(f: &mut Frame, app: &mut App, theme: &Theme, sink: &mut dyn ImageSink, body: Rect) {
+fn draw_two_pane(
+    f: &mut Frame,
+    app: &mut App,
+    theme: &Theme,
+    sink: &mut dyn ImageSink,
+    body: Rect,
+) {
     let sw = clamp_pane(app.prefs.sidebar_width, body.width);
     let cols = Layout::horizontal([Constraint::Length(sw), Constraint::Min(0)]).split(body);
     let (left, right) = (cols[0], cols[1]);
@@ -110,7 +142,13 @@ fn draw_three_pane(
 }
 
 /// One-pane: only the focused pane, full width.
-fn draw_one_pane(f: &mut Frame, app: &mut App, theme: &Theme, sink: &mut dyn ImageSink, body: Rect) {
+fn draw_one_pane(
+    f: &mut Frame,
+    app: &mut App,
+    theme: &Theme,
+    sink: &mut dyn ImageSink,
+    body: Rect,
+) {
     match app.focus {
         Focus::Sidebar => {
             app.rects.sidebar = body;
@@ -159,10 +197,15 @@ fn draw_drill_down(
     }
 }
 
-fn panel<'a>(theme: &Theme, title: &'a str, focused: bool) -> Block<'a> {
+fn panel<'a>(
+    theme: &Theme,
+    title: &'a str,
+    focused: bool,
+    border_style: PanelBorderStyle,
+) -> Block<'a> {
     let border = if focused { theme.accent } else { theme.border };
     Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(border_style))
         .border_style(Style::default().fg(border))
         .title(Span::styled(
             format!(" {title} "),
@@ -178,8 +221,8 @@ fn draw_sidebar(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
         Some(a) => format!(" @{} ", a.handle),
         None => " not logged in · L ".into(),
     };
-    let block =
-        panel(theme, "Feeds", focused).title_bottom(Span::styled(account, theme.dim_style()));
+    let block = panel(theme, "Feeds", focused, app.panel_border_style)
+        .title_bottom(Span::styled(account, theme.dim_style()));
     if app.feeds.is_empty() {
         let hint = Paragraph::new("No feeds yet.\n\nPress a to add a blog\nby handle.")
             .style(theme.dim_style())
@@ -217,7 +260,7 @@ fn draw_doclist(f: &mut Frame, app: &App, theme: &Theme, area: Rect, focused: bo
     } else {
         app.list_title.clone()
     };
-    let block = panel(theme, &title, focused);
+    let block = panel(theme, &title, focused, app.panel_border_style);
     if app.docs.is_empty() {
         let msg = if app.loading {
             "loading…"
@@ -357,7 +400,7 @@ fn draw_input(f: &mut Frame, app: &App, theme: &Theme, area: Rect, title: &str) 
     let popup = centered(area, 64, 3);
     f.render_widget(Clear, popup);
     let block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
             format!(" {title} "),
@@ -379,7 +422,7 @@ fn draw_palette(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 
     let rows = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(popup);
     let input_block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
             " Command ",
@@ -407,7 +450,7 @@ fn draw_palette(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     f.render_stateful_widget(list, rows[1], &mut state);
 }
 
-fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
+fn draw_help(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let keys = [
         ("↑↓ / j k", "move selection / scroll"),
         ("⇥ Tab", "cycle pane focus"),
@@ -440,7 +483,7 @@ fn draw_help(f: &mut Frame, theme: &Theme, area: Rect) {
     let popup = centered(area, width, keys.len() as u16 + 2);
     f.render_widget(Clear, popup);
     let block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
             " Help ",
@@ -466,7 +509,7 @@ fn draw_sync_prompt(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let popup = centered(area, 64, height);
     f.render_widget(Clear, popup);
     let block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
             " Sync subscriptions ",
@@ -512,7 +555,7 @@ fn draw_theme_picker(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let popup = centered(area, 40, (entries as u16 + 2).min(area.height));
     f.render_widget(Clear, popup);
     let block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
             " Theme ",
@@ -557,7 +600,7 @@ fn draw_theme_editor(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let popup = centered(area, 52, (SLOTS.len() as u16 + 2).min(area.height));
     f.render_widget(Clear, popup);
     let block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
             " Edit theme ",
@@ -607,7 +650,7 @@ fn draw_layout_picker(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     );
     f.render_widget(Clear, popup);
     let block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
             " Layout ",
@@ -663,7 +706,7 @@ fn draw_blog_menu(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     f.render_widget(Clear, popup);
     let title = format!(" Customize {name} ");
     let block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
             title,
@@ -700,7 +743,7 @@ fn draw_status_detail(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let popup = centered(area, inner_w + 2, rows + 2);
     f.render_widget(Clear, popup);
     let block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
             " Status ",
@@ -723,7 +766,7 @@ fn draw_publication_picker(f: &mut Frame, app: &App, theme: &Theme, area: Rect) 
     let popup = centered(area, 56, (n as u16 + 4).min(area.height));
     f.render_widget(Clear, popup);
     let block = Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
             " Follow which blogs? ",
@@ -776,6 +819,43 @@ mod tests {
     use standard_core::model::{Block, Inline, Publication, RichDoc};
     use std::sync::mpsc::channel;
 
+    struct VisibilitySink {
+        visible: Option<bool>,
+    }
+
+    impl ImageSink for VisibilitySink {
+        fn set_overlays_visible(&mut self, visible: bool) {
+            self.visible = Some(visible);
+        }
+
+        fn cell_size(&self) -> (u16, u16) {
+            (8, 16)
+        }
+
+        fn ensure(&mut self, _key: &str, _image: &image::DynamicImage, _cols: u16, _rows: u16) {}
+
+        fn paint(&mut self, _f: &mut Frame, _key: &str, _area: Rect, _x: i16, _y: i16) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn native_image_overlays_hide_behind_dialogs_and_return_for_browsing() {
+        let (tx, _rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
+        app.loading = false;
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut sink = VisibilitySink { visible: None };
+
+        app.mode = Mode::ThemePicker;
+        terminal.draw(|f| draw(f, &mut app, &mut sink)).unwrap();
+        assert_eq!(sink.visible, Some(false));
+
+        app.mode = Mode::Browse;
+        terminal.draw(|f| draw(f, &mut app, &mut sink)).unwrap();
+        assert_eq!(sink.visible, Some(true));
+    }
+
     fn buffer_text(buf: &Buffer) -> String {
         let area = buf.area;
         let mut s = String::new();
@@ -820,6 +900,25 @@ mod tests {
         assert!(text.contains("half baked"), "feed name in sidebar");
         assert!(text.contains("Hello world"), "reader shows the open doc");
         assert!(text.contains("add"), "footer key hints");
+    }
+
+    #[test]
+    fn shell_can_select_square_panel_corners() {
+        let (tx, _rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
+        app.set_panel_border_style(crate::app::PanelBorderStyle::Square);
+
+        let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
+        terminal
+            .draw(|f| draw(f, &mut app, &mut NoopImageSink))
+            .unwrap();
+
+        let top_left = terminal
+            .backend()
+            .buffer()
+            .cell(Position::new(0, 0))
+            .unwrap();
+        assert_eq!(top_left.symbol(), "┌");
     }
 
     #[test]

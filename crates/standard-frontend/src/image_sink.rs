@@ -15,6 +15,12 @@ use ratatui::layout::Rect;
 /// (which holds only the decoded pixels) — so the platform-specific protocol/overlay state
 /// stays out of the shared state machine.
 pub trait ImageSink {
+    /// Show or hide the shell's native image layer for this frame. Browser images live in DOM
+    /// elements above the text grid, so modal dialogs cannot cover them with terminal cells alone.
+    /// Shells whose images participate directly in the terminal buffer may leave the default
+    /// implementation in place.
+    fn set_overlays_visible(&mut self, _visible: bool) {}
+
     /// Pixels per terminal cell `(width, height)`, used to convert an image's pixel size to a
     /// cell size during layout. Desktop returns the `Picker`'s detected font size.
     fn cell_size(&self) -> (u16, u16);

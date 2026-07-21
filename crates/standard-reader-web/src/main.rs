@@ -1,63 +1,111 @@
 //! `standard-reader-web` — the browser/WASM shell (ratatui-in-the-browser via ratzilla).
 //!
-//! **Milestone 1b — real worker + network.** The platform-agnostic `standard-frontend` worker runs
-//! in a Web Worker (`wasm_thread`), fetching over a synchronous-XHR [`WebTransport`] and caching in
-//! an in-memory [`MemStore`]. No auth, no persistence yet (M3 / M2). Press `a` to add a blog by
-//! handle / DID / URL, then open a post — fetched live from its PDS.
+//! **Milestone 2 — OPFS persistence.** The platform-agnostic `standard-frontend` worker runs in a
+//! Web Worker (`wasm_thread`), fetching over a synchronous-XHR [`WebTransport`] and caching in a
+//! [`MemStore`] that now **persists to the Origin-Private File System** (see [`persist`]): the
+//! cache survives reloads and reading works **offline, including images**. Still no auth (M3).
+//!
+//! The worker blocks on `recv()` and can't await, so async OPFS I/O lives on the **main thread**:
+//! at startup we `await` the cache load *before* spawning the worker (so cache-first reads serve
+//! offline), and the `draw_web` loop drains persist ops + writes them. `main` returns immediately;
+//! the work runs inside a `spawn_local` so it can `await`.
 //!
 //! Threading needs cross-origin isolation (SharedArrayBuffer); see `Trunk.toml` (COOP/COEP) and the
 //! nightly + build-std setup in `rust-toolchain.toml` / `.cargo/config.toml`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use ratzilla::ratatui::Terminal;
 use ratzilla::{DomBackend, WebRenderer};
 
-use standard_frontend::app::App;
+use standard_frontend::app::{App, PanelBorderStyle};
 use standard_frontend::prefs::Prefs;
 use standard_frontend::{input, ui, worker};
 
 mod auth;
+mod persist;
 mod sink;
 mod store;
 mod transport;
 use auth::NoAuth;
+use persist::{BootstrapState, Opfs, WriteQueue};
 use sink::OverlayImageSink;
-use store::MemStore;
+use store::{MemStore, PersistOp};
 use transport::WebTransport;
 
 fn main() -> std::io::Result<()> {
     console_error_panic_hook::set_once();
     install_key_guard();
 
-    // Spawn the worker in a Web Worker. It logs to the browser console; M1b doesn't persist prefs.
-    let log: Box<dyn Fn(&str) + Send> = Box::new(|msg| {
-        web_sys::console::log_1(&msg.into());
+    // MemStore (in the worker) emits PersistOps; the main thread drains + writes them to OPFS.
+    let (persist_tx, persist_rx) = channel::<PersistOp>();
+
+    // The rest must `await` the OPFS cache load before building the store, so it runs on the main
+    // thread's event loop. `main` returns at once; `draw_web` (registered inside) drives frames.
+    wasm_bindgen_futures::spawn_local(async move {
+        if let Err(e) = run(persist_tx, persist_rx).await {
+            web_sys::console::log_1(&format!("fatal: {e}").into());
+        }
     });
-    let save_prefs: Box<dyn FnMut(&Prefs) + Send> = Box::new(|_prefs| {});
+
+    Ok(())
+}
+
+/// The async bootstrap: open + hydrate the OPFS cache, spawn the worker over it, wire the reader.
+async fn run(
+    persist_tx: Sender<PersistOp>,
+    persist_rx: Receiver<PersistOp>,
+) -> std::io::Result<()> {
+    let storage_notice: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    // Open OPFS + hydrate the cache. Best-effort: any failure → run in-memory only (never break).
+    let (opfs, bootstrap) = match Opfs::open().await {
+        Ok(o) => {
+            let o = Rc::new(o);
+            let state = persist::load_opfs(&o).await;
+            (Some(o), state)
+        }
+        Err(e) => {
+            web_sys::console::log_1(&format!("opfs unavailable, running in-memory: {e}").into());
+            storage_notice.replace(Some(
+                "offline storage unavailable; changes will not survive reload".into(),
+            ));
+            (None, BootstrapState::default())
+        }
+    };
+    let completed_blobs = bootstrap.store.blobs.keys().cloned().collect::<Vec<_>>();
+
+    // Spawn the worker in a Web Worker over the hydrated store. Preference saves cross the same
+    // channel as cache writes so all OPFS work remains on the browser main thread.
+    let log: Box<dyn Fn(&str) + Send> = Box::new(|msg| web_sys::console::log_1(&msg.into()));
+    let prefs_tx = persist_tx.clone();
+    let save_prefs: Box<dyn FnMut(&Prefs) + Send> = Box::new(move |prefs| {
+        if let Ok(bytes) = serde_json::to_vec(prefs) {
+            let _ = prefs_tx.send(PersistOp::Prefs(bytes));
+        }
+    });
     let (tx, rx) = worker::spawn(
         WebTransport::new(),
-        MemStore::new(),
+        MemStore::new(persist_tx, bootstrap.store),
         None::<NoAuth>,
         log,
         save_prefs,
     );
 
-    let mut prefs = Prefs::default();
-    prefs.onboarded = true; // skip the first-launch picker; land in the reader (press `a` to add)
-    let mut app = App::new(tx, prefs);
+    let mut app = App::new(tx, bootstrap.prefs);
     app.set_open_url(Box::new(|url| {
         if let Some(win) = web_sys::window() {
             let _ = win.open_with_url(url);
         }
     }));
-
+    // Rounded box-drawing corners rasterize as disconnected hooks in common browser monospace
+    // fonts. Plain corners stay crisp in the DOM backend; the desktop shell keeps rounded corners.
+    app.set_panel_border_style(PanelBorderStyle::Square);
     let app = Rc::new(RefCell::new(app));
 
     let backend = DomBackend::new()?;
     let terminal = Terminal::new(backend)?;
-
     terminal.on_key_event({
         let app = app.clone();
         move |ev| {
@@ -67,11 +115,30 @@ fn main() -> std::io::Result<()> {
         }
     });
 
+    // Persist write-side state (main thread): one coalescing queue and at most one OPFS write at a
+    // time. CIDs loaded at startup are already durable and do not need rewriting.
     let mut sink = OverlayImageSink::new();
+    let write_queue = Rc::new(RefCell::new(WriteQueue::new(completed_blobs)));
+    let writer_busy = Rc::new(Cell::new(false));
+
     terminal.draw_web(move |f| {
         // Drain worker results (non-blocking) before drawing.
         while let Ok(evt) = rx.try_recv() {
             app.borrow_mut().apply(evt);
+        }
+        // Drain persist ops → OPFS (best-effort). Without OPFS, still drain so the channel can't
+        // grow unbounded.
+        match &opfs {
+            Some(opfs) => {
+                while let Ok(op) = persist_rx.try_recv() {
+                    write_queue.borrow_mut().push(op);
+                }
+                maybe_flush_writes(opfs, &write_queue, &writer_busy, &storage_notice);
+            }
+            None => while persist_rx.try_recv().is_ok() {},
+        }
+        if let Some(notice) = storage_notice.borrow_mut().take() {
+            app.borrow_mut().status = format!("⚠ {notice}");
         }
         // Hide last frame's image overlays; `paint` re-shows the ones still on screen.
         sink.before_frame();
@@ -79,6 +146,48 @@ fn main() -> std::io::Result<()> {
     });
 
     Ok(())
+}
+
+/// Start the single OPFS writer when work is pending. Payload files are selected before snapshots,
+/// every write gets one retry, and failure never stops the in-memory reader.
+fn maybe_flush_writes(
+    opfs: &Rc<Opfs>,
+    queue: &Rc<RefCell<WriteQueue>>,
+    busy: &Rc<Cell<bool>>,
+    notice: &Rc<RefCell<Option<String>>>,
+) {
+    if busy.get() || queue.borrow().is_empty() {
+        return;
+    }
+    busy.set(true);
+    let opfs = opfs.clone();
+    let queue = queue.clone();
+    let busy = busy.clone();
+    let notice = notice.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        while let Some(write) = { queue.borrow_mut().pop_next() } {
+            let mut last_error = None;
+            for _ in 0..2 {
+                let (dir, name, bytes) = write.target();
+                match opfs.write(dir, name, bytes).await {
+                    Ok(()) => {
+                        last_error = None;
+                        break;
+                    }
+                    Err(e) => last_error = Some(e),
+                }
+            }
+            if let Some(e) = last_error {
+                web_sys::console::log_1(&format!("opfs {} write: {e}", write.label()).into());
+                notice.replace(Some(
+                    "offline storage write failed; recent changes may not survive reload".into(),
+                ));
+            } else {
+                queue.borrow_mut().mark_succeeded(&write);
+            }
+        }
+        busy.set(false);
+    });
 }
 
 /// Stop the browser from acting on the keys the reader drives — ratzilla's handler still fires
@@ -95,7 +204,8 @@ fn install_key_guard() {
         let key = e.key();
         let nav = matches!(
             key.as_str(),
-            "Tab" | "ArrowUp"
+            "Tab"
+                | "ArrowUp"
                 | "ArrowDown"
                 | "ArrowLeft"
                 | "ArrowRight"

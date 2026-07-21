@@ -57,11 +57,7 @@ impl OverlayImageSink {
         // grid geometry from frame 2 on.
         let cell = (probe_char_width(&doc, &body), 15.0);
 
-        let container: HtmlElement = doc
-            .create_element("div")
-            .unwrap()
-            .dyn_into()
-            .unwrap();
+        let container: HtmlElement = doc.create_element("div").unwrap().dyn_into().unwrap();
         set(&container, "position", "absolute");
         set(&container, "overflow", "hidden");
         set(&container, "pointer-events", "none");
@@ -114,6 +110,14 @@ impl OverlayImageSink {
 }
 
 impl ImageSink for OverlayImageSink {
+    fn set_overlays_visible(&mut self, visible: bool) {
+        set(
+            &self.container,
+            "display",
+            if visible { "block" } else { "none" },
+        );
+    }
+
     fn cell_size(&self) -> (u16, u16) {
         (
             self.cell.0.round().max(1.0) as u16,
@@ -167,9 +171,21 @@ impl ImageSink for OverlayImageSink {
         let (ox, oy) = self.origin;
         // Position the clip box over the reader pane (shared by every image this frame), anchored
         // to the grid's real origin so it lines up with the text cells beneath it.
-        set(&self.container, "left", &format!("{}px", ox + area.x as f64 * cw));
-        set(&self.container, "top", &format!("{}px", oy + area.y as f64 * ch));
-        set(&self.container, "width", &format!("{}px", area.width as f64 * cw));
+        set(
+            &self.container,
+            "left",
+            &format!("{}px", ox + area.x as f64 * cw),
+        );
+        set(
+            &self.container,
+            "top",
+            &format!("{}px", oy + area.y as f64 * ch),
+        );
+        set(
+            &self.container,
+            "width",
+            &format!("{}px", area.width as f64 * cw),
+        );
         set(
             &self.container,
             "height",

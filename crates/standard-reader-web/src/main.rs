@@ -114,6 +114,14 @@ async fn run(
             }
         }
     });
+    terminal.on_mouse_event({
+        let app = app.clone();
+        move |ev| {
+            if let Some(mouse) = adapt_mouse(ev) {
+                app.borrow_mut().on_mouse(mouse);
+            }
+        }
+    });
 
     // Persist write-side state (main thread): one coalescing queue and at most one OPFS write at a
     // time. CIDs loaded at startup are already durable and do not need rewriting.
@@ -225,8 +233,7 @@ fn install_key_guard() {
 }
 
 /// Map a ratzilla key event to the frontend's neutral [`input::KeyEvent`]. `None` for keys the
-/// reader doesn't handle. (Mouse is deferred: ratzilla's `MouseEvent` has no scroll and uses pixel
-/// coordinates, so it needs cell-geometry + a wheel listener — a later step. Keyboard-only for now.)
+/// reader doesn't handle.
 fn adapt_key(ev: ratzilla::event::KeyEvent) -> Option<input::KeyEvent> {
     use ratzilla::event::KeyCode as Rz;
     let code = match ev.code {
@@ -254,4 +261,93 @@ fn adapt_key(ev: ratzilla::event::KeyEvent) -> Option<input::KeyEvent> {
         mods = mods | input::KeyModifiers::ALT;
     }
     Some(input::KeyEvent::new(code, mods))
+}
+
+/// Map a browser left-button press into terminal-cell coordinates. Ratzilla reports viewport
+/// pixels, while the shared frontend deliberately speaks in cells, so measure the live DOM grid
+/// exactly as the native-image overlay does. This keeps clicks aligned through zoom and resize.
+fn adapt_mouse(ev: ratzilla::event::MouseEvent) -> Option<input::MouseEvent> {
+    use ratzilla::event::{MouseButton as RzButton, MouseEventKind as RzKind};
+    if ev.event != RzKind::Pressed || ev.button != RzButton::Left {
+        return None;
+    }
+    let (column, row) = dom_cell_at(ev.x as f64, ev.y as f64)?;
+    let mut modifiers = input::KeyModifiers::NONE;
+    if ev.ctrl {
+        modifiers = modifiers | input::KeyModifiers::CONTROL;
+    }
+    if ev.shift {
+        modifiers = modifiers | input::KeyModifiers::SHIFT;
+    }
+    if ev.alt {
+        modifiers = modifiers | input::KeyModifiers::ALT;
+    }
+    Some(input::MouseEvent {
+        kind: input::MouseEventKind::Down(input::MouseButton::Left),
+        column,
+        row,
+        modifiers,
+    })
+}
+
+fn dom_cell_at(client_x: f64, client_y: f64) -> Option<(u16, u16)> {
+    let document = web_sys::window()?.document()?;
+    let grid = document.get_element_by_id("grid")?;
+    let first_row = grid.first_element_child()?;
+    let first_cell = first_row.first_element_child()?;
+    let cell_rect = first_cell.get_bounding_client_rect();
+    let row_rect = first_row.get_bounding_client_rect();
+    cell_from_geometry(
+        client_x,
+        client_y,
+        cell_rect.left(),
+        cell_rect.top(),
+        cell_rect.width(),
+        row_rect.height(),
+        first_row.child_element_count(),
+        grid.child_element_count(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cell_from_geometry(
+    client_x: f64,
+    client_y: f64,
+    origin_x: f64,
+    origin_y: f64,
+    cell_width: f64,
+    cell_height: f64,
+    columns: u32,
+    rows: u32,
+) -> Option<(u16, u16)> {
+    if !client_x.is_finite()
+        || !client_y.is_finite()
+        || cell_width <= 0.0
+        || cell_height <= 0.0
+        || client_x < origin_x
+        || client_y < origin_y
+    {
+        return None;
+    }
+    let column = ((client_x - origin_x) / cell_width).floor() as u32;
+    let row = ((client_y - origin_y) / cell_height).floor() as u32;
+    if column >= columns || row >= rows {
+        return None;
+    }
+    Some((column.try_into().ok()?, row.try_into().ok()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cell_from_geometry;
+
+    #[test]
+    fn browser_pixels_map_to_terminal_cells_and_reject_outside_clicks() {
+        let geom = |x, y| cell_from_geometry(x, y, 10.0, 20.0, 8.0, 15.0, 80, 24);
+        assert_eq!(geom(10.0, 20.0), Some((0, 0)));
+        assert_eq!(geom(33.9, 65.1), Some((2, 3)));
+        assert_eq!(geom(9.9, 20.0), None);
+        assert_eq!(geom(650.0, 20.0), None);
+        assert_eq!(geom(10.0, 380.0), None);
+    }
 }

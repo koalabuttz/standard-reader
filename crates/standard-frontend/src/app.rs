@@ -659,9 +659,14 @@ impl App {
                 }
             }
             MouseEventKind::Down(_) => {
-                // A click anywhere dismisses the status popup.
-                if self.mode == Mode::StatusDetail {
+                // A click anywhere dismisses the informational popups, matching their footer
+                // hint. Other modal dialogs currently remain keyboard-driven, and must consume
+                // clicks so they never activate a feed, post, or link behind the dialog.
+                if matches!(self.mode, Mode::Help | Mode::StatusDetail) {
                     self.mode = Mode::Browse;
+                    return;
+                }
+                if !matches!(self.mode, Mode::Browse | Mode::DocList) {
                     return;
                 }
                 // Clicking the status text (not the hints) expands the full status into a popup.
@@ -2048,6 +2053,13 @@ mod tests {
             Some("at://d/2"),
             "opened the clicked post"
         );
+
+        // A modal consumes the same click instead of activating the post behind it.
+        app.doc_sel = 0;
+        app.mode = Mode::ThemePicker;
+        app.on_mouse(click(22, 2));
+        assert_eq!(app.doc_sel, 0);
+        assert_eq!(app.mode, Mode::ThemePicker);
     }
 
     #[test]
@@ -2156,8 +2168,8 @@ mod tests {
 
     #[test]
     fn publication_picker_enter_follows_only_the_checked_subset() {
-        use crate::worker::ToWorker;
         use crate::input::{KeyCode, KeyEvent, KeyModifiers};
+        use crate::worker::ToWorker;
         use std::sync::mpsc::channel;
 
         let (tx, rx) = channel::<ToWorker>();

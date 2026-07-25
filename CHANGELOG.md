@@ -9,7 +9,7 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
 
 ## [Unreleased]
 
-## [1.2.0] - 2026-07-24 — `sr` (engine `standard-core` unchanged at 0.3.0)
+## [1.2.0] - 2026-07-25 — `sr` (engine `standard-core` unchanged at 0.3.0)
 
 ### Added
 - **Browser/WASM shell through Milestone 3.** The shared frontend now runs in the browser via

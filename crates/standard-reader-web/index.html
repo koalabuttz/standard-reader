@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <title>standard-reader (web)</title>
     <link data-trunk rel="rust" />
+    <link data-trunk rel="copy-file" href="sw.js" />
     <style>
       html,
       body {
@@ -26,5 +27,17 @@
       }
     </style>
   </head>
-  <body></body>
+  <body>
+    <script>
+      // The reader's OPFS cache preserves publications and images. The app-scoped service worker
+      // preserves the HTML/JS/WASM shell too, so a previously opened reader can start offline.
+      if ("serviceWorker" in navigator && window.isSecureContext) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch((error) => {
+            console.warn("standard-reader service worker registration failed", error);
+          });
+        });
+      }
+    </script>
+  </body>
 </html>

@@ -51,6 +51,15 @@ jobs:
       - name: Build optimized web app
         working-directory: crates/standard-reader-web
         run: trunk build --release --locked
+      - name: Verify deployable web package
+        working-directory: crates/standard-reader-web
+        run: |
+          test -f dist/index.html
+          test -f dist/sw.js
+          test "$(find dist -maxdepth 1 -name '*.js' | wc -l)" -ge 1
+          test "$(find dist -maxdepth 1 -name '*.wasm' | wc -l)" -ge 1
+          grep -q '/standard-reader/app/' dist/index.html
+          node --check dist/sw.js
       - name: Upload web distribution
         uses: actions/upload-artifact@v7
         with:

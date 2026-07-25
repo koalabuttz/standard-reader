@@ -1,3 +1,8 @@
+# Production is served from the existing davidlewis.xyz project page. Keeping the public URL here
+# makes local release builds and CI artifacts deployable without remembering a one-off CLI flag.
+[build]
+public_url = "/standard-reader/app/"
+
 # Cross-origin isolation is required for SharedArrayBuffer, which the Web Worker thread (wasm_thread)
 # relies on. COEP `credentialless` enables isolation *and* still allows the reader's cross-origin
 # PDS fetches (no-credentials); `require-corp` would block them unless every PDS sent CORP headers.

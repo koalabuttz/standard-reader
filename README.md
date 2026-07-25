@@ -156,7 +156,11 @@ cargo run -p standard-reader   # runs the `sr` binary
 # Browser release build (nightly is selected by the web crate's rust-toolchain.toml)
 cd crates/standard-reader-web
 trunk build --release --locked
+# dist/ is ready for https://www.davidlewis.xyz/standard-reader/app/
 ```
+
+Production deployment, required Cloudflare headers, caching, and acceptance checks are documented
+in [`docs/WEB_DEPLOYMENT.md`](docs/WEB_DEPLOYMENT.md).
 
 ## OAuth
 

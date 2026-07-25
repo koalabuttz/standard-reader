@@ -11,6 +11,18 @@ The parent `/standard-reader/` path remains the human-facing project page and ho
 The static website stays build-free: this repository builds the WASM application, and only the
 finished files plus browser metadata are copied into it.
 
+Tagged releases also attach a versioned web archive with this layout:
+
+```text
+standard-reader-web-vX.Y.Z/
+  app/
+  client_metadata.json
+  web_client_metadata.json
+```
+
+The archive is a versioned, source-tied copy of the static files deployed below and is included
+in the release's `SHA256SUMS`.
+
 ## Stage a release
 
 From the `standard-reader` repository:
@@ -23,9 +35,10 @@ The script:
 
 1. runs the pinned Trunk release build;
 2. verifies that the generated HTML uses `/standard-reader/app/`;
-3. replaces only `standard-reader/app/` and stages `web_client_metadata.json` in the sibling
-   `website` checkout; and
-4. prints the website repository changes for review.
+3. replaces only `standard-reader/app/` and stages both OAuth metadata documents in the sibling
+   `website` checkout;
+4. verifies the staged metadata matches this repository's reference copies; and
+5. prints the website repository changes for review.
 
 It does not commit or push either repository. Pass another website checkout as the first argument
 when it is not available at `../website`.

@@ -1,8 +1,8 @@
 name: Release
 
-# Builds the `sr` binary for the three main OSes and attaches the archives to the GitHub release
-# on a `v*` tag. `workflow_dispatch` lets the matrix be dry-run (build + headless smoke, no upload)
-# before cutting the real tag.
+# Builds the `sr` binary for the three main OSes plus the deployable browser bundle, and attaches
+# every archive to the GitHub release on a `v*` tag. `workflow_dispatch` lets the matrix be dry-run
+# (build + headless smoke, no release upload) before cutting the real tag.
 on:
   push:
     tags: ["v*"]
@@ -96,11 +96,66 @@ jobs:
           files: ${{ env.ASSET }}
           body_path: RELEASE_NOTES.md
 
+  web:
+    name: Browser / WASM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2026-06-01
+          components: rust-src
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk@0.21.14
+          fallback: none
+
+      - name: Build optimized web app
+        working-directory: crates/standard-reader-web
+        run: trunk build --release --locked
+
+      - name: Verify deployable web package
+        working-directory: crates/standard-reader-web
+        run: |
+          sed -i 's/[[:space:]]*$//' dist/index.html
+          test -f dist/index.html
+          test -f dist/sw.js
+          test "$(find dist -maxdepth 1 -name '*.js' | wc -l)" -ge 1
+          test "$(find dist -maxdepth 1 -name '*.wasm' | wc -l)" -ge 1
+          grep -q '/standard-reader/app/' dist/index.html
+          node --check dist/sw.js
+
+      - name: Package
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME:-dev}"
+          name="standard-reader-web-${tag}"
+          mkdir -p "$name/app"
+          cp -R crates/standard-reader-web/dist/. "$name/app/"
+          cp client_metadata.json web_client_metadata.json "$name/"
+          zip -qr "${name}.zip" "$name"
+          echo "ASSET=${name}.zip" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: browser-wasm
+          path: ${{ env.ASSET }}
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ env.ASSET }}
+
   # After every archive is attached (a real tag), publish one SHA256SUMS for the release so
   # downloads can be verified. Uses `gh` against the release assets — no extra actions to version.
   checksums:
     name: SHA256SUMS
-    needs: build
+    needs: [build, web]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:

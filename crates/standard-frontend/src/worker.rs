@@ -10,8 +10,10 @@
 
 use std::collections::HashMap;
 use std::error::Error;
+use std::io::Cursor;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
+use image::{DynamicImage, ImageReader, Limits};
 use standard_core::atp::{AtUri, Transport};
 use standard_core::decode::Registry;
 use standard_core::model::{Document, ImageSource, Publication, PublishingPlatform, RichDoc};
@@ -26,6 +28,10 @@ use crate::prefs::Prefs;
 /// work any single command does, so adding a prolific author can't wedge the worker.
 const INITIAL_PAGES: u32 = 3;
 const LOAD_OLDER_PAGES: u32 = 3;
+/// Terminal-sized rendering never benefits from enormous source images. These limits prevent a
+/// compressed image from expanding into hundreds of MiB in either the desktop or WASM shell.
+const MAX_IMAGE_DIMENSION: u32 = 4096;
+const MAX_IMAGE_DECODE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Commands from the UI to the worker.
 pub enum ToWorker {
@@ -615,7 +621,7 @@ impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
     /// JPEG/PNG/WebP stay direct-from-PDS and only undecodable formats touch the CDN.
     fn load_image(&mut self, key: String, source: ImageSource) -> Done {
         let bytes = self.image_bytes(&source)?;
-        let err = match image::load_from_memory(&bytes) {
+        let err = match decode_image(&bytes) {
             Ok(image) => {
                 self.send(FromWorker::Image { key, image });
                 return Ok(());
@@ -628,7 +634,7 @@ impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
                 "image decode failed ({err}); retrying via CDN: {cdn}"
             ));
             if let Ok(transcoded) = self.cached_url(&cdn)
-                && let Ok(image) = image::load_from_memory(&transcoded)
+                && let Ok(image) = decode_image(&transcoded)
             {
                 self.send(FromWorker::Image { key, image });
                 return Ok(());
@@ -876,6 +882,16 @@ impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
     }
 }
 
+fn decode_image(bytes: &[u8]) -> image::ImageResult<DynamicImage> {
+    let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_DIMENSION);
+    limits.max_image_height = Some(MAX_IMAGE_DIMENSION);
+    limits.max_alloc = Some(MAX_IMAGE_DECODE_BYTES);
+    reader.limits(limits);
+    reader.decode()
+}
+
 /// `at://<did>/<collection>/<rkey>` → `<rkey>` (the trailing path segment).
 fn rkey_from_uri(uri: &str) -> String {
     uri.rsplit('/').next().unwrap_or_default().to_string()
@@ -1004,8 +1020,27 @@ fn select_chosen(pending: Vec<Publication>, uris: &[String]) -> Vec<Publication>
 
 #[cfg(test)]
 mod tests {
-    use super::{SubscriptionDiff, diff_subscriptions, normalize, rkey_from_uri, select_chosen};
+    use super::{
+        MAX_IMAGE_DIMENSION, SubscriptionDiff, decode_image, diff_subscriptions, normalize,
+        rkey_from_uri, select_chosen,
+    };
+    use image::{DynamicImage, ImageFormat};
     use std::collections::HashMap;
+    use std::io::Cursor;
+
+    #[test]
+    fn image_decode_limits_reject_oversized_dimensions() {
+        let encode = |image: DynamicImage| {
+            let mut bytes = Cursor::new(Vec::new());
+            image.write_to(&mut bytes, ImageFormat::Png).unwrap();
+            bytes.into_inner()
+        };
+
+        assert!(decode_image(&encode(DynamicImage::new_rgba8(1, 1))).is_ok());
+        assert!(
+            decode_image(&encode(DynamicImage::new_rgba8(MAX_IMAGE_DIMENSION + 1, 1))).is_err()
+        );
+    }
 
     #[test]
     fn cdn_url_from_blob_and_getblob_url() {

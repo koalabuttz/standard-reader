@@ -10,6 +10,8 @@ use std::fmt;
 use standard_core::atp::Transport;
 use web_sys::{XmlHttpRequest, XmlHttpRequestResponseType};
 
+const MAX_RESPONSE_BYTES: u32 = 32 * 1024 * 1024;
+
 #[derive(Debug)]
 pub struct WebTransportError(String);
 
@@ -63,10 +65,21 @@ impl WebTransport {
         }
         let resp = xhr.response().map_err(|e| js_err("response", e))?;
         let bytes = js_sys::Uint8Array::new(&resp);
+        ensure_response_size(bytes.length())?;
         let mut out = vec![0u8; bytes.length() as usize];
         bytes.copy_to(&mut out);
         Ok(out)
     }
+}
+
+fn ensure_response_size(size: u32) -> Result<(), WebTransportError> {
+    if size > MAX_RESPONSE_BYTES {
+        return Err(WebTransportError(format!(
+            "response exceeded the {} MiB limit",
+            MAX_RESPONSE_BYTES / 1024 / 1024
+        )));
+    }
+    Ok(())
 }
 
 impl Transport for WebTransport {
@@ -78,5 +91,16 @@ impl Transport for WebTransport {
 
     fn post(&self, url: &str, content_type: &str, body: &[u8]) -> Result<Vec<u8>, Self::Error> {
         self.request("POST", url, Some(content_type), Some(body))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn response_limit_accepts_boundary_and_rejects_larger_payloads() {
+        assert!(ensure_response_size(MAX_RESPONSE_BYTES).is_ok());
+        assert!(ensure_response_size(MAX_RESPONSE_BYTES + 1).is_err());
     }
 }

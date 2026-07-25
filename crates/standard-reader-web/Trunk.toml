@@ -7,4 +7,18 @@ public_url = "/standard-reader/app/"
 # relies on. COEP `credentialless` enables isolation *and* still allows the reader's cross-origin
 # PDS fetches (no-credentials); `require-corp` would block them unless every PDS sent CORP headers.
 [serve]
-headers = { "Cross-Origin-Opener-Policy" = "same-origin", "Cross-Origin-Embedder-Policy" = "credentialless" }
+
+[serve.headers]
+"Cross-Origin-Opener-Policy" = "same-origin"
+"Cross-Origin-Embedder-Policy" = "credentialless"
+"Content-Security-Policy" = "frame-ancestors 'none'"
+"X-Content-Type-Options" = "nosniff"
+"Referrer-Policy" = "no-referrer"
+"Permissions-Policy" = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+
+# Trunk emits a small inline module containing content-hashed asset names. Authorize that exact
+# bootstrap with a build-specific CSP hash, without enabling arbitrary inline JavaScript.
+[[hooks]]
+stage = "post_build"
+command = "node"
+command_arguments = ["scripts/inject-csp.mjs"]

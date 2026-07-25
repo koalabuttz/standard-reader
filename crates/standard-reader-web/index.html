@@ -3,9 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <meta name="referrer" content="no-referrer" />
+    <!-- Replaced after Trunk generates its inline WASM bootstrap. Keeping the anchor before the
+         Rust asset makes the resulting CSP apply before any script is encountered. -->
+    <meta name="sr-csp-anchor" />
     <title>standard-reader (web)</title>
     <link data-trunk rel="rust" />
     <link data-trunk rel="copy-file" href="sw.js" />
+    <script data-trunk src="register-sw.js" defer></script>
     <style>
       html,
       body {
@@ -27,17 +32,5 @@
       }
     </style>
   </head>
-  <body>
-    <script>
-      // The reader's OPFS cache preserves publications and images. The app-scoped service worker
-      // preserves the HTML/JS/WASM shell too, so a previously opened reader can start offline.
-      if ("serviceWorker" in navigator && window.isSecureContext) {
-        window.addEventListener("load", () => {
-          navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch((error) => {
-            console.warn("standard-reader service worker registration failed", error);
-          });
-        });
-      }
-    </script>
-  </body>
+  <body></body>
 </html>

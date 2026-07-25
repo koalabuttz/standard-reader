@@ -156,7 +156,7 @@ async fn run(
     let mut app = App::new(tx, prefs_bootstrap);
     app.set_open_url(Box::new(|url| {
         if let Some(win) = web_sys::window() {
-            let _ = win.open_with_url(url);
+            let _ = win.open_with_url_and_target_and_features(url, "_blank", "noopener,noreferrer");
         }
     }));
     app.set_auth_redirect(Box::new(|url| {

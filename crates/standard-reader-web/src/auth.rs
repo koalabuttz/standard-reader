@@ -41,6 +41,8 @@ const REDIRECT_URI: &str = "https://www.davidlewis.xyz/standard-reader/app/";
 const SUBSCRIPTION_NSID: &str = "site.standard.graph.subscription";
 const AUTH_SCHEMA: u32 = 1;
 const AUTH_STATE_TTL_MS: u64 = 10 * 60 * 1_000;
+#[cfg(target_arch = "wasm32")]
+const MAX_OAUTH_RESPONSE_BYTES: u32 = 4 * 1024 * 1024;
 pub const AUTH_FILE: &str = "auth.json";
 
 type Client = OAuthClient<
@@ -587,6 +589,13 @@ impl HttpClient for WebHttpClient {
                 .dyn_into::<js_sys::ArrayBuffer>()
                 .map_err(|e| js_error("XHR response was not an ArrayBuffer", e))?;
             let view = js_sys::Uint8Array::new(&array);
+            if view.length() > MAX_OAUTH_RESPONSE_BYTES {
+                return Err(format!(
+                    "OAuth response exceeded the {} MiB limit",
+                    MAX_OAUTH_RESPONSE_BYTES / 1024 / 1024
+                )
+                .into());
+            }
             let mut bytes = vec![0; view.length() as usize];
             view.copy_to(&mut bytes);
             Ok(builder.body(bytes)?)

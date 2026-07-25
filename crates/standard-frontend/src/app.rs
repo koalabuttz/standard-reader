@@ -1549,8 +1549,23 @@ impl App {
 
     /// Open a hyperlink in the browser.
     fn open_link(&mut self, href: &str) {
-        self.status = format!("opening {href}");
-        (self.open_url)(href);
+        self.open_external_url(href);
+    }
+
+    /// Pass only ordinary absolute web URLs to the platform shell.
+    ///
+    /// Document links and publication URLs are authored by remote publishers. In particular,
+    /// browser shells must never navigate a `javascript:` URL because it executes with the
+    /// reader's origin (where its OAuth session is stored). Keeping this check in the shared app
+    /// covers keyboard links, mouse links, and "open post" on every shell; OAuth redirects use
+    /// their separate trusted hook.
+    fn open_external_url(&mut self, url: &str) {
+        let Some(url) = safe_web_url(url) else {
+            self.status = "blocked a non-HTTP(S) link".into();
+            return;
+        };
+        self.status = format!("opening {url}");
+        (self.open_url)(url);
     }
 
     /// The link under a click in the reader pane, if any (maps screen → virtual doc coordinates).
@@ -1587,8 +1602,7 @@ impl App {
                 return;
             }
         };
-        self.status = format!("opening {url}");
-        (self.open_url)(&url);
+        self.open_external_url(&url);
     }
 
     /// The post's browser URL: the publication's `url` (looked up among the feeds) joined
@@ -1777,9 +1791,28 @@ pub fn web_url(base: &str, path: &str) -> String {
     }
 }
 
+/// Return a trimmed absolute HTTP(S) URL, rejecting every other navigation scheme.
+///
+/// This deliberately does not accept scheme-relative or relative URLs: links come from remote
+/// records and the reader has no trustworthy document base URL against which to resolve them.
+pub fn safe_web_url(value: &str) -> Option<&str> {
+    let value = value.trim();
+    if value.is_empty() || value.chars().any(char::is_control) {
+        return None;
+    }
+    let (scheme, rest) = value.split_once(':')?;
+    if !(scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https"))
+        || !rest.starts_with("//")
+        || rest.len() == 2
+    {
+        return None;
+    }
+    Some(value)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{collect_links, fuzzy, web_url};
+    use super::{collect_links, fuzzy, safe_web_url, web_url};
     use standard_core::model::{Block, Inline, PublishingPlatform, RichDoc};
 
     #[test]
@@ -1993,6 +2026,49 @@ mod tests {
         );
         // trailing slash on base + no leading slash on path both handled
         assert_eq!(web_url("https://x.test/", "post"), "https://x.test/post");
+    }
+
+    #[test]
+    fn external_urls_allow_only_absolute_http_and_https() {
+        use std::sync::{Arc, Mutex};
+
+        assert_eq!(
+            safe_web_url(" https://example.test/post "),
+            Some("https://example.test/post")
+        );
+        assert_eq!(
+            safe_web_url("HTTP://example.test/post"),
+            Some("HTTP://example.test/post")
+        );
+        for unsafe_url in [
+            "javascript:alert(document.origin)",
+            "JaVaScRiPt:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "file:///etc/passwd",
+            "//example.test/post",
+            "/relative",
+            "https:example.test",
+            "https://",
+            "https://example.test/\nattack",
+        ] {
+            assert_eq!(safe_web_url(unsafe_url), None, "{unsafe_url}");
+        }
+
+        let opened = Arc::new(Mutex::new(Vec::<String>::new()));
+        let capture = Arc::clone(&opened);
+        let mut app = test_app(Prefs::for_test());
+        app.set_open_url(Box::new(move |url| {
+            capture.lock().unwrap().push(url.to_string());
+        }));
+        app.open_link("javascript:alert(document.origin)");
+        assert!(opened.lock().unwrap().is_empty(), "host hook must not run");
+        assert_eq!(app.status, "blocked a non-HTTP(S) link");
+
+        app.open_link("https://example.test/post");
+        assert_eq!(
+            opened.lock().unwrap().as_slice(),
+            ["https://example.test/post"]
+        );
     }
 
     // --- customization (layout / theme / per-blog) --------------------------------

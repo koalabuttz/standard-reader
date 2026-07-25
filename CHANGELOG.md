@@ -42,6 +42,15 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
 - Replaced the broad transitional OAuth grant with the exact permissions the reader needs:
   identity plus create/delete access to `site.standard.graph.subscription`. Existing sessions with
   the old grant are revoked and require a fresh, narrowly scoped sign-in.
+- Authored links are now restricted to absolute HTTP(S) URLs before reaching a platform browser;
+  web tabs also open without an opener, preventing active URL schemes from executing with access
+  to the reader's origin and its OPFS-backed OAuth session.
+- Network responses and image dimensions/decoded allocations are bounded, so oversized publisher
+  payloads are rejected instead of being retained or expanded into unbounded reader allocations.
+- The browser bundle now ships a hash-based Content Security Policy and restrictive referrer,
+  framing, MIME-sniffing, and browser-permission policy; its service-worker bootstrap is external.
+- GitHub Actions are pinned to immutable commit SHAs. Build jobs are read-only, and release-write
+  permission is isolated to the minimal publishing and checksum jobs.
 - Updated `quinn-proto`, `crossbeam-epoch`, and `anyhow` to patched versions identified by the
   RustSec audit.
 

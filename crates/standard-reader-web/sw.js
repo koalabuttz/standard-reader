@@ -6,7 +6,7 @@
  * OAuth metadata, or API traffic.
  */
 const CACHE_PREFIX = "standard-reader-shell-";
-const CACHE_NAME = `${CACHE_PREFIX}v2`;
+const CACHE_NAME = `${CACHE_PREFIX}v3`;
 
 function inAppScope(url) {
   const scope = new URL(self.registration.scope);

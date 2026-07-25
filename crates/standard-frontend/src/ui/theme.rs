@@ -2,8 +2,8 @@
 //!
 //! [`Theme`] is the *resolved* palette the renderer reads (seven `ratatui` colours + style
 //! helpers). [`ThemeColors`] is its serde-friendly mirror — seven `#rrggbb` hex strings — used
-//! for the built-in presets and for the user's editable "custom" palette persisted in
-//! `prefs.toml`. The hex→colour parse is tolerant: a malformed value falls back to the matching
+//! for the built-in presets and for the user's editable global/per-blog custom palettes persisted
+//! in `prefs.toml`. The hex→colour parse is tolerant: a malformed value falls back to the matching
 //! `modern_dark` slot, so a hand-edited file never panics or renders garbage.
 //!
 //! Invariant: every slot resolves to `Color::Rgb`. The reader's callout-tint blending
@@ -13,7 +13,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Theme {
     pub bg: Color,
     pub panel: Color,

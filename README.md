@@ -31,8 +31,9 @@ required; public reading, offline storage, and narrowly scoped atproto sign-in a
   `textContent` field).
 - **Make it yours.** Cycle layouts (one / two / three-pane, or a drill-down) and resize
   the sidebar; pick a built-in colour theme or hand-tune one in an in-app RGB editor; and
-  **override layout or theme per blog**. A first-launch picker sets your defaults; everything
-  persists to a human-editable `prefs.toml`.
+  **override layout or theme per blog**, including a separate custom palette owned by each
+  publication. The global custom theme remains a distinct default. A first-launch picker sets your
+  defaults; everything persists to a human-editable `prefs.toml`.
 - **Keyboard-first**, with a command palette, `?` help, vim/arrow navigation, and mouse.
   In-post hyperlinks are navigable too — cycle them with `n`/`N` and open with `Enter`, or
   click them straight from the rendered text.
@@ -146,14 +147,14 @@ plus one line in the registry; decoders are pure and never panic on partial inpu
 
 Styling is the reader's own, and **yours to customize**: pick a layout (one/two/three-pane
 or a drill-down, with independently resizable panes), pick or hand-edit a colour theme
-(built-in presets plus an in-app RGB editor), and override either per blog — all decode the
-same structure, so customization only changes presentation.
+(built-in presets plus an in-app RGB editor), and override either per blog with an independent
+custom palette — all decode the same structure, so customization only changes presentation.
 
 ## Build
 
 ```
 cargo build
-cargo test --workspace         # the full suite (181 tests across four crates)
+cargo test --workspace         # the full suite (188 tests across four crates)
 cargo test -p standard-core    # just the engine
 cargo run -p standard-reader   # runs the `sr` binary
 

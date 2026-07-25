@@ -64,12 +64,15 @@ pub struct BlogOverride {
     pub theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout: Option<LayoutKind>,
+    /// This publication's private editable palette, used only when `theme == "custom"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom: Option<ThemeColors>,
 }
 
 impl BlogOverride {
     /// Whether this override carries nothing (so it can be dropped from the map).
     pub fn is_empty(&self) -> bool {
-        self.theme.is_none() && self.layout.is_none()
+        self.theme.is_none() && self.layout.is_none() && self.custom.is_none()
     }
 }
 
@@ -149,6 +152,23 @@ impl Prefs {
             self.per_blog.insert(pub_uri.to_string(), ov);
         }
     }
+
+    /// Migrate the old shared-custom representation. Before per-blog palettes existed, a blog
+    /// override could store `theme = "custom"` but every such blog referenced [`Self::custom`].
+    /// Those overrides now return to global theme inheritance; an independent layout survives.
+    ///
+    /// Returns whether anything changed so [`App`](crate::app::App) can persist the migration.
+    pub fn migrate_legacy_blog_customs(&mut self) -> bool {
+        let mut changed = false;
+        for blog in self.per_blog.values_mut() {
+            if blog.theme.as_deref() == Some("custom") && blog.custom.is_none() {
+                blog.theme = None;
+                changed = true;
+            }
+        }
+        self.per_blog.retain(|_, blog| !blog.is_empty());
+        changed
+    }
 }
 
 #[cfg(test)]
@@ -166,7 +186,8 @@ mod tests {
         };
         p.edit_blog("at://did:plc:x/site.standard.publication/1", |o| {
             o.layout = Some(LayoutKind::OnePane);
-            o.theme = Some("light".into());
+            o.theme = Some("custom".into());
+            o.custom = Some(ThemeColors::light());
         });
         let toml = p.to_toml();
         let back: Prefs = toml::from_str(&toml).unwrap();
@@ -215,5 +236,27 @@ mod tests {
             p.blog("at://p/1").is_none(),
             "empty override removed from the map"
         );
+    }
+
+    #[test]
+    fn legacy_shared_custom_returns_to_global_but_keeps_layout() {
+        let mut p = Prefs::default();
+        p.edit_blog("at://p/theme-only", |o| o.theme = Some("custom".into()));
+        p.edit_blog("at://p/with-layout", |o| {
+            o.theme = Some("custom".into());
+            o.layout = Some(LayoutKind::ThreePane);
+        });
+        p.edit_blog("at://p/private", |o| {
+            o.theme = Some("custom".into());
+            o.custom = Some(ThemeColors::high_contrast());
+        });
+
+        assert!(p.migrate_legacy_blog_customs());
+        assert!(p.blog("at://p/theme-only").is_none());
+        let layout = p.blog("at://p/with-layout").unwrap();
+        assert_eq!(layout.theme, None);
+        assert_eq!(layout.layout, Some(LayoutKind::ThreePane));
+        assert!(p.blog("at://p/private").unwrap().custom.is_some());
+        assert!(!p.migrate_legacy_blog_customs());
     }
 }

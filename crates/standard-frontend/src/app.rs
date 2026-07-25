@@ -88,14 +88,21 @@ enum PaneWidth {
 }
 
 /// The in-app colour editor's transient state: a working palette plus which slot/channel is
-/// selected. Lives on `App` while [`Mode::ThemeEditor`] is active; committed to `prefs.custom`
-/// on Enter, discarded on Esc.
+/// selected. Lives on `App` while [`Mode::ThemeEditor`] is active; committed to either the global
+/// custom palette or one publication's private palette on Enter, discarded on Esc.
 pub struct ThemeEditor {
     pub draft: ThemeColors,
     /// Selected slot, 0..7 (indexes [`theme::SLOTS`](crate::ui::theme::SLOTS)).
     pub slot: usize,
     /// Selected RGB channel, 0..3 (R, G, B).
     pub channel: usize,
+    pub(crate) target: ThemeTarget,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(crate) enum ThemeTarget {
+    Global,
+    Blog(String),
 }
 
 /// Palette actions (also reachable by their direct keys).
@@ -276,7 +283,8 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(tx: Sender<ToWorker>, prefs: Prefs) -> Self {
+    pub fn new(tx: Sender<ToWorker>, mut prefs: Prefs) -> Self {
+        let prefs_migrated = prefs.migrate_legacy_blog_customs();
         let mut app = Self {
             mode: Mode::Browse,
             focus: Focus::Sidebar,
@@ -331,6 +339,9 @@ impl App {
             auth_redirect: Box::new(|_| {}),
         };
         app.recompute_appearance();
+        if prefs_migrated {
+            app.persist_prefs();
+        }
         app.send(ToWorker::LoadHome);
         if !app.prefs.onboarded {
             app.start_onboarding();
@@ -372,7 +383,10 @@ impl App {
     fn effective_colors(&self) -> ThemeColors {
         let name = self.effective_theme_name();
         if name == "custom" {
-            self.prefs.custom.clone()
+            self.active_pub()
+                .and_then(|uri| self.prefs.blog(uri))
+                .and_then(|blog| blog.custom.clone())
+                .unwrap_or_else(|| self.prefs.custom.clone())
         } else {
             ThemeColors::preset(&name).unwrap_or_else(ThemeColors::modern_dark)
         }
@@ -875,6 +889,10 @@ impl App {
     fn theme_picker_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc if self.onboarding => self.finish_onboarding(),
+            KeyCode::Esc if self.menu_target.is_some() => {
+                self.menu_sel = 0;
+                self.mode = Mode::BlogMenu;
+            }
             KeyCode::Esc => self.mode = Mode::Browse,
             KeyCode::Up | KeyCode::Char('k') => self.menu_sel = self.menu_sel.saturating_sub(1),
             KeyCode::Down | KeyCode::Char('j') => {
@@ -885,20 +903,22 @@ impl App {
         }
     }
 
-    /// Apply the selected theme picker entry. For the global target a preset commits immediately
-    /// and the trailing "Custom" entry opens the RGB editor; for a per-blog target the entry
-    /// (preset or "custom") is stored as that publication's override — the editor stays global.
+    /// Apply the selected theme picker entry. Presets commit immediately. The trailing "Custom"
+    /// entry opens an editor targeted at either the global default or one publication.
     fn choose_theme_entry(&mut self, i: usize) {
         let preset = PRESETS.get(i).map(|s| s.to_string());
-        match self.menu_target.take() {
-            Some(uri) => {
-                let name = preset.unwrap_or_else(|| "custom".to_string());
-                let n = name.clone();
-                self.prefs.edit_blog(&uri, |o| o.theme = Some(n));
-                self.persist_prefs();
-                self.mode = Mode::Browse;
-                self.status = format!("theme for this blog: {name}");
-            }
+        match self.menu_target.clone() {
+            Some(uri) => match preset {
+                Some(name) => {
+                    let n = name.clone();
+                    self.prefs.edit_blog(&uri, |o| o.theme = Some(n));
+                    self.persist_prefs();
+                    self.menu_target = None;
+                    self.mode = Mode::Browse;
+                    self.status = format!("theme for this blog: {name}");
+                }
+                None => self.open_theme_editor(ThemeTarget::Blog(uri)),
+            },
             None => match preset {
                 Some(name) => {
                     self.prefs.theme = name.clone();
@@ -910,19 +930,42 @@ impl App {
                         self.mode = Mode::Browse;
                     }
                 }
-                None => self.open_theme_editor(), // "Custom" → editor (onboarding finishes on save)
+                None => self.open_theme_editor(ThemeTarget::Global),
             },
         }
     }
 
-    /// Open the colour editor, seeded from whatever palette is currently in effect.
-    fn open_theme_editor(&mut self) {
+    /// Open the colour editor. A blog resumes its own saved custom palette when present; its first
+    /// private palette starts from the colors currently selected for that blog.
+    fn open_theme_editor(&mut self, target: ThemeTarget) {
+        let draft = match &target {
+            ThemeTarget::Global => self.prefs.custom.clone(),
+            ThemeTarget::Blog(uri) => self
+                .prefs
+                .blog(uri)
+                .and_then(|blog| blog.custom.clone())
+                .unwrap_or_else(|| self.colors_for_blog(uri)),
+        };
         self.theme_editor = Some(ThemeEditor {
-            draft: self.effective_colors(),
+            draft,
             slot: 0,
             channel: 0,
+            target,
         });
         self.mode = Mode::ThemeEditor;
+    }
+
+    fn colors_for_blog(&self, uri: &str) -> ThemeColors {
+        let name = self
+            .prefs
+            .blog(uri)
+            .and_then(|blog| blog.theme.as_deref())
+            .unwrap_or(&self.prefs.theme);
+        if name == "custom" {
+            self.prefs.custom.clone()
+        } else {
+            ThemeColors::preset(name).unwrap_or_else(ThemeColors::modern_dark)
+        }
     }
 
     fn theme_editor_key(&mut self, key: KeyEvent) {
@@ -933,10 +976,13 @@ impl App {
         match key.code {
             // Esc discards the draft (recompute reverts to the saved palette next frame).
             KeyCode::Esc => {
-                self.theme_editor = None;
+                let target = self.theme_editor.take().map(|editor| editor.target);
                 self.status = "theme edit cancelled".into();
                 if self.onboarding {
                     self.finish_onboarding();
+                } else if matches!(target, Some(ThemeTarget::Blog(_))) {
+                    self.menu_sel = 0;
+                    self.mode = Mode::BlogMenu;
                 } else {
                     self.mode = Mode::Browse;
                 }
@@ -975,13 +1021,25 @@ impl App {
         }
     }
 
-    /// Commit the editor draft as the custom theme and select it.
+    /// Commit the editor draft to its explicit target and select that target's custom theme.
     fn commit_theme_editor(&mut self) {
         if let Some(ed) = self.theme_editor.take() {
-            self.prefs.custom = ed.draft;
-            self.prefs.theme = "custom".into();
+            match ed.target {
+                ThemeTarget::Global => {
+                    self.prefs.custom = ed.draft;
+                    self.prefs.theme = "custom".into();
+                    self.status = "custom default theme saved".into();
+                }
+                ThemeTarget::Blog(uri) => {
+                    self.prefs.edit_blog(&uri, |blog| {
+                        blog.theme = Some("custom".into());
+                        blog.custom = Some(ed.draft);
+                    });
+                    self.menu_target = None;
+                    self.status = "custom theme for this blog saved".into();
+                }
+            }
             self.persist_prefs();
-            self.status = "custom theme saved".into();
         }
         if self.onboarding {
             self.finish_onboarding();
@@ -1939,8 +1997,9 @@ mod tests {
 
     // --- customization (layout / theme / per-blog) --------------------------------
 
-    use super::{App, Focus, Mode, hit};
+    use super::{App, Focus, Mode, ThemeTarget, hit};
     use crate::prefs::{LayoutKind, Prefs};
+    use crate::ui::theme::{PRESETS, Theme};
     use standard_core::model::{Document, Publication};
     use std::sync::mpsc::channel;
 
@@ -2042,7 +2101,8 @@ mod tests {
     #[test]
     fn theme_editor_adjusts_and_commits_custom() {
         let mut app = test_app(Prefs::for_test());
-        app.open_theme_editor();
+        let original = app.prefs.custom.clone();
+        app.open_theme_editor(ThemeTarget::Global);
         let ed = app.theme_editor.as_mut().expect("editor open");
         ed.slot = 4; // accent
         ed.channel = 0; // R
@@ -2052,7 +2112,131 @@ mod tests {
         assert_eq!(after, (before as i32 + 10).clamp(0, 255) as u8);
         app.commit_theme_editor();
         assert_eq!(app.prefs.theme, "custom");
+        assert_ne!(app.prefs.custom, original);
         assert!(app.theme_editor.is_none());
+    }
+
+    #[test]
+    fn per_blog_custom_palettes_are_independent_and_activate_when_opened() {
+        let mut prefs = Prefs::for_test();
+        prefs.theme = "custom".into();
+        prefs.custom = crate::ui::theme::ThemeColors::modern_dark();
+        let mut first = crate::ui::theme::ThemeColors::light();
+        first.set_slot(0, [40, 10, 10]);
+        let mut second = crate::ui::theme::ThemeColors::high_contrast();
+        second.set_slot(0, [10, 10, 40]);
+        prefs.edit_blog("at://p/1", |blog| {
+            blog.theme = Some("custom".into());
+            blog.custom = Some(first.clone());
+        });
+        prefs.edit_blog("at://p/2", |blog| {
+            blog.theme = Some("custom".into());
+            blog.custom = Some(second.clone());
+        });
+        let mut app = test_app(prefs);
+
+        app.open_pub = None;
+        app.recompute_appearance();
+        assert_eq!(
+            app.theme,
+            Theme::from(&crate::ui::theme::ThemeColors::modern_dark())
+        );
+
+        app.open_pub = Some("at://p/1".into());
+        app.recompute_appearance();
+        assert_eq!(app.theme, Theme::from(&first));
+
+        app.open_pub = Some("at://p/2".into());
+        app.recompute_appearance();
+        assert_eq!(app.theme, Theme::from(&second));
+    }
+
+    #[test]
+    fn blog_custom_editor_saves_only_its_target_and_resumes_its_palette() {
+        let mut prefs = Prefs::for_test();
+        prefs.custom = crate::ui::theme::ThemeColors::modern_dark();
+        let global_custom = prefs.custom.clone();
+        let mut saved = crate::ui::theme::ThemeColors::light();
+        saved.set_slot(4, [1, 2, 3]);
+        prefs.edit_blog("at://p/1", |blog| {
+            blog.theme = Some("light".into());
+            blog.custom = Some(saved.clone());
+        });
+        let mut app = test_app(prefs);
+
+        app.menu_target = Some("at://p/1".into());
+        app.choose_theme_entry(PRESETS.len());
+        let editor = app.theme_editor.as_ref().expect("blog editor opened");
+        assert_eq!(editor.target, ThemeTarget::Blog("at://p/1".into()));
+        assert_eq!(editor.draft, saved, "existing private palette resumes");
+
+        let mut changed = saved.clone();
+        changed.set_slot(4, [9, 8, 7]);
+        app.theme_editor.as_mut().unwrap().draft = changed.clone();
+        app.commit_theme_editor();
+
+        assert_eq!(app.prefs.custom, global_custom, "global custom untouched");
+        let blog = app.prefs.blog("at://p/1").unwrap();
+        assert_eq!(blog.theme.as_deref(), Some("custom"));
+        assert_eq!(blog.custom.as_ref(), Some(&changed));
+        assert!(app.menu_target.is_none());
+        assert_eq!(app.mode, Mode::Browse);
+    }
+
+    #[test]
+    fn cancelling_blog_custom_editor_returns_to_blog_menu_without_changes() {
+        use crate::input::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = test_app(Prefs::for_test());
+        app.menu_target = Some("at://p/1".into());
+        app.choose_theme_entry(PRESETS.len());
+        app.theme_editor.as_mut().unwrap().draft = crate::ui::theme::ThemeColors::light();
+        app.theme_editor_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert!(app.prefs.blog("at://p/1").is_none());
+        assert_eq!(app.mode, Mode::BlogMenu);
+        assert_eq!(app.menu_target.as_deref(), Some("at://p/1"));
+    }
+
+    #[test]
+    fn preset_preserves_private_palette_and_use_global_removes_it() {
+        use crate::input::{KeyCode, KeyEvent, KeyModifiers};
+
+        let saved = crate::ui::theme::ThemeColors::high_contrast();
+        let mut prefs = Prefs::for_test();
+        prefs.edit_blog("at://p/1", |blog| {
+            blog.theme = Some("custom".into());
+            blog.custom = Some(saved.clone());
+        });
+        let mut app = test_app(prefs);
+
+        app.menu_target = Some("at://p/1".into());
+        app.choose_theme_entry(1); // light
+        let blog = app.prefs.blog("at://p/1").unwrap();
+        assert_eq!(blog.theme.as_deref(), Some("light"));
+        assert_eq!(blog.custom.as_ref(), Some(&saved));
+
+        app.menu_target = Some("at://p/1".into());
+        app.menu_sel = 2;
+        app.blog_menu_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.prefs.blog("at://p/1").is_none());
+    }
+
+    #[test]
+    fn app_persists_legacy_custom_migration_on_startup() {
+        use crate::worker::ToWorker;
+        use std::sync::mpsc::channel;
+
+        let mut prefs = Prefs::for_test();
+        prefs.edit_blog("at://p/1", |blog| blog.theme = Some("custom".into()));
+        let (tx, rx) = channel();
+        let app = App::new(tx, prefs);
+
+        assert!(app.prefs.blog("at://p/1").is_none());
+        match rx.try_recv().expect("migration persisted") {
+            ToWorker::SavePrefs(saved) => assert!(saved.blog("at://p/1").is_none()),
+            _ => panic!("expected SavePrefs before LoadHome"),
+        }
     }
 
     #[test]

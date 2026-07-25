@@ -12,7 +12,7 @@ use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Para
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{Action, App, Focus, Mode, PanelBorderStyle};
+use crate::app::{Action, App, Focus, Mode, PanelBorderStyle, ThemeTarget};
 use crate::image_sink::ImageSink;
 use crate::prefs::{LayoutKind, PANE_MAX, PANE_MIN};
 use theme::{PRESETS, SLOTS, Theme, ThemeColors};
@@ -548,8 +548,8 @@ fn draw_sync_prompt(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     );
 }
 
-/// The theme picker: each built-in preset (rendered in its own colours as a live swatch), then
-/// a "Custom — edit colours" entry that opens the RGB editor.
+/// The theme picker: each built-in preset (rendered in its own colours as a live swatch), then a
+/// clearly global or per-blog custom entry that opens the RGB editor.
 fn draw_theme_picker(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let entries = PRESETS.len() + 1;
     let popup = centered(area, 40, (entries as u16 + 2).min(area.height));
@@ -577,10 +577,12 @@ fn draw_theme_picker(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
             ]))
         })
         .collect();
-    items.push(ListItem::new(Span::styled(
-        " Custom — edit colours…",
-        theme.body(),
-    )));
+    let custom_label = if app.menu_target.is_some() {
+        " Custom for this blog — edit…"
+    } else {
+        " Custom default — edit colours…"
+    };
+    items.push(ListItem::new(Span::styled(custom_label, theme.body())));
 
     let list = List::new(items)
         .block(block)
@@ -599,11 +601,15 @@ fn draw_theme_editor(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     };
     let popup = centered(area, 52, (SLOTS.len() as u16 + 2).min(area.height));
     f.render_widget(Clear, popup);
+    let title = match &ed.target {
+        ThemeTarget::Global => " Edit default custom theme ",
+        ThemeTarget::Blog(_) => " Edit custom theme for this blog ",
+    };
     let block = Block::bordered()
         .border_type(panel_border_type(app.panel_border_style))
         .border_style(theme.accent_style())
         .title(Span::styled(
-            " Edit theme ",
+            title,
             theme.accent_style().add_modifier(Modifier::BOLD),
         ))
         .style(Style::default().fg(theme.fg).bg(theme.panel));
@@ -696,6 +702,13 @@ fn draw_blog_menu(f: &mut Frame, app: &App, theme: &Theme, area: Rect) {
     let ov = app.prefs.blog(uri);
     let theme_val = ov
         .and_then(|o| o.theme.clone())
+        .map(|name| {
+            if name == "custom" {
+                "custom (this blog)".into()
+            } else {
+                name
+            }
+        })
         .unwrap_or_else(|| "global".into());
     let layout_val = ov
         .and_then(|o| o.layout)
@@ -854,6 +867,36 @@ mod tests {
         app.mode = Mode::Browse;
         terminal.draw(|f| draw(f, &mut app, &mut sink)).unwrap();
         assert_eq!(sink.visible, Some(true));
+    }
+
+    #[test]
+    fn customization_labels_distinguish_global_and_blog_custom_themes() {
+        let (tx, _rx) = channel::<ToWorker>();
+        let mut app = App::new(tx, crate::prefs::Prefs::for_test());
+        app.loading = false;
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+        app.mode = Mode::ThemePicker;
+        terminal
+            .draw(|f| draw(f, &mut app, &mut NoopImageSink))
+            .unwrap();
+        assert!(buffer_text(terminal.backend().buffer()).contains("Custom default — edit colours"));
+
+        app.menu_target = Some("at://p/1".into());
+        terminal
+            .draw(|f| draw(f, &mut app, &mut NoopImageSink))
+            .unwrap();
+        assert!(buffer_text(terminal.backend().buffer()).contains("Custom for this blog — edit"));
+
+        app.prefs.edit_blog("at://p/1", |blog| {
+            blog.theme = Some("custom".into());
+            blog.custom = Some(ThemeColors::light());
+        });
+        app.mode = Mode::BlogMenu;
+        terminal
+            .draw(|f| draw(f, &mut app, &mut NoopImageSink))
+            .unwrap();
+        assert!(buffer_text(terminal.backend().buffer()).contains("custom (this blog)"));
     }
 
     fn buffer_text(buf: &Buffer) -> String {
@@ -1113,7 +1156,7 @@ mod tests {
 
     #[test]
     fn customization_overlays_and_layouts_render_without_panic() {
-        use crate::app::{Mode, ThemeEditor};
+        use crate::app::{Mode, ThemeEditor, ThemeTarget};
         use crate::prefs::{LayoutKind, Prefs};
         use theme::ThemeColors;
 
@@ -1145,6 +1188,7 @@ mod tests {
                             draft: ThemeColors::modern_dark(),
                             slot: 0,
                             channel: 0,
+                            target: ThemeTarget::Global,
                         });
                     }
                     if mode == Mode::BlogMenu {

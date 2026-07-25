@@ -469,7 +469,8 @@ mod tests {
         };
         prefs.edit_blog("at://did:plc:test/site.standard.publication/main", |blog| {
             blog.layout = Some(LayoutKind::OnePane);
-            blog.theme = Some("sepia".into());
+            blog.theme = Some("custom".into());
+            blog.custom = Some(standard_frontend::ui::theme::ThemeColors::high_contrast());
         });
         let bytes = serde_json::to_vec(&prefs).unwrap();
         assert_eq!(decode_prefs(Some(&bytes)), prefs);

@@ -25,6 +25,10 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
   WASM distribution with pinned Rust/Trunk versions, and uploads the packaged site as an artifact.
 
 ### Fixed
+- Custom themes are now truly per-blog: each publication owns its edited palette and switching
+  between opened blogs swaps palettes without changing the global custom default or another blog.
+  Legacy blog overrides that referenced the former shared custom palette return to global
+  inheritance.
 - Browser image overlays now hide while dialogs are open, so customization and other popups always
   render above article images.
 - URL-backed images now use stable OPFS-safe filenames. Previously their `/` characters made the

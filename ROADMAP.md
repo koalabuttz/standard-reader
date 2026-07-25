@@ -2,7 +2,7 @@
 
 A reader for [standard.site](https://standard.site) (long-form on the AT Protocol). The engine (`standard-core`) plus a platform-agnostic frontend (`standard-frontend`: App + UI + worker + seam traits) are portable by design: the desktop `ratatui` TUI and **browser/WASM** shell share them now, and a **PS Vita** frontend can follow without a rewrite. See `CLAUDE.md` for architecture.
 
-## Status — 2026-07-24: `sr` 1.1.1 + unreleased browser M3 (engine `standard-core` 0.3.0)
+## Status — 2026-07-24: `sr` 1.2.0 release candidate; browser M3 complete (engine `standard-core` 0.3.0)
 
 Workspace builds; the suite is green (181 tests across the workspace: core unit + integration over real-record fixtures incl. an offline mock of the whole pipeline, full Offprint/Leaflet block+facet coverage + alignment, the redb and OPFS-cache round trips, browser input/persistence/OAuth transaction tests, and the frontend/TUI renderer-state tests, OAuth scope/loopback parsing, subscription sync-diff, unread/load-older plumbing, and customization persistence). `sr` launches a **`ratatui` reader** — add a blog by handle (a local follow-list persisted in redb), browse the sidebar → document list → reader, search, command palette, mouse. The reader is a **block-flow** that renders real inline + cover images (`ratatui-image`, iTerm2 graphics where supported), all over a worker thread with an offline cache. Reading needs no auth; **`L` signs in via OAuth** to mirror the follow-list to atproto subscriptions. **Fully customizable**: cycle layouts (`\`), resize panes independently (`< >`), pick/edit a colour theme (`t`), and override either per blog (`b`) — set on first launch and persisted to `prefs.toml`. Feeds load **lazily** — adding a handle that publishes several blogs shows a **pick-which-to-follow** checklist, and opening a feed pulls a bounded recent window (older posts on demand via `↓`) rather than backfilling everything up front.
 
@@ -61,7 +61,7 @@ Sequenced so each step is runnable on top of the last:
 - [x] **Embeds degrade to links.** Pckt iframes (YouTube → `watch?v=`), Leaflet embeds, and Offprint web embeds/bookmarks become clickable links rather than disappearing.
 - [ ] **Richer embed labels.** A Bluesky embed (`bsky.app` / AT-URI) currently links by raw URL; resolve a friendlier label (author + snippet) instead. Same idea for other recognizable embed hosts.
 - [ ] `tantivy` search swap (only if ranked/fuzzy search is wanted).
-- [ ] **Browser / WASM frontend** — a `standard-reader-web` shell over `standard-frontend`:
+- [x] **Browser / WASM frontend** — a `standard-reader-web` shell over `standard-frontend`:
   - [x] **M0:** extract the platform-agnostic frontend and seam traits.
   - [x] **M1:** ratzilla UI, Web Worker + synchronous-XHR transport, and native `<img>` overlays.
   - [x] **M2:** OPFS-backed offline cache (including images/read state/cursors) plus persisted appearance preferences.

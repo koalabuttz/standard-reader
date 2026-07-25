@@ -5,11 +5,14 @@ writing published to the AT Protocol (Leaflet, Pckt, Offprint, GreenGale, and an
 blog that publishes `site.standard.*` records). Sign in with your atproto account,
 pull your subscriptions, and read — with images and real formatting, online or off.
 
-> Status: **1.1.1**, with the browser shell complete through Milestone 2. Add a blog by handle, browse the sidebar →
+> Status: **1.2.0**, with the browser shell complete through Milestone 3. Add a blog by handle, browse the sidebar →
 > document list → reader, and read a block-flow with inline + cover images, search, a command
 > palette, and full layout/theme customization — all over an offline cache. Reading needs no
 > auth; signing in mirrors your follow-list to atproto subscriptions. No build step beyond
 > `cargo`, no runtime services. (RSS support is a later goal.)
+
+**[Try the web reader](https://www.davidlewis.xyz/standard-reader/app/)** — no installation
+required; public reading, offline storage, and narrowly scoped atproto sign-in are available.
 
 ## Features
 
@@ -42,8 +45,8 @@ pull your subscriptions, and read — with images and real formatting, online or
   transcode-to-JPEG, then cache offline.
 - **A portable core *and* frontend.** The engine and the App/UI/worker carry no platform stack,
   behind a small set of seam traits. The **browser/WASM shell** already reuses them (public reading,
-  local follows, native image overlays, and OPFS offline persistence); browser OAuth is its remaining
-  M3 slice. A **PS Vita** frontend can reuse the same seams.
+  local follows, native image overlays, OPFS offline persistence, and browser OAuth with subscription
+  writes). A **PS Vita** frontend can reuse the same seams.
 
 ## Install
 
@@ -111,7 +114,8 @@ seams:
   Desktop: `reqwest` + `redb`; browser: worker-side synchronous XHR + an OPFS-persisted memory store.
 - **`FrontendStore`** / **`AuthProvider`** / **`ImageSink`** (frontend) — the follow-list,
   sign-in + subscription writes, and "paint an image into a cell rect." Desktop: `redb`
-  follows, `atrium-oauth`, `ratatui-image`; browser: local follows, no auth yet, native `<img>`s.
+  follows, `atrium-oauth`, `ratatui-image`; browser: OPFS-backed follows and OAuth,
+  `atrium-oauth`, native `<img>`s.
 
 So the hard part — atproto reads, content decoding, caching, search, the whole reader UI — is
 written once and reused; a different platform (the existing **browser/WASM** shell, or a future

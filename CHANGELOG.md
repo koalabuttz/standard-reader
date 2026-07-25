@@ -9,6 +9,8 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-24 — `sr` (engine `standard-core` unchanged at 0.3.0)
+
 ### Added
 - **Browser/WASM shell through Milestone 3.** The shared frontend now runs in the browser via
   ratzilla, with network work isolated on a Web Worker, native `<img>` overlays, and an OPFS-backed
@@ -142,7 +144,8 @@ long-form writing on the AT Protocol — online or fully offline.
   customization above — one consistent, user-controlled render path.
 - Requires Rust 1.88+ to build from source.
 
+[Unreleased]: https://github.com/koalabuttz/standard-reader/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.2.0
 [1.1.1]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.1.1
 [1.1.0]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.1.0
 [1.0.0]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.0.0
-[Unreleased]: https://github.com/koalabuttz/standard-reader/compare/v1.1.1...HEAD

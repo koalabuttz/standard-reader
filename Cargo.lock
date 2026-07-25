@@ -3466,7 +3466,14 @@ dependencies = [
 name = "standard-reader-web"
 version = "0.1.0"
 dependencies = [
+ "atrium-api",
+ "atrium-common",
+ "atrium-identity",
+ "atrium-oauth",
+ "atrium-xrpc",
  "console_error_panic_hook",
+ "futures-lite",
+ "getrandom 0.2.17",
  "image",
  "js-sys",
  "ratzilla",

@@ -10,9 +10,11 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
 ## [Unreleased]
 
 ### Added
-- **Browser/WASM shell through Milestone 2.** The shared frontend now runs in the browser via
+- **Browser/WASM shell through Milestone 3.** The shared frontend now runs in the browser via
   ratzilla, with network work isolated on a Web Worker, native `<img>` overlays, and an OPFS-backed
   offline cache for documents, images, follows, read state, cursors, and appearance preferences.
+  Direct browser OAuth now signs in through DPoP/PKCE/PAR and mirrors follows as atproto
+  subscriptions, with credentials durably stored in origin-private storage and no backend service.
 - **Browser mouse support.** Links and list rows are clickable, and wheel/trackpad gestures scroll
   the pane under the pointer without moving the surrounding page.
 - **“Published with …” attribution.** Structured posts identify their authoring platform in the
@@ -31,6 +33,9 @@ stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
   common browser monospace fonts.
 
 ### Security
+- Replaced the broad transitional OAuth grant with the exact permissions the reader needs:
+  identity plus create/delete access to `site.standard.graph.subscription`. Existing sessions with
+  the old grant are revoked and require a fresh, narrowly scoped sign-in.
 - Updated `quinn-proto`, `crossbeam-epoch`, and `anyhow` to patched versions identified by the
   RustSec audit.
 

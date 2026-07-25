@@ -3,7 +3,7 @@
   "client_name": "standard-reader",
   "client_uri": "https://www.davidlewis.xyz/standard-reader",
   "redirect_uris": ["http://127.0.0.1:4599/callback"],
-  "scope": "atproto transition:generic",
+  "scope": "atproto repo:site.standard.graph.subscription?action=create&action=delete",
   "grant_types": ["authorization_code", "refresh_token"],
   "response_types": ["code"],
   "application_type": "native",

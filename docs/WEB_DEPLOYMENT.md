@@ -6,9 +6,10 @@ The browser shell is served by the existing `koalabuttz.github.io` GitHub Pages 
 https://www.davidlewis.xyz/standard-reader/app/
 ```
 
-The parent `/standard-reader/` path remains the human-facing project page and hosts
-`client_metadata.json` for desktop OAuth. The static website stays build-free: this repository
-builds the WASM application, and only the finished files are copied into it.
+The parent `/standard-reader/` path remains the human-facing project page and hosts separate
+`client_metadata.json` (desktop/native) and `web_client_metadata.json` (browser) OAuth clients.
+The static website stays build-free: this repository builds the WASM application, and only the
+finished files plus browser metadata are copied into it.
 
 ## Stage a release
 
@@ -22,7 +23,8 @@ The script:
 
 1. runs the pinned Trunk release build;
 2. verifies that the generated HTML uses `/standard-reader/app/`;
-3. replaces only `standard-reader/app/` in the sibling `website` checkout; and
+3. replaces only `standard-reader/app/` and stages `web_client_metadata.json` in the sibling
+   `website` checkout; and
 4. prints the website repository changes for review.
 
 It does not commit or push either repository. Pass another website checkout as the first argument
@@ -84,3 +86,14 @@ Then:
 
 Also recheck `/standard-reader/` and `/standard-reader/client_metadata.json`; the app deployment
 must not change either route.
+
+Before testing browser sign-in, verify that its client metadata is directly fetchable and does not
+redirect:
+
+```sh
+curl -sSI https://www.davidlewis.xyz/standard-reader/web_client_metadata.json
+```
+
+It must return `200` with a JSON content type. Then sign in by handle, approve the request, and
+confirm the redirect returns to `/standard-reader/app/` signed in. Reload the page, reconcile a
+local-only follow, confirm follow/unfollow writes upstream, and finally log out and reload.

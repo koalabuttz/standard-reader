@@ -25,6 +25,7 @@ use web_sys::{
 
 use standard_frontend::prefs::Prefs;
 
+use crate::auth::{AUTH_FILE, AuthSnapshot};
 use crate::store::{IndexDto, InitialState, PersistOp};
 
 /// The structured snapshot file (in the OPFS root).
@@ -41,6 +42,7 @@ pub const BLOB_DIR: &str = "i";
 pub struct BootstrapState {
     pub store: InitialState,
     pub prefs: Prefs,
+    pub auth: AuthSnapshot,
 }
 
 /// One concrete write selected from the coalescing queue.
@@ -315,8 +317,10 @@ fn decode_prefs(bytes: Option<&[u8]>) -> Prefs {
 pub async fn load_opfs(opfs: &Opfs) -> BootstrapState {
     let prefs_bytes = opfs.read(None, PREFS_FILE).await.ok().flatten();
     let prefs = decode_prefs(prefs_bytes.as_deref());
+    let auth_bytes = opfs.read(None, AUTH_FILE).await.ok().flatten();
+    let auth = AuthSnapshot::decode(auth_bytes.as_deref());
     let store = load_store(opfs).await;
-    BootstrapState { store, prefs }
+    BootstrapState { store, prefs, auth }
 }
 
 async fn load_store(opfs: &Opfs) -> InitialState {

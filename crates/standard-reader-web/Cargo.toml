@@ -29,8 +29,22 @@ js-sys = "0.3"
 # uses, so the on-disk `index.json` / body / blob format is just the `model` types serialized.
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Browser OAuth stays inside this shell. Atrium supplies the protocol-critical DPoP/PKCE/PAR
+# machinery and typed subscription writes; we provide synchronous XHR and OPFS-backed stores.
+atrium-oauth = { version = "0.1", default-features = false }
+atrium-api = { version = "0.25", default-features = false, features = ["agent"] }
+atrium-identity = "0.1"
+atrium-xrpc = "0.12"
+atrium-common = "0.1"
+# Atrium's futures complete over synchronous XHR in the Web Worker, so no Tokio runtime is needed.
+futures-lite = "2"
+# `atrium-oauth` generates DPoP and PKCE randomness through rand/getrandom.
+getrandom = { version = "0.2", features = ["js"] }
 web-sys = { version = "0.3", features = [
     "Window",
+    "Location",
+    "History",
+    "UrlSearchParams",
     "EventTarget",
     "AddEventListenerOptions",
     "KeyboardEvent",

@@ -1,9 +1,9 @@
 //! `standard-reader-web` — the browser/WASM shell (ratatui-in-the-browser via ratzilla).
 //!
-//! **Milestone 2 — OPFS persistence.** The platform-agnostic `standard-frontend` worker runs in a
-//! Web Worker (`wasm_thread`), fetching over a synchronous-XHR [`WebTransport`] and caching in a
-//! [`MemStore`] that now **persists to the Origin-Private File System** (see [`persist`]): the
-//! cache survives reloads and reading works **offline, including images**. Still no auth (M3).
+//! **Milestone 3 — direct browser OAuth.** The platform-agnostic `standard-frontend` worker runs in
+//! a Web Worker (`wasm_thread`), fetching over synchronous XHR and caching in a [`MemStore`] backed
+//! by the Origin-Private File System (see [`persist`]). Reading works offline, including images;
+//! sign-in uses direct atproto DPoP/PKCE/PAR OAuth and mirrors follows as subscriptions.
 //!
 //! The worker blocks on `recv()` and can't await, so async OPFS I/O lives on the **main thread**:
 //! at startup we `await` the cache load *before* spawning the worker (so cache-first reads serve
@@ -14,11 +14,13 @@
 //! nightly + build-std setup in `rust-toolchain.toml` / `.cargo/config.toml`.
 
 use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use ratzilla::ratatui::Terminal;
 use ratzilla::{DomBackend, WebRenderer};
+use wasm_bindgen::JsCast;
 
 use standard_frontend::app::{App, PanelBorderStyle};
 use standard_frontend::prefs::Prefs;
@@ -29,11 +31,36 @@ mod persist;
 mod sink;
 mod store;
 mod transport;
-use auth::NoAuth;
+use auth::{AUTH_FILE, AuthStorageRequest, OAuthReturn, WebAuth};
 use persist::{BootstrapState, Opfs, WriteQueue};
 use sink::OverlayImageSink;
 use store::{MemStore, PersistOp};
 use transport::WebTransport;
+
+#[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
+export function srClaimAuthLock() {
+  return new Promise((resolve) => {
+    if (!navigator.locks) {
+      resolve(false);
+      return;
+    }
+    navigator.locks.request(
+      "standard-reader.oauth",
+      { ifAvailable: true },
+      (lock) => {
+        resolve(Boolean(lock));
+        if (!lock) return;
+        // Hold the exclusive lock for this document's lifetime. Navigation releases it.
+        return new Promise(() => {});
+      }
+    ).catch(() => resolve(false));
+  });
+}
+"#)]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = srClaimAuthLock)]
+    fn claim_auth_lock() -> js_sys::Promise;
+}
 
 fn main() -> std::io::Result<()> {
     console_error_panic_hook::set_once();
@@ -59,6 +86,12 @@ async fn run(
     persist_rx: Receiver<PersistOp>,
 ) -> std::io::Result<()> {
     let storage_notice: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let oauth_return = capture_oauth_return();
+    let auth_lock = wasm_bindgen_futures::JsFuture::from(claim_auth_lock())
+        .await
+        .ok()
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     // Open OPFS + hydrate the cache. Best-effort: any failure → run in-memory only (never break).
     let (opfs, bootstrap) = match Opfs::open().await {
         Ok(o) => {
@@ -80,6 +113,28 @@ async fn run(
         .keys()
         .map(|id| persist::blob_file_key(id))
         .collect::<Vec<_>>();
+    let auth_bootstrap = bootstrap.auth;
+    let prefs_bootstrap = bootstrap.prefs;
+    let store_bootstrap = bootstrap.store;
+
+    let (auth_persist_tx, auth_persist_rx) = channel::<AuthStorageRequest>();
+    let auth = if opfs.is_some() && auth_lock {
+        match WebAuth::new(auth_bootstrap, oauth_return, auth_persist_tx) {
+            Ok(auth) => Some(auth),
+            Err(e) => {
+                storage_notice.replace(Some(format!("browser sign-in unavailable: {e}")));
+                None
+            }
+        }
+    } else {
+        let reason = if opfs.is_none() {
+            "browser sign-in requires durable offline storage"
+        } else {
+            "account operations are active in another tab"
+        };
+        storage_notice.replace(Some(reason.into()));
+        None
+    };
 
     // Spawn the worker in a Web Worker over the hydrated store. Preference saves cross the same
     // channel as cache writes so all OPFS work remains on the browser main thread.
@@ -92,16 +147,23 @@ async fn run(
     });
     let (tx, rx) = worker::spawn(
         WebTransport::new(),
-        MemStore::new(persist_tx, bootstrap.store),
-        None::<NoAuth>,
+        MemStore::new(persist_tx, store_bootstrap),
+        auth,
         log,
         save_prefs,
     );
 
-    let mut app = App::new(tx, bootstrap.prefs);
+    let mut app = App::new(tx, prefs_bootstrap);
     app.set_open_url(Box::new(|url| {
         if let Some(win) = web_sys::window() {
             let _ = win.open_with_url(url);
+        }
+    }));
+    app.set_auth_redirect(Box::new(|url| {
+        if let Some(win) = web_sys::window()
+            && let Err(e) = win.location().assign(url)
+        {
+            web_sys::console::log_1(&format!("OAuth redirect failed: {e:?}").into());
         }
     }));
     // Rounded box-drawing corners rasterize as disconnected hooks in common browser monospace
@@ -134,6 +196,8 @@ async fn run(
     let mut sink = OverlayImageSink::new();
     let write_queue = Rc::new(RefCell::new(WriteQueue::new(completed_blobs)));
     let writer_busy = Rc::new(Cell::new(false));
+    let auth_queue = Rc::new(RefCell::new(VecDeque::<AuthStorageRequest>::new()));
+    let auth_writer_busy = Rc::new(Cell::new(false));
 
     terminal.draw_web(move |f| {
         // Drain worker results (non-blocking) before drawing.
@@ -148,8 +212,19 @@ async fn run(
                     write_queue.borrow_mut().push(op);
                 }
                 maybe_flush_writes(opfs, &write_queue, &writer_busy, &storage_notice);
+                while let Ok(request) = auth_persist_rx.try_recv() {
+                    auth_queue.borrow_mut().push_back(request);
+                }
+                maybe_flush_auth(opfs, &auth_queue, &auth_writer_busy, &storage_notice);
             }
-            None => while persist_rx.try_recv().is_ok() {},
+            None => {
+                while persist_rx.try_recv().is_ok() {}
+                while let Ok(request) = auth_persist_rx.try_recv() {
+                    let _ = request
+                        .ack
+                        .send(Err("origin-private storage is unavailable".into()));
+                }
+            }
         }
         if let Some(notice) = storage_notice.borrow_mut().take() {
             app.borrow_mut().status = format!("⚠ {notice}");
@@ -160,6 +235,98 @@ async fn run(
     });
 
     Ok(())
+}
+
+/// Capture a returned OAuth response, then remove its one-time parameters from the visible URL so
+/// reload/back cannot replay the authorization code. Unrelated query parameters and the fragment
+/// are retained.
+fn capture_oauth_return() -> Option<OAuthReturn> {
+    let win = web_sys::window()?;
+    let location = win.location();
+    let search = location.search().ok()?;
+    let params = web_sys::UrlSearchParams::new_with_str(&search).ok()?;
+    let result = oauth_return_from(|name| params.get(name));
+    result.as_ref()?;
+
+    for name in ["code", "state", "iss", "error", "error_description"] {
+        params.delete(name);
+    }
+    let query = js_sys::Reflect::get(params.as_ref(), &"toString".into())
+        .ok()
+        .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
+        .and_then(|function| function.call0(params.as_ref()).ok())
+        .and_then(|value| value.as_string())
+        .unwrap_or_default();
+    let mut clean = location.pathname().unwrap_or_else(|_| "/".into());
+    if !query.is_empty() {
+        clean.push('?');
+        clean.push_str(&query);
+    }
+    clean.push_str(&location.hash().unwrap_or_default());
+    let _ = win.history().and_then(|history| {
+        history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&clean))
+    });
+    result
+}
+
+fn oauth_return_from(mut get: impl FnMut(&str) -> Option<String>) -> Option<OAuthReturn> {
+    if let Some(error) = get("error") {
+        return Some(OAuthReturn::Error {
+            state: get("state"),
+            error,
+            description: get("error_description"),
+        });
+    }
+    get("code").map(|code| {
+        OAuthReturn::Success(atrium_oauth::CallbackParams {
+            code,
+            state: get("state"),
+            iss: get("iss"),
+        })
+    })
+}
+
+/// Auth snapshots are small and security-sensitive: write immediately, retry once, acknowledge the
+/// exact result, and never coalesce them with the re-fetchable reading cache.
+fn maybe_flush_auth(
+    opfs: &Rc<Opfs>,
+    queue: &Rc<RefCell<VecDeque<AuthStorageRequest>>>,
+    busy: &Rc<Cell<bool>>,
+    notice: &Rc<RefCell<Option<String>>>,
+) {
+    if busy.get() || queue.borrow().is_empty() {
+        return;
+    }
+    busy.set(true);
+    let opfs = opfs.clone();
+    let queue = queue.clone();
+    let busy = busy.clone();
+    let notice = notice.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        while let Some(request) = { queue.borrow_mut().pop_front() } {
+            let mut error = None;
+            for _ in 0..2 {
+                match opfs.write(None, AUTH_FILE, &request.bytes).await {
+                    Ok(()) => {
+                        error = None;
+                        break;
+                    }
+                    Err(e) => error = Some(e.to_string()),
+                }
+            }
+            let result = match error {
+                Some(error) => {
+                    notice.replace(Some(
+                        "secure browser session write failed; sign-in was not committed".into(),
+                    ));
+                    Err(error)
+                }
+                None => Ok(()),
+            };
+            let _ = request.ack.send(result);
+        }
+        busy.set(false);
+    });
 }
 
 /// Start the single OPFS writer when work is pending. Payload files are selected before snapshots,
@@ -478,7 +645,11 @@ fn cell_from_geometry(
 
 #[cfg(test)]
 mod tests {
-    use super::{WheelAccumulator, cell_from_geometry, wheel_delta_rows};
+    use std::collections::BTreeMap;
+
+    use crate::auth::OAuthReturn;
+
+    use super::{WheelAccumulator, cell_from_geometry, oauth_return_from, wheel_delta_rows};
 
     #[test]
     fn browser_pixels_map_to_terminal_cells_and_reject_outside_clicks() {
@@ -502,5 +673,51 @@ mod tests {
         assert_eq!(wheel.push(1.0), 1);
         assert_eq!(wheel.push(-6.0), -2);
         assert_eq!(wheel.push(1_000.0), 8, "large gestures are capped");
+    }
+
+    #[test]
+    fn oauth_success_captures_code_state_and_issuer() {
+        let values = BTreeMap::from([
+            ("code", "returned-code"),
+            ("state", "expected-state"),
+            ("iss", "https://pds.example"),
+        ]);
+        let result = oauth_return_from(|name| values.get(name).map(ToString::to_string));
+        assert_eq!(
+            result,
+            Some(OAuthReturn::Success(atrium_oauth::CallbackParams {
+                code: "returned-code".into(),
+                state: Some("expected-state".into()),
+                iss: Some("https://pds.example".into()),
+            }))
+        );
+    }
+
+    #[test]
+    fn oauth_denial_wins_and_keeps_description() {
+        let values = BTreeMap::from([
+            ("code", "must-not-win"),
+            ("state", "expected-state"),
+            ("error", "access_denied"),
+            ("error_description", "the user cancelled"),
+        ]);
+        let result = oauth_return_from(|name| values.get(name).map(ToString::to_string));
+        assert_eq!(
+            result,
+            Some(OAuthReturn::Error {
+                state: Some("expected-state".into()),
+                error: "access_denied".into(),
+                description: Some("the user cancelled".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn unrelated_query_is_not_an_oauth_return() {
+        let values = BTreeMap::from([("theme", "dark")]);
+        assert_eq!(
+            oauth_return_from(|name| values.get(name).map(ToString::to_string)),
+            None
+        );
     }
 }

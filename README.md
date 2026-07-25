@@ -149,7 +149,7 @@ same structure, so customization only changes presentation.
 
 ```
 cargo build
-cargo test --workspace         # the full suite (170 tests across four crates)
+cargo test --workspace         # the full suite (181 tests across four crates)
 cargo test -p standard-core    # just the engine
 cargo run -p standard-reader   # runs the `sr` binary
 
@@ -164,7 +164,7 @@ in [`docs/WEB_DEPLOYMENT.md`](docs/WEB_DEPLOYMENT.md).
 
 ## OAuth
 
-`client_metadata.json` is the atproto OAuth **`client_id`**, served at
+The desktop's `client_metadata.json` is its atproto OAuth **`client_id`**, served at
 `https://www.davidlewis.xyz/standard-reader/client_metadata.json` — the canonical `www`
 host, because the apex 301-redirects and a `client_id` must not redirect. (A reference copy
 lives at this repo's root; the served copy is in the website repo.) Login uses the loopback
@@ -179,6 +179,17 @@ prebuilt binaries don't). The non-secret account sidecar (handle + DID) stays a 
 **`SR_OAUTH_LOCALHOST=1`** to fall back to the no-hosting dev client (local work, or before the
 metadata is deployed). Reading public feeds needs no auth — sign-in only enables write/sync of
 subscriptions.
+
+The browser is a separate public OAuth client at
+`https://www.davidlewis.xyz/standard-reader/web_client_metadata.json`, redirecting back to
+`/standard-reader/app/`. It uses the same DPoP/PKCE/PAR protocol and subscription reconciliation,
+but keeps its tokens, private DPoP key, and pending authorization state in an acknowledged
+origin-private `auth.json` file. Sign-in therefore survives reloads without adding a backend or
+putting credentials in localStorage. An origin-scoped Web Lock allows only one auth-capable tab at
+a time, preventing races over single-use refresh tokens; other tabs can still read normally. Both
+clients request only identity plus create/delete access to
+`site.standard.graph.subscription`; an older `transition:generic` session is revoked and must
+re-authorize rather than retaining app-password-level access.
 
 ## License
 

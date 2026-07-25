@@ -6,7 +6,7 @@
  * OAuth metadata, or API traffic.
  */
 const CACHE_PREFIX = "standard-reader-shell-";
-const CACHE_NAME = `${CACHE_PREFIX}v1`;
+const CACHE_NAME = `${CACHE_PREFIX}v2`;
 
 function inAppScope(url) {
   const scope = new URL(self.registration.scope);
@@ -39,17 +39,33 @@ async function primeShell() {
   const cache = await caches.open(CACHE_NAME);
   await cache.put(self.registration.scope, indexResponse);
 
-  await Promise.all(
-    assets
-      .filter((url) => url !== self.registration.scope)
-      .map(async (url) => {
-        const response = await fetch(new Request(url, { cache: "reload" }));
-        if (!response.ok) {
-          throw new Error(`${url} returned HTTP ${response.status}`);
+  // wasm-bindgen may emit small JS modules under `snippets/` (browser OAuth's Web Lock helper is
+  // one). Follow static JS imports as well as HTML assets so a first online load remains bootable
+  // offline even when the generated entry module has dependencies.
+  const pending = assets.filter((url) => url !== self.registration.scope);
+  const seen = new Set([self.registration.scope]);
+  const staticImport = /(?:from\s*|import\s*)["']([^"']+\.js)["']/g;
+  while (pending.length > 0) {
+    const url = pending.shift();
+    if (seen.has(url)) continue;
+    seen.add(url);
+
+    const response = await fetch(new Request(url, { cache: "reload" }));
+    if (!response.ok) {
+      throw new Error(`${url} returned HTTP ${response.status}`);
+    }
+    await cache.put(url, response.clone());
+
+    if (new URL(url).pathname.endsWith(".js")) {
+      const source = await response.text();
+      for (const match of source.matchAll(staticImport)) {
+        const dependency = new URL(match[1], url);
+        if (inAppScope(dependency) && !seen.has(dependency.href)) {
+          pending.push(dependency.href);
         }
-        await cache.put(url, response);
-      }),
-  );
+      }
+    }
+  }
 }
 
 self.addEventListener("install", (event) => {

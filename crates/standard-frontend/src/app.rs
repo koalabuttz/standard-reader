@@ -270,6 +270,9 @@ pub struct App {
     /// `window.open`). Defaults to a no-op until the shell installs one via [`App::set_open_url`],
     /// so the platform-agnostic state machine carries no process/`open` dependency.
     open_url: Box<dyn Fn(&str)>,
+    /// Host hook for a full-page OAuth navigation. Kept separate from `open_url` so browser shells
+    /// can replace the page for sign-in while ordinary article links still open in a new tab.
+    auth_redirect: Box<dyn Fn(&str)>,
 }
 
 impl App {
@@ -325,6 +328,7 @@ impl App {
             prefs,
             tx,
             open_url: Box::new(|_| {}),
+            auth_redirect: Box::new(|_| {}),
         };
         app.recompute_appearance();
         app.send(ToWorker::LoadHome);
@@ -338,6 +342,12 @@ impl App {
     /// then it's a no-op, so headless tests never shell out.
     pub fn set_open_url(&mut self, open_url: Box<dyn Fn(&str)>) {
         self.open_url = open_url;
+    }
+
+    /// Install the shell's OAuth navigator. The web shell uses `window.location.assign`; native
+    /// shells never receive redirect outcomes and can leave the default no-op in place.
+    pub fn set_auth_redirect(&mut self, auth_redirect: Box<dyn Fn(&str)>) {
+        self.auth_redirect = auth_redirect;
     }
 
     /// Select the panel-corner shape for this shell's renderer.
@@ -501,6 +511,10 @@ impl App {
                     None => "logged out".into(),
                 };
                 self.account = account;
+            }
+            FromWorker::AuthRedirect(url) => {
+                self.status = "continuing sign-in in your browser…".into();
+                (self.auth_redirect)(&url);
             }
             FromWorker::SyncDiff { local_only } => {
                 if local_only.is_empty() {
@@ -1832,6 +1846,34 @@ mod tests {
                 PublishingPlatform::Offprint.homepage(),
                 PublishingPlatform::Offprint.homepage()
             ]
+        );
+    }
+
+    #[test]
+    fn auth_redirect_uses_its_own_host_hook() {
+        use crate::worker::FromWorker;
+        use std::sync::{Arc, Mutex};
+
+        let opened = Arc::new(Mutex::new(Vec::<String>::new()));
+        let redirected = Arc::new(Mutex::new(Vec::<String>::new()));
+        let mut app = test_app(Prefs::for_test());
+        let opened_capture = Arc::clone(&opened);
+        app.set_open_url(Box::new(move |url| {
+            opened_capture.lock().unwrap().push(url.to_string());
+        }));
+        let redirected_capture = Arc::clone(&redirected);
+        app.set_auth_redirect(Box::new(move |url| {
+            redirected_capture.lock().unwrap().push(url.to_string());
+        }));
+
+        app.apply(FromWorker::AuthRedirect(
+            "https://auth.example/authorize".into(),
+        ));
+
+        assert!(opened.lock().unwrap().is_empty());
+        assert_eq!(
+            redirected.lock().unwrap().as_slice(),
+            ["https://auth.example/authorize"]
         );
     }
 

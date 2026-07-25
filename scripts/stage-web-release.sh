@@ -5,14 +5,15 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 web_dir="${repo_root}/crates/standard-reader-web"
 website_dir="${1:-"${repo_root}/../website"}"
 destination="${website_dir}/standard-reader/app"
+metadata_destination="${website_dir}/standard-reader/web_client_metadata.json"
 
 if ! git -C "${website_dir}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "website checkout not found: ${website_dir}" >&2
   exit 1
 fi
 
-if [ -n "$(git -C "${website_dir}" status --porcelain -- standard-reader/app)" ]; then
-  echo "refusing to replace website/standard-reader/app with uncommitted changes present" >&2
+if [ -n "$(git -C "${website_dir}" status --porcelain -- standard-reader/app standard-reader/web_client_metadata.json)" ]; then
+  echo "refusing to stage over uncommitted browser release files" >&2
   exit 1
 fi
 
@@ -39,6 +40,8 @@ fi
 
 mkdir -p "${destination}"
 rsync --archive --delete "${dist}/" "${destination}/"
+cp "${repo_root}/web_client_metadata.json" "${metadata_destination}"
 
 echo "staged web release in ${destination}"
-git -C "${website_dir}" status --short -- standard-reader/app
+git -C "${website_dir}" status --short -- \
+  standard-reader/app standard-reader/web_client_metadata.json

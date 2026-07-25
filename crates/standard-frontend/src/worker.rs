@@ -18,7 +18,7 @@ use standard_core::model::{Document, ImageSource, Publication, PublishingPlatfor
 use standard_core::read;
 
 use crate::account::Account;
-use crate::auth_provider::AuthProvider;
+use crate::auth_provider::{AuthProvider, LoginOutcome};
 use crate::frontend_store::FrontendStore;
 use crate::prefs::Prefs;
 
@@ -92,6 +92,9 @@ pub enum FromWorker {
     ShowImages(bool),
     /// The current signed-in identity (or `None` when signed out).
     Account(Option<Account>),
+    /// A browser-style OAuth provider durably saved its transaction and is ready for the shell to
+    /// replace the current page with the authorization URL.
+    AuthRedirect(String),
     /// Follows present locally but not on atproto — the reconciliation prompt's contents,
     /// as `(publication_uri, display_name)` pairs.
     SyncDiff {
@@ -715,7 +718,7 @@ impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
             let _ = progress_tx.send(FromWorker::Status(msg));
         };
         match auth.login(&ident, &progress) {
-            Ok(account) => {
+            Ok(LoginOutcome::Authenticated(account)) => {
                 (self.log)(&format!("login: ok, did={}", account.did));
                 self.account = Some(account.clone());
                 self.send(FromWorker::Account(Some(account.clone())));
@@ -724,6 +727,10 @@ impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
                     account.handle
                 )));
                 self.sync_subscriptions(&account)?;
+            }
+            Ok(LoginOutcome::Redirect(url)) => {
+                (self.log)("login: authorization transaction saved; redirecting");
+                self.send(FromWorker::AuthRedirect(url));
             }
             Err(e) => {
                 (self.log)(&format!("login: failed: {e}"));
@@ -735,8 +742,11 @@ impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
 
     /// Revoke the session upstream and forget it locally. Local follows stay (now unsynced).
     fn logout(&mut self) -> Done {
-        if let Some(auth) = &self.auth {
-            let _ = auth.logout();
+        if let Some(auth) = &self.auth
+            && let Err(e) = auth.logout()
+        {
+            self.send(FromWorker::Error(format!("log-out failed: {e}")));
+            return Ok(());
         }
         self.account = None;
         self.send(FromWorker::Account(None));

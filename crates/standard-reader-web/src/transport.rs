@@ -49,7 +49,8 @@ impl WebTransport {
                 .map_err(|e| js_err("set header", e))?;
         }
         match body {
-            // M1b is read-only (GET); `post` exists for later (auth writes). atproto bodies are
+            // Public core reads use GET; `post` remains available for future core-level writes.
+            // Authenticated subscription writes use Atrium's separate OAuth XHR client. Bodies are
             // UTF-8 JSON, so a string send is correct.
             Some(b) => xhr
                 .send_with_opt_str(Some(&String::from_utf8_lossy(b)))

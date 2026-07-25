@@ -45,7 +45,9 @@ use atrium_xrpc::HttpClient;
 use atrium_xrpc::http;
 use serde::Serialize;
 
-use standard_frontend::auth_provider::AuthProvider;
+use standard_frontend::auth_provider::{
+    AuthProvider, LoginOutcome, SUBSCRIPTION_PERMISSION_SCOPE, has_exact_subscription_scope,
+};
 
 /// Any failure in the auth path. Boxed so every atrium / reqwest / io error converts with `?`.
 pub type AuthError = Box<dyn Error + Send + Sync + 'static>;
@@ -160,10 +162,7 @@ impl Auth {
             .authorize(
                 ident,
                 AuthorizeOptions {
-                    scopes: vec![
-                        Scope::Known(KnownScope::Atproto),
-                        Scope::Known(KnownScope::TransitionGeneric),
-                    ],
+                    scopes: oauth_scopes(),
                     ..Default::default()
                 },
             )
@@ -189,6 +188,7 @@ impl Auth {
         let (session, _) = self.client.callback(params).await?;
 
         let did = session.did().await.ok_or("the OAuth session had no DID")?;
+        self.ensure_subscription_scope(&did).await?;
         let did = did.as_ref().to_string();
         // Display name: the handle the user typed (else the DID, when signed in by DID).
         let handle = if ident.starts_with("did:") {
@@ -214,8 +214,28 @@ impl Auth {
             return Ok(None);
         };
         let did = Did::new(account.did.clone())?;
+        self.ensure_subscription_scope(&did).await?;
         self.client.restore(&did).await?;
+        self.ensure_subscription_scope(&did).await?;
         Ok(Some(account))
+    }
+
+    async fn ensure_subscription_scope(&self, did: &Did) -> AuthResult<()> {
+        let store = select_session_store(&self.session_path);
+        let granted = store
+            .get(did)
+            .await?
+            .and_then(|session| session.token_set.scope);
+        if has_exact_subscription_scope(granted.as_deref()) {
+            return Ok(());
+        }
+
+        // Sessions issued before granular permissions existed retain their original broad grant.
+        // Revoke + remove them so upgrading cannot silently keep app-password-level access.
+        let _ = self.client.revoke(did).await;
+        let _ = store.clear().await;
+        self.clear_files()?;
+        Err("the saved OAuth session has obsolete or unexpected permissions; sign in again".into())
     }
 
     /// Revoke the session upstream (best-effort) and remove the local session/account files.
@@ -335,8 +355,10 @@ impl AuthProvider for DesktopAuth {
         self.runtime.block_on(self.auth.restore())
     }
 
-    fn login(&self, ident: &str, progress: &dyn Fn(String)) -> AuthResult<Account> {
-        self.runtime.block_on(self.auth.login(ident, progress))
+    fn login(&self, ident: &str, progress: &dyn Fn(String)) -> AuthResult<LoginOutcome> {
+        self.runtime
+            .block_on(self.auth.login(ident, progress))
+            .map(LoginOutcome::Authenticated)
     }
 
     fn logout(&self) -> AuthResult<()> {
@@ -387,10 +409,7 @@ fn build_client(session_path: PathBuf) -> AuthResult<Client> {
     // 0600 file; migrate any legacy session file into the keyring on first use.
     let session_store = select_session_store(&session_path);
     session_store.migrate_legacy_file(&session_path);
-    let scopes = vec![
-        Scope::Known(KnownScope::Atproto),
-        Scope::Known(KnownScope::TransitionGeneric),
-    ];
+    let scopes = oauth_scopes();
 
     // Default to the hosted client (a real client_id + branded consent screen). The dev client
     // needs no hosting but shows a generic prompt — kept as `SR_OAUTH_LOCALHOST` for local work
@@ -427,6 +446,13 @@ fn build_client(session_path: PathBuf) -> AuthResult<Client> {
             http_client: http,
         })?)
     }
+}
+
+fn oauth_scopes() -> Vec<Scope> {
+    vec![
+        Scope::Known(KnownScope::Atproto),
+        Scope::Unknown(SUBSCRIPTION_PERMISSION_SCOPE.to_string()),
+    ]
 }
 
 /// `at://<did>/<collection>/<rkey>` → `<rkey>` (the trailing path segment).

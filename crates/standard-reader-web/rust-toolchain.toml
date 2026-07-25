@@ -2,6 +2,9 @@
 # This file is directory-scoped: it only selects nightly when cargo/trunk runs *here* (the web
 # crate), so the desktop workspace keeps building on stable from the repo root.
 [toolchain]
-channel = "nightly"
+# Pin the known-good nightly: wasm atomics rely on unstable build-std/linker behavior, so a moving
+# nightly can break the browser build without any repository change. Its rustc commit is dated
+# 2026-05-31; nightly toolchains are named for the following day's distribution.
+channel = "nightly-2026-06-01"
 components = ["rust-src"]
 targets = ["wasm32-unknown-unknown"]

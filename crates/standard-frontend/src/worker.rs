@@ -149,7 +149,11 @@ fn run<T, S, A>(
 {
     log(&format!(
         "worker started; auth {}",
-        if auth.is_some() { "enabled" } else { "disabled" }
+        if auth.is_some() {
+            "enabled"
+        } else {
+            "disabled"
+        }
     ));
     let mut ctx = Ctx {
         transport,
@@ -430,6 +434,10 @@ impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
             self.fetch_new_documents(&repo, pub_uri)?;
         }
 
+        // A successful explicit refresh is the connectivity probe that re-enables background
+        // freshening after an earlier offline failure.
+        self.network_ok = true;
+
         // A repo can host several publications; serve the cache filtered to this feed.
         self.serve_docs(pub_uri)
     }
@@ -582,6 +590,8 @@ impl<T: Transport, S: FrontendStore, A: AuthProvider> Ctx<T, S, A> {
         let (meta, body) = read::get_document(&self.transport, &self.registry, &uri, &pds)?;
         let publishing_platform = meta.publishing_platform;
         self.store.upsert_document(&meta, Some(&body))?;
+        // An uncached open (or successful freshen) proves the network is reachable again.
+        self.network_ok = true;
         Ok((body, publishing_platform))
     }
 

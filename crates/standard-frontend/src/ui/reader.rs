@@ -175,7 +175,7 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme, sink: &mut dyn ImageSin
         .attribution_link
         .is_some_and(|idx| app.focused_link == Some(idx));
     let attribution = (area.height > 0)
-        .then(|| app.reading_platform)
+        .then_some(app.reading_platform)
         .flatten()
         .and_then(|platform| attribution_title(platform, theme, area.width, attribution_focused));
     app.attribution_visible = attribution.is_some();

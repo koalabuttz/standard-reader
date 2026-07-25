@@ -6,9 +6,9 @@ members = [
     "crates/standard-tui",
     "crates/standard-reader-web",
 ]
-# The web shell builds only for wasm32 (via `trunk`), so keep it out of the default host build:
-# bare `cargo build` / `cargo test` operate on these three desktop crates. (Don't use `--workspace`
-# on the host — it would try to build the wasm-only crate for the host target.)
+# Keep the web shell out of the default host build: bare `cargo build` / `cargo test` operate on
+# these three desktop crates. `cargo test --workspace` also runs the web shell's host-testable pure
+# logic; the actual wasm32 release build still goes through Trunk from that crate's directory.
 default-members = [
     "crates/standard-core",
     "crates/standard-frontend",

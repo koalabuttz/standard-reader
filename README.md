@@ -5,7 +5,7 @@ writing published to the AT Protocol (Leaflet, Pckt, Offprint, GreenGale, and an
 blog that publishes `site.standard.*` records). Sign in with your atproto account,
 pull your subscriptions, and read — with images and real formatting, online or off.
 
-> Status: **1.0.** Add a blog by handle, browse the sidebar →
+> Status: **1.1.1**, with the browser shell complete through Milestone 2. Add a blog by handle, browse the sidebar →
 > document list → reader, and read a block-flow with inline + cover images, search, a command
 > palette, and full layout/theme customization — all over an offline cache. Reading needs no
 > auth; signing in mirrors your follow-list to atproto subscriptions. No build step beyond
@@ -41,8 +41,9 @@ pull your subscriptions, and read — with images and real formatting, online or
   build can't decode (notably **AVIF**, which GreenGale emits) fall back to the Bluesky CDN's
   transcode-to-JPEG, then cache offline.
 - **A portable core *and* frontend.** The engine and the App/UI/worker carry no platform stack,
-  behind a small set of seam traits — so a **browser/WASM** build and a **PS Vita** frontend are
-  stated future goals, reusing all of it.
+  behind a small set of seam traits. The **browser/WASM shell** already reuses them (public reading,
+  local follows, native image overlays, and OPFS offline persistence); browser OAuth is its remaining
+  M3 slice. A **PS Vita** frontend can reuse the same seams.
 
 ## Install
 
@@ -99,6 +100,7 @@ crates/
     search              · inverted index over textContent
   standard-frontend/  lib · platform-agnostic — the App state machine, ratatui UI, and worker
   standard-tui/       bin `sr` · the desktop shell — reqwest + redb + atrium-oauth + ratatui-image
+  standard-reader-web/ bin · browser shell — ratzilla + Web Worker + XHR + OPFS + native images
 ```
 
 The core is **synchronous and I/O-agnostic**, and the frontend is **platform-agnostic**
@@ -106,14 +108,14 @@ The core is **synchronous and I/O-agnostic**, and the frontend is **platform-agn
 seams:
 
 - **`Transport`** / **`Store`** (core) — perform an XRPC GET/POST, and the offline cache.
-  Desktop: `reqwest` + `redb`.
+  Desktop: `reqwest` + `redb`; browser: worker-side synchronous XHR + an OPFS-persisted memory store.
 - **`FrontendStore`** / **`AuthProvider`** / **`ImageSink`** (frontend) — the follow-list,
   sign-in + subscription writes, and "paint an image into a cell rect." Desktop: `redb`
-  follows, `atrium-oauth`, `ratatui-image`.
+  follows, `atrium-oauth`, `ratatui-image`; browser: local follows, no auth yet, native `<img>`s.
 
 So the hard part — atproto reads, content decoding, caching, search, the whole reader UI — is
-written once and reused; a different platform (a **browser/WASM** build, a **PS Vita** port)
-reimplements only those seams. The desktop shell keeps fetches non-blocking by running the
+written once and reused; a different platform (the existing **browser/WASM** shell, or a future
+**PS Vita** port) reimplements only those seams. The desktop shell keeps fetches non-blocking by running the
 synchronous worker on its own thread, channeling results into the `ratatui` render loop.
 
 ## Content decoding
@@ -147,9 +149,13 @@ same structure, so customization only changes presentation.
 
 ```
 cargo build
-cargo test                     # the full suite (147 tests across the three crates)
+cargo test --workspace         # the full suite (170 tests across four crates)
 cargo test -p standard-core    # just the engine
 cargo run -p standard-reader   # runs the `sr` binary
+
+# Browser release build (nightly is selected by the web crate's rust-toolchain.toml)
+cd crates/standard-reader-web
+trunk build --release --locked
 ```
 
 ## OAuth

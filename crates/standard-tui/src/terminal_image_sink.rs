@@ -47,7 +47,9 @@ impl ImageSink for TerminalImageSink {
         }
         // Miss: (re)encode once for this size. `SlicedProtocol::new` consumes a `DynamicImage`,
         // so clone here — only on a real miss (matches the reader's old per-size clone frequency).
-        if let Ok(sliced) = SlicedProtocol::new(&self.picker, image.clone(), Some(Size::new(cols, rows))) {
+        if let Ok(sliced) =
+            SlicedProtocol::new(&self.picker, image.clone(), Some(Size::new(cols, rows)))
+        {
             self.slices.insert(key.to_string(), (sliced, (cols, rows)));
         }
     }

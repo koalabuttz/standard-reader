@@ -17,7 +17,7 @@ use standard_core::search::tokenize;
 use standard_core::store::{Store, StoredDoc};
 use standard_frontend::frontend_store::FrontendStore;
 
-use crate::persist::body_key;
+use crate::persist::{blob_file_key, body_key};
 
 /// Bumped when the serialized `RichDoc` body shape changes (decoder upgrades) — mirrors the desktop
 /// store's `CACHE_SCHEMA` (`crates/standard-tui/src/store.rs`). On a mismatch, [`InitialState`] drops
@@ -262,13 +262,13 @@ impl Store for MemStore {
             },
         );
         // Persist the body to its own `b/<key>` file when one arrived (bodies aren't in the index).
-        if let Some(body) = body {
-            if let Ok(bytes) = serde_json::to_vec(body) {
-                let _ = self.persist_tx.send(PersistOp::Body {
-                    key: body_key(&meta.uri),
-                    bytes,
-                });
-            }
+        if let Some(body) = body
+            && let Ok(bytes) = serde_json::to_vec(body)
+        {
+            let _ = self.persist_tx.send(PersistOp::Body {
+                key: body_key(&meta.uri),
+                bytes,
+            });
         }
         self.emit_index();
         Ok(())
@@ -335,7 +335,7 @@ impl Store for MemStore {
     fn put_blob(&mut self, cid: &str, bytes: &[u8]) -> Result<(), Infallible> {
         self.blobs.insert(cid.to_string(), bytes.to_vec());
         let _ = self.persist_tx.send(PersistOp::Blob {
-            cid: cid.to_string(),
+            cid: blob_file_key(cid),
             bytes: bytes.to_vec(),
         });
         // Re-emit the index so the new cid lands in `blob_cids` (so it's found on next load).
@@ -425,6 +425,8 @@ mod tests {
 
     use standard_core::model::{Block, Inline};
 
+    type EmittedState = (IndexDto, HashMap<String, Vec<u8>>, HashMap<String, Vec<u8>>);
+
     fn publication() -> Publication {
         Publication {
             uri: "at://did:plc:test/site.standard.publication/main".into(),
@@ -464,9 +466,7 @@ mod tests {
         (MemStore::new(tx, InitialState::default()), rx)
     }
 
-    fn emitted_state(
-        rx: &Receiver<PersistOp>,
-    ) -> (IndexDto, HashMap<String, Vec<u8>>, HashMap<String, Vec<u8>>) {
+    fn emitted_state(rx: &Receiver<PersistOp>) -> EmittedState {
         let mut index = None;
         let mut bodies = HashMap::new();
         let mut blobs = HashMap::new();
@@ -598,6 +598,21 @@ mod tests {
 
         store.put_blob("bafycid", &[1]).unwrap();
         assert!(matches!(rx.recv().unwrap(), PersistOp::Blob { .. }));
+        assert!(matches!(rx.recv().unwrap(), PersistOp::Index(_)));
+    }
+
+    #[test]
+    fn url_backed_blob_uses_an_opfs_safe_persistence_key() {
+        let (mut store, rx) = fresh_store();
+        let url = "https://cdn.example.test/images/header.png?size=full";
+        store.put_blob(url, &[1, 2, 3]).unwrap();
+
+        let PersistOp::Blob { cid, bytes } = rx.recv().unwrap() else {
+            panic!("blob payload must be emitted before its index");
+        };
+        assert_eq!(cid, blob_file_key(url));
+        assert!(!cid.contains('/'));
+        assert_eq!(bytes, vec![1, 2, 3]);
         assert!(matches!(rx.recv().unwrap(), PersistOp::Index(_)));
     }
 }

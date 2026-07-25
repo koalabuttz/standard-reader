@@ -9,7 +9,7 @@
 //!   per-doc `{meta, read}`, and the list of blob CIDs.
 //! - `prefs.json` — the complete appearance configuration (theme/layout/per-blog overrides).
 //! - `b/<key>` — one document's `RichDoc` body (`key` = [`body_key`] of its AT-URI).
-//! - `i/<cid>` — one image blob (CID is already filesystem-safe).
+//! - `i/<key>` — one image blob (`key` preserves safe CIDs and hashes URL cache keys).
 //!
 //! Everything here is **best-effort**: a missing file is a cache miss, and any failure (no OPFS,
 //! quota, corrupt bytes) degrades to in-memory — the reader must never break on a disk problem.
@@ -274,8 +274,29 @@ impl Opfs {
 /// across releases (unlike `DefaultHasher`, whose algorithm may change, which would orphan the
 /// whole body cache). A collision merely overwrites one re-fetchable body; harmless for a cache.
 pub fn body_key(uri: &str) -> String {
+    stable_hash(uri)
+}
+
+/// Map an image cache identifier to an OPFS-safe filename. Blob CIDs are already safe and retain
+/// their existing filename for cache compatibility. Plain image URLs are also stored through the
+/// `Store::blob` seam, though, and must be hashed because `/` is forbidden in a file name.
+pub fn blob_file_key(id: &str) -> String {
+    let safe = !id.is_empty()
+        && id != "."
+        && id != ".."
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
+    if safe {
+        id.to_string()
+    } else {
+        format!("url_{}", stable_hash(id))
+    }
+}
+
+fn stable_hash(value: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in uri.as_bytes() {
+    for b in value.as_bytes() {
         h ^= *b as u64;
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
@@ -318,7 +339,7 @@ async fn load_store(opfs: &Opfs) -> InitialState {
     // Blobs are raw bytes — format-stable, kept across a schema bump (no re-fetch needed).
     let mut blobs = HashMap::new();
     for cid in dto.blob_cids() {
-        if let Ok(Some(b)) = opfs.read(Some(BLOB_DIR), cid).await {
+        if let Ok(Some(b)) = opfs.read(Some(BLOB_DIR), &blob_file_key(cid)).await {
             blobs.insert(cid.clone(), b);
         }
     }
@@ -341,6 +362,22 @@ mod tests {
         );
         assert_eq!(key.len(), 16);
         assert!(key.bytes().all(|b| b.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn blob_file_key_preserves_cids_and_hashes_urls() {
+        let cid = "bafkreigh2akiscaildc4example";
+        assert_eq!(blob_file_key(cid), cid);
+
+        let url = "https://cdn.example.test/images/header.png?size=full";
+        let key = blob_file_key(url);
+        assert!(key.starts_with("url_"));
+        assert_eq!(key, blob_file_key(url));
+        assert!(!key.contains('/'));
+        assert_ne!(
+            key,
+            blob_file_key("https://cdn.example.test/images/other.png")
+        );
     }
 
     #[test]

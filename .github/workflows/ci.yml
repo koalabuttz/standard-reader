@@ -11,6 +11,7 @@ env:
 
 jobs:
   check:
+    name: Desktop + shared frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -21,6 +22,37 @@ jobs:
       - name: Format
         run: cargo fmt --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+
+  web:
+    name: Browser / WASM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2026-06-01
+          components: rust-src
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm32-unknown-unknown
+      # Install a checked, prebuilt Trunk release rather than compiling this build tool in CI.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk@0.21.14
+          fallback: none
+      # The web crate's pure store/persistence/input tests run on the host; Trunk then covers the
+      # wasm-only worker, DOM, OPFS, shared-memory linker, wasm-bindgen, and wasm-opt paths.
+      - name: Test web shell logic
+        run: cargo test --locked -p standard-reader-web
+      - name: Build optimized web app
+        working-directory: crates/standard-reader-web
+        run: trunk build --release --locked
+      - name: Upload web distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: standard-reader-web
+          path: crates/standard-reader-web/dist/

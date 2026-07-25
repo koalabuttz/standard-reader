@@ -74,7 +74,12 @@ async fn run(
             (None, BootstrapState::default())
         }
     };
-    let completed_blobs = bootstrap.store.blobs.keys().cloned().collect::<Vec<_>>();
+    let completed_blobs = bootstrap
+        .store
+        .blobs
+        .keys()
+        .map(|id| persist::blob_file_key(id))
+        .collect::<Vec<_>>();
 
     // Spawn the worker in a Web Worker over the hydrated store. Preference saves cross the same
     // channel as cache writes so all OPFS work remains on the browser main thread.

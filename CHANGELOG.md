@@ -7,6 +7,33 @@ aims to follow [Semantic Versioning](https://semver.org/). Versions are per-crat
 binary (`standard-reader`) and the `standard-core` engine version independently — `standard-core`
 stays pre-1.0 until a second frontend validates its `Transport`/`Store` API.
 
+## [Unreleased]
+
+### Added
+- **Browser/WASM shell through Milestone 2.** The shared frontend now runs in the browser via
+  ratzilla, with network work isolated on a Web Worker, native `<img>` overlays, and an OPFS-backed
+  offline cache for documents, images, follows, read state, cursors, and appearance preferences.
+- **Browser mouse support.** Links and list rows are clickable, and wheel/trackpad gestures scroll
+  the pane under the pointer without moving the surrounding page.
+- **“Published with …” attribution.** Structured posts identify their authoring platform in the
+  reader's bottom border; the platform name is a fully keyboard- and mouse-accessible link.
+- **WASM CI coverage.** CI now runs the web shell's host-side logic tests, builds its optimized
+  WASM distribution with pinned Rust/Trunk versions, and uploads the packaged site as an artifact.
+
+### Fixed
+- Browser image overlays now hide while dialogs are open, so customization and other popups always
+  render above article images.
+- URL-backed images now use stable OPFS-safe filenames. Previously their `/` characters made the
+  persistence write fail, so those images could disappear after a reload.
+- A successful explicit refresh or uncached document fetch now re-enables background freshening
+  after an earlier offline failure.
+- Browser panel corners use square box-drawing glyphs, avoiding disconnected rounded hooks in
+  common browser monospace fonts.
+
+### Security
+- Updated `quinn-proto`, `crossbeam-epoch`, and `anyhow` to patched versions identified by the
+  RustSec audit.
+
 ## [1.1.1] - 2026-05-30 — `sr` (engine `standard-core` unchanged at 0.3.0)
 
 A packaging-only patch — the `sr` binary is functionally identical to 1.1.0.
@@ -113,3 +140,4 @@ long-form writing on the AT Protocol — online or fully offline.
 [1.1.1]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.1.1
 [1.1.0]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.1.0
 [1.0.0]: https://github.com/koalabuttz/standard-reader/releases/tag/v1.0.0
+[Unreleased]: https://github.com/koalabuttz/standard-reader/compare/v1.1.1...HEAD

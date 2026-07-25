@@ -154,12 +154,12 @@ impl ImageSink for OverlayImageSink {
                 },
             );
         }
-        if let Some(ov) = self.images.get_mut(key) {
-            if ov.sized != (cols, rows) {
-                set(&ov.img, "width", &format!("{}px", cols as f64 * cw));
-                set(&ov.img, "height", &format!("{}px", rows as f64 * ch));
-                ov.sized = (cols, rows);
-            }
+        if let Some(ov) = self.images.get_mut(key)
+            && ov.sized != (cols, rows)
+        {
+            set(&ov.img, "width", &format!("{}px", cols as f64 * cw));
+            set(&ov.img, "height", &format!("{}px", rows as f64 * ch));
+            ov.sized = (cols, rows);
         }
     }
 
